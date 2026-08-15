@@ -33,7 +33,11 @@ def qdrant_client():
         client.get_collections()
         return client
     except Exception:
-        pytest.skip("Qdrant not available")
+        pytest.skip(
+            "Qdrant not reachable at http://localhost:6333. "
+            "Start it with: docker run -p 6333:6333 qdrant/qdrant:v1.13.3 "
+            "(Docker is required for integration tests; 'docker' command not found on this machine.)"
+        )
 
 
 @pytest.fixture(scope="module")

@@ -85,8 +85,15 @@ def _stream_shard(
     dataset_revision: str | None,
     start_row: int = 0,
     max_rows: int | None = None,
+    num_shards: int = 1,
 ) -> Iterator[tuple[int, dict]]:
-    """Stream rows from one shard of MSMARCO-XI. Yields (row_idx, record)."""
+    """Stream rows from one logical shard of MSMARCO-XI.
+
+    When num_shards > 1, uses HuggingFace IterableDataset.shard() to divide the
+    dataset across parallel workers without downloading the full split per worker.
+    row_idx is always relative to the original (un-sharded) dataset so checkpoints
+    remain comparable across shard counts.
+    """
     from datasets import load_dataset
 
     ds = load_dataset(
@@ -96,14 +103,20 @@ def _stream_shard(
         streaming=True,
         revision=dataset_revision,
     )
-    row_idx = 0
+
+    if num_shards > 1:
+        ds = ds.shard(num_shards=num_shards, index=shard_idx, contiguous=True)
+
+    row_idx = shard_idx  # first global row index for this shard
+    step = num_shards if num_shards > 1 else 1
     emitted = 0
+
     for record in ds:
         if row_idx < start_row:
-            row_idx += 1
+            row_idx += step
             continue
         yield row_idx, record
-        row_idx += 1
+        row_idx += step
         emitted += 1
         if max_rows is not None and emitted >= max_rows:
             break

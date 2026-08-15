@@ -418,6 +418,7 @@ source = { editable = "." }
 dependencies = [
     { name = "datasets" },
     { name = "fastapi" },
+    { name = "fastembed" },
     { name = "httpx" },
     { name = "langdetect" },
     { name = "numpy" },
@@ -438,7 +439,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "fastembed" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -451,6 +451,7 @@ dev = [
 requires-dist = [
     { name = "datasets", specifier = "==3.2.0" },
     { name = "fastapi", specifier = "==0.115.6" },
+    { name = "fastembed", specifier = "==0.4.2" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "langdetect", specifier = "==1.0.9" },
     { name = "numpy", specifier = "==1.26.4" },
@@ -471,7 +472,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "fastembed", specifier = "==0.4.2" },
     { name = "mypy", specifier = "==1.13.0" },
     { name = "pytest", specifier = "==8.3.4" },
     { name = "pytest-asyncio", specifier = "==0.24.0" },
