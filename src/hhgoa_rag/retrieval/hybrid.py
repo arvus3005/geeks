@@ -1,35 +1,16 @@
-import hashlib
-import re
-from collections import Counter
+"""Hybrid dense+sparse retrieval using Qdrant RRF fusion.
+
+Sparse encoding uses FastEmbed BM25 (Qdrant/bm25) at both ingestion and query time,
+giving stable cross-process token IDs and proper BM25 scoring with IDF weighting.
+"""
+
+from __future__ import annotations
 
 import numpy as np
 from qdrant_client import QdrantClient
-from qdrant_client.models import Fusion, FusionQuery, Prefetch, SparseVector
+from qdrant_client.models import FieldCondition, Filter, Fusion, FusionQuery, MatchAny, Prefetch
 
-
-def _stable_token_id(token: str) -> int:
-    """Stable cross-process token ID using SHA-256. Range: [0, 2^20)."""
-    return int(hashlib.sha256(token.encode("utf-8")).hexdigest()[:5], 16)
-
-
-def text_to_sparse(text: str) -> SparseVector:
-    """Lexical sparse vector with stable cross-process token IDs.
-
-    Note: this is TF-normalized term frequency, NOT full BM25 (no IDF/doc-length normalization).
-    For production BM25, use FastEmbed BM25 encoder.
-    """
-    tokens = re.findall(r"\b\w+\b", text.lower())
-    if not tokens:
-        return SparseVector(indices=[0], values=[0.0])
-    counts = Counter(tokens)
-    total = sum(counts.values())
-    indices = [_stable_token_id(t) for t in counts]
-    values = [c / total for c in counts.values()]
-    # Sort by index (required by Qdrant)
-    pairs = sorted(zip(indices, values))
-    indices_sorted = [p[0] for p in pairs]
-    values_sorted = [p[1] for p in pairs]
-    return SparseVector(indices=indices_sorted, values=values_sorted)
+from .sparse_encoder import BM25SparseEncoder, get_bm25_encoder
 
 
 class HybridRetriever:
@@ -40,12 +21,15 @@ class HybridRetriever:
         dense_k: int = 32,
         sparse_k: int = 32,
         fused_k: int = 20,
-    ):
+        sparse_encoder: BM25SparseEncoder | None = None,
+    ) -> None:
         self.client = client
         self.collection = collection
         self.dense_k = dense_k
         self.sparse_k = sparse_k
         self.fused_k = fused_k
+        # Allow injection for tests; default to process-level singleton.
+        self._sparse_encoder = sparse_encoder or get_bm25_encoder()
 
     def retrieve(
         self,
@@ -53,11 +37,9 @@ class HybridRetriever:
         query_text: str,
         language_filter: list[str] | None = None,
     ) -> list[dict]:
-        sparse_vec = text_to_sparse(query_text)
+        sparse_vec = self._sparse_encoder.encode_query(query_text)
 
-        from qdrant_client.models import FieldCondition, Filter, MatchAny
-
-        flt = None
+        flt: Filter | None = None
         if language_filter:
             flt = Filter(must=[FieldCondition(key="language", match=MatchAny(any=language_filter))])
 

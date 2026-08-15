@@ -6,6 +6,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
     HnswConfigDiff,
+    Modifier,
     PayloadSchemaType,
     SparseIndexParams,
     SparseVectorParams,
@@ -59,6 +60,7 @@ def create_collection(
         sparse_vectors_config={
             SPARSE_VECTOR_NAME: SparseVectorParams(
                 index=SparseIndexParams(on_disk=False),
+                modifier=Modifier.IDF,
             )
         },
         hnsw_config=HnswConfigDiff(m=16, ef_construct=200),

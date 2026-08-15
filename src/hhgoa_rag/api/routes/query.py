@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter
 
 from hhgoa_rag.answer.extractive import extract_answer
@@ -9,19 +11,6 @@ from hhgoa_rag.retrieval.language_routing import get_language_filter
 from hhgoa_rag.schemas.query import Citation, QueryRequest, QueryResponse, TimingsMs
 
 router = APIRouter()
-
-
-def _get_embedder():
-    # In tests HHGOA_USE_FAKE_EMBEDDER=1 env var triggers fake
-    import os
-
-    if os.environ.get("HHGOA_USE_FAKE_EMBEDDER") == "1":
-        from hhgoa_rag.retrieval.embedder import FakeEmbedder
-
-        return FakeEmbedder()
-    from hhgoa_rag.retrieval.embedder import E5MultilingualEmbedder
-
-    return E5MultilingualEmbedder()
 
 
 def _build_timings(stages: dict[str, float], total: float) -> TimingsMs:
@@ -36,12 +25,17 @@ async def query_endpoint(req: QueryRequest):
     timer = RequestTimer()
     settings = get_settings()
 
+    # Resources loaded once during lifespan — never constructed here.
+    from hhgoa_rag.api.resources import get_resources
+
+    resources = get_resources()
+
     # 1. Input guard
     with timer.stage("input_guard"):
         guard = check_input(req.question, settings.max_query_chars)
 
     if not guard.allowed:
-        decision = (
+        decision: Literal["refuse", "abstain"] = (
             "refuse"
             if guard.reason_code in ("unsafe", "credential_request", "prompt_injection")
             else "abstain"
@@ -75,26 +69,47 @@ async def query_endpoint(req: QueryRequest):
             detected_lang = req.language_hint or "en"
         lang_filter = get_language_filter(detected_lang, req.language_hint)
 
-    # 3. Embed query
-    embedder = _get_embedder()
-    with timer.stage("query_embed"):
-        query_vec = embedder.embed_query(req.question)
+    # 3. Embed query — reuse warmed embedder, never load from disk here
+    if resources.embedder is None:
+        return QueryResponse(
+            request_id=req.request_id,
+            question=req.question,
+            detected_language=detected_lang,
+            answer=None,
+            decision="error",
+            reason_code="embedder_not_ready",
+            grounded=False,
+            confidence=0.0,
+            citations=[],
+            sources=[],
+            retrieval_mode="none",
+            index_manifest_id=settings.index_manifest_id,
+            model_manifest_id=settings.model_manifest_id,
+            timings_ms=_build_timings(timer.stages, timer.total_ms()),
+            total_backend_ms=timer.total_ms(),
+            error={"code": "embedder_not_ready", "message": "Embedder not loaded"},
+        )
 
-    # 4. Retrieve (try Qdrant, fall back to error on failure)
+    with timer.stage("query_embed"):
+        query_vec = resources.embedder.embed_query(req.question)
+
+    # 4. Retrieve — reuse warmed Qdrant client and sparse encoder
     passages = []
     retrieval_mode = "none"
     try:
-        from qdrant_client import QdrantClient
-
         from hhgoa_rag.retrieval.hybrid import HybridRetriever
 
-        client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key, timeout=10)
+        client = resources.qdrant_client
+        if client is None:
+            raise RuntimeError("Qdrant client not initialized")
+
         retriever = HybridRetriever(
             client,
             settings.qdrant_collection_alias,
             dense_k=settings.dense_prefetch_k,
             sparse_k=settings.sparse_prefetch_k,
             fused_k=settings.fused_k,
+            sparse_encoder=resources.sparse_encoder,
         )
         with timer.stage("qdrant_retrieve"):
             passages = retriever.retrieve(query_vec, req.question, lang_filter)

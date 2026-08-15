@@ -98,9 +98,13 @@ def test_dense_query(qdrant_client, smoke_collection):
 def test_hybrid_rrf_query(qdrant_client, smoke_collection):
     from hhgoa_rag.retrieval.embedder import FakeEmbedder
     from hhgoa_rag.retrieval.hybrid import HybridRetriever
+    from hhgoa_rag.retrieval.sparse_encoder import BM25SparseEncoder
 
     embedder = FakeEmbedder()
-    retriever = HybridRetriever(qdrant_client, smoke_collection, dense_k=5, sparse_k=5, fused_k=5)
+    enc = BM25SparseEncoder()
+    retriever = HybridRetriever(
+        qdrant_client, smoke_collection, dense_k=5, sparse_k=5, fused_k=5, sparse_encoder=enc
+    )
     qvec = embedder.embed_query("query: capital of India")
     results = retriever.retrieve(qvec, "capital of India")
     assert isinstance(results, list)
@@ -109,9 +113,11 @@ def test_hybrid_rrf_query(qdrant_client, smoke_collection):
 def test_language_filter(qdrant_client, smoke_collection):
     from hhgoa_rag.retrieval.embedder import FakeEmbedder
     from hhgoa_rag.retrieval.hybrid import HybridRetriever
+    from hhgoa_rag.retrieval.sparse_encoder import BM25SparseEncoder
 
     embedder = FakeEmbedder()
-    retriever = HybridRetriever(qdrant_client, smoke_collection)
+    enc = BM25SparseEncoder()
+    retriever = HybridRetriever(qdrant_client, smoke_collection, sparse_encoder=enc)
     qvec = embedder.embed_query("query: India")
     results = retriever.retrieve(qvec, "India", language_filter=["bn"])
     for r in results:

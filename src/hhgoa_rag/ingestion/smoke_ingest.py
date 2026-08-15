@@ -1,4 +1,8 @@
-"""Smoke ingestion — uses local deterministic fixtures covering all 15 language codes."""
+"""Smoke ingestion — deterministic fixtures covering all 15 language codes.
+
+Uses FakeEmbedder for dense vectors and BM25SparseEncoder for sparse vectors,
+matching exactly the encoders used at query time.
+"""
 
 import json
 from pathlib import Path
@@ -15,7 +19,7 @@ from ..qdrant_lifecycle import (
     validate_collection,
 )
 from ..retrieval.embedder import FakeEmbedder
-from ..retrieval.hybrid import text_to_sparse
+from ..retrieval.sparse_encoder import BM25SparseEncoder
 
 SMOKE_FIXTURES_PATH = (
     Path(__file__).parent.parent.parent.parent / "tests" / "fixtures" / "smoke_passages.json"
@@ -32,9 +36,9 @@ def run_smoke_ingest(
 ) -> dict:
     """Ingest smoke fixtures into Qdrant. Idempotent (same point IDs)."""
     client = QdrantClient(url=qdrant_url, timeout=30)
-    embedder = FakeEmbedder()
+    dense_embedder = FakeEmbedder()
+    sparse_encoder = BM25SparseEncoder()
 
-    # Create collection if needed
     existing = {c.name for c in client.get_collections().collections}
     if collection not in existing:
         create_collection(client, collection, force=False)
@@ -42,12 +46,13 @@ def run_smoke_ingest(
     with open(fixtures_path) as f:
         passages = json.load(f)
 
+    texts = [normalize_text(p["text"]) for p in passages]
+    sparse_vecs = sparse_encoder.encode_passages_batch(texts)
+
     points = []
-    for p in passages:
+    for p, norm, sparse_vec in zip(passages, texts, sparse_vecs):
         lang = p["language"]
-        text = p["text"]
-        norm = normalize_text(text)
-        chash = content_hash(text)
+        chash = content_hash(p["text"])
         point_id = make_point_id(
             dataset_revision=DATASET_REVISION,
             language=lang,
@@ -55,8 +60,7 @@ def run_smoke_ingest(
             chunk_strategy_version=CHUNK_STRATEGY_VERSION,
             chunk_ordinal=0,
         )
-        dense_vec = embedder.embed_query(f"passage: {norm}")
-        sparse_vec = text_to_sparse(norm)
+        dense_vec = dense_embedder.embed_query(f"passage: {norm}")
         points.append(
             PointStruct(
                 id=point_id,
@@ -77,7 +81,6 @@ def run_smoke_ingest(
             )
         )
 
-    # Batch upsert
     client.upsert(collection_name=collection, points=points, wait=True)
     result = validate_collection(client, collection)
     return {

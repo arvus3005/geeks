@@ -31,8 +31,8 @@ dependencies = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/hhgoa_rag"]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest==8.3.4",
     "ruff==0.8.6",
     "mypy==1.13.0",

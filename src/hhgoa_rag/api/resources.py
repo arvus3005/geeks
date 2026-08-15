@@ -1,0 +1,51 @@
+"""Application-level resource container.
+
+Dense embedder, sparse encoder, and Qdrant client are loaded once during
+FastAPI lifespan and reused across all requests. Readiness stays False until
+all three are verified and a lightweight retrieval probe passes.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+
+from qdrant_client import QdrantClient
+
+from hhgoa_rag.retrieval.embedder import BaseEmbedder
+from hhgoa_rag.retrieval.sparse_encoder import BM25SparseEncoder
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AppResources:
+    embedder: BaseEmbedder | None = None
+    sparse_encoder: BM25SparseEncoder | None = None
+    qdrant_client: QdrantClient | None = None
+    ready: bool = False
+    readiness_detail: dict = field(default_factory=dict)
+
+    def mark_ready(self) -> None:
+        self.ready = True
+
+    def mark_not_ready(self, reason: str) -> None:
+        self.ready = False
+        self.readiness_detail["reason"] = reason
+
+
+# Module-level singleton — set during lifespan startup.
+_resources: AppResources | None = None
+
+
+def get_resources() -> AppResources:
+    global _resources
+    if _resources is None:
+        _resources = AppResources()
+    return _resources
+
+
+def _reset_resources() -> None:
+    """For testing only — reset singleton."""
+    global _resources
+    _resources = None

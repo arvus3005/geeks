@@ -3,8 +3,6 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
-_ready = False
-
 
 class LiveResponse(BaseModel):
     status: str
@@ -24,17 +22,20 @@ async def liveness():
 
 @router.get("/health/ready", response_model=ReadyResponse)
 async def readiness():
+    from hhgoa_rag.api.resources import get_resources
     from hhgoa_rag.config.settings import get_settings
 
     s = get_settings()
+    resources = get_resources()
+
+    details = dict(resources.readiness_detail)
+    if not resources.ready:
+        details.setdefault("qdrant", "not_verified")
+        details.setdefault("embedder", "not_loaded")
+
     return ReadyResponse(
-        status="ready" if _ready else "initializing",
+        status="ready" if resources.ready else "initializing",
         corpus_mode=s.corpus_mode,
         index_manifest_id=s.index_manifest_id,
-        details={"qdrant": "unknown", "embedder": "unknown"},
+        details=details,
     )
-
-
-def set_ready(value: bool):
-    global _ready
-    _ready = value
