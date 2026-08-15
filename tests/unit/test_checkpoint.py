@@ -16,9 +16,9 @@ def _make_ckpt(**overrides) -> IngestCheckpoint:
         source_shard=0,
         chunk_strategy="passage_native",
         chunk_strategy_version="v1",
-        dense_model_id="fake-embedder-v0",
-        sparse_model_name="Qdrant/bm25",
-        physical_collection="msmarco_xi_passages_pilot_v001",
+        embed_model="multilingual-e5-large",
+        pinecone_index="msmarco-xi",
+        pinecone_namespace="pilot_testrun",
         schema_fingerprint="deadbeef",
         last_acknowledged_row=42,
         cumulative_source_rows=100,
@@ -26,7 +26,7 @@ def _make_ckpt(**overrides) -> IngestCheckpoint:
         cumulative_duplicate_occurrences=5,
         cumulative_rejected_occurrences=5,
         cumulative_chunks_emitted=90,
-        cumulative_qdrant_points=80,
+        cumulative_indexed_points=80,
         started_at="2026-08-15T00:00:00+00:00",
         updated_at="2026-08-15T01:00:00+00:00",
         mode="pilot",
@@ -64,30 +64,38 @@ def test_compatibility_same():
     assert issues == []
 
 
-def test_incompatible_different_model():
+def test_incompatible_different_embed_model():
     a = _make_ckpt()
-    b = _make_ckpt(dense_model_id="other-model")
+    b = _make_ckpt(embed_model="other-model")
     ok, issues = a.is_compatible(b)
     assert not ok
-    assert any("dense_model_id" in i for i in issues)
+    assert any("embed_model" in i for i in issues)
 
 
-def test_incompatible_different_collection():
+def test_incompatible_different_index():
     a = _make_ckpt()
-    b = _make_ckpt(physical_collection="other_collection")
+    b = _make_ckpt(pinecone_index="other-index")
+    ok, issues = a.is_compatible(b)
+    assert not ok
+    assert any("pinecone_index" in i for i in issues)
+
+
+def test_incompatible_different_namespace():
+    a = _make_ckpt()
+    b = _make_ckpt(pinecone_namespace="different_ns")
     ok, issues = a.is_compatible(b)
     assert not ok
 
 
 def test_schema_fingerprint_deterministic():
-    fp1 = make_schema_fingerprint("col_v1", 384, "Qdrant/bm25", "v1")
-    fp2 = make_schema_fingerprint("col_v1", 384, "Qdrant/bm25", "v1")
+    fp1 = make_schema_fingerprint("msmarco-xi", "smoke", "multilingual-e5-large", "v1")
+    fp2 = make_schema_fingerprint("msmarco-xi", "smoke", "multilingual-e5-large", "v1")
     assert fp1 == fp2
 
 
 def test_schema_fingerprint_varies_with_inputs():
-    fp1 = make_schema_fingerprint("col_v1", 384, "Qdrant/bm25", "v1")
-    fp2 = make_schema_fingerprint("col_v2", 384, "Qdrant/bm25", "v1")
+    fp1 = make_schema_fingerprint("msmarco-xi", "smoke", "multilingual-e5-large", "v1")
+    fp2 = make_schema_fingerprint("msmarco-xi", "full", "multilingual-e5-large", "v1")
     assert fp1 != fp2
 
 

@@ -20,12 +20,32 @@ def _build_timings(stages: dict[str, float], total: float) -> TimingsMs:
     return TimingsMs(**kwargs)
 
 
+def _error_response(req: QueryRequest, settings, timer, reason_code: str, detail: str) -> QueryResponse:
+    return QueryResponse(
+        request_id=req.request_id,
+        question=req.question,
+        detected_language=None,
+        answer=None,
+        decision="error",
+        reason_code=reason_code,
+        grounded=False,
+        confidence=0.0,
+        citations=[],
+        sources=[],
+        retrieval_mode="none",
+        index_manifest_id=settings.index_manifest_id,
+        model_manifest_id=settings.model_manifest_id,
+        timings_ms=_build_timings(timer.stages, timer.total_ms()),
+        total_backend_ms=timer.total_ms(),
+        error={"code": reason_code, "message": detail},
+    )
+
+
 @router.post("/v1/query", response_model=QueryResponse)
 async def query_endpoint(req: QueryRequest):
     timer = RequestTimer()
     settings = get_settings()
 
-    # Resources loaded once during lifespan — never constructed here.
     from hhgoa_rag.api.resources import get_resources
 
     resources = get_resources()
@@ -69,72 +89,37 @@ async def query_endpoint(req: QueryRequest):
             detected_lang = req.language_hint or "en"
         lang_filter = get_language_filter(detected_lang, req.language_hint)
 
-    # 3. Embed query — reuse warmed embedder, never load from disk here
-    if resources.embedder is None:
-        return QueryResponse(
-            request_id=req.request_id,
-            question=req.question,
-            detected_language=detected_lang,
-            answer=None,
-            decision="error",
-            reason_code="embedder_not_ready",
-            grounded=False,
-            confidence=0.0,
-            citations=[],
-            sources=[],
-            retrieval_mode="none",
-            index_manifest_id=settings.index_manifest_id,
-            model_manifest_id=settings.model_manifest_id,
-            timings_ms=_build_timings(timer.stages, timer.total_ms()),
-            total_backend_ms=timer.total_ms(),
-            error={"code": "embedder_not_ready", "message": "Embedder not loaded"},
-        )
+    # 3. Retrieve — Pinecone handles embedding server-side; no local vector computation
+    if resources.pinecone_store is None:
+        return _error_response(req, settings, timer, "index_unavailable", "Pinecone store not ready")
 
-    with timer.stage("query_embed"):
-        query_vec = resources.embedder.embed_query(req.question)
+    pinecone_filter: dict | None = None
+    if lang_filter:
+        pinecone_filter = {"language": {"$in": lang_filter}}
 
-    # 4. Retrieve — reuse warmed Qdrant client and sparse encoder
-    passages = []
-    retrieval_mode = "none"
     try:
-        from hhgoa_rag.retrieval.hybrid import HybridRetriever
-
-        client = resources.qdrant_client
-        if client is None:
-            raise RuntimeError("Qdrant client not initialized")
-
-        retriever = HybridRetriever(
-            client,
-            settings.qdrant_collection_alias,
-            dense_k=settings.dense_prefetch_k,
-            sparse_k=settings.sparse_prefetch_k,
-            fused_k=settings.fused_k,
-            sparse_encoder=resources.sparse_encoder,
-        )
-        with timer.stage("qdrant_retrieve"):
-            passages = retriever.retrieve(query_vec, req.question, lang_filter)
-        retrieval_mode = "dense_sparse_rrf"
+        with timer.stage("pinecone_retrieve"):
+            hits = resources.pinecone_store.search(
+                query_text=req.question,
+                top_k=settings.retrieval_top_k,
+                namespace=settings.pinecone_namespace,
+                filter=pinecone_filter,
+            )
     except Exception:
-        return QueryResponse(
-            request_id=req.request_id,
-            question=req.question,
-            detected_language=detected_lang,
-            answer=None,
-            decision="error",
-            reason_code="index_unavailable",
-            grounded=False,
-            confidence=0.0,
-            citations=[],
-            sources=[],
-            retrieval_mode="none",
-            index_manifest_id=settings.index_manifest_id,
-            model_manifest_id=settings.model_manifest_id,
-            timings_ms=_build_timings(timer.stages, timer.total_ms()),
-            total_backend_ms=timer.total_ms(),
-            error={"code": "index_unavailable", "message": "Vector index unavailable"},
-        )
+        return _error_response(req, settings, timer, "index_unavailable", "Vector index unavailable")
 
-    # 5. Extract answer
+    # Normalise hits to the passage dict format used downstream
+    passages = [
+        {
+            "id": h.id,
+            "score": h.score,
+            "payload": h.fields,
+        }
+        for h in hits
+    ]
+    retrieval_mode = "pinecone_integrated_embed"
+
+    # 4. Extract answer
     with timer.stage("answer_extract"):
         answer, evidence = extract_answer(passages, req.question)
 
@@ -157,8 +142,8 @@ async def query_endpoint(req: QueryRequest):
             total_backend_ms=timer.total_ms(),
         )
 
-    # 6. Grounding
-    passage_texts = [p.get("payload", {}).get("text", "") for p in evidence]
+    # 5. Grounding
+    passage_texts = [p.get("payload", {}).get("chunk_text", "") for p in evidence]
     with timer.stage("grounding_verify"):
         grounded, confidence = verify_grounding(answer, passage_texts, settings.min_retrieval_score)
 
@@ -186,7 +171,7 @@ async def query_endpoint(req: QueryRequest):
             passage_id=p.get("id", ""),
             language=p.get("payload", {}).get("language", "en"),
             chunk_ordinal=p.get("payload", {}).get("chunk_ordinal", 0),
-            text=p.get("payload", {}).get("text", "")[:200],
+            text=p.get("payload", {}).get("chunk_text", "")[:200],
             score=p.get("score", 0.0),
         )
         for p in evidence

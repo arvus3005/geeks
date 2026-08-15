@@ -1,6 +1,11 @@
+"""Local embedder utilities — test/development only.
+
+Production retrieval uses Pinecone integrated server-side embedding.
+FakeEmbedder is kept for unit/behavioural tests that need deterministic vectors.
+"""
+
 import hashlib
 from abc import ABC, abstractmethod
-from typing import Any
 
 import numpy as np
 
@@ -45,38 +50,3 @@ class FakeEmbedder(BaseEmbedder):
     @property
     def model_id(self) -> str:
         return "fake-embedder-v0"
-
-
-class E5MultilingualEmbedder(BaseEmbedder):
-    """Production embedder using multilingual-e5-small."""
-
-    def __init__(self, model_id: str = "intfloat/multilingual-e5-small"):
-        self._model_id = model_id
-        self._model: Any = None  # SentenceTransformer, loaded lazily
-
-    def _load(self):
-        if self._model is None:
-            from sentence_transformers import SentenceTransformer
-
-            self._model = SentenceTransformer(self._model_id)
-
-    def embed_query(self, text: str) -> np.ndarray:
-        self._load()
-        assert self._model is not None
-        prefixed = f"query: {text}"
-        emb = self._model.encode([prefixed], normalize_embeddings=True)[0]
-        return emb.astype(np.float32)
-
-    def embed_passages(self, texts: list[str]) -> np.ndarray:
-        self._load()
-        assert self._model is not None
-        prefixed = [f"passage: {t}" for t in texts]
-        return self._model.encode(prefixed, normalize_embeddings=True).astype(np.float32)
-
-    @property
-    def dimension(self) -> int:
-        return 384
-
-    @property
-    def model_id(self) -> str:
-        return self._model_id

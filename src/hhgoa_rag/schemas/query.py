@@ -22,9 +22,7 @@ class Citation(BaseModel):
 class TimingsMs(BaseModel):
     input_guard: float = 0.0
     language_detect: float = 0.0
-    query_embed: float = 0.0
-    sparse_build: float = 0.0
-    qdrant_retrieve: float = 0.0
+    pinecone_retrieve: float = 0.0
     rerank: float = 0.0
     evidence_check: float = 0.0
     answer_extract: float = 0.0

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -16,7 +17,7 @@ from pathlib import Path
 def main() -> None:
     p = argparse.ArgumentParser(description="Resume interrupted MSMARCO-XI ingestion")
     p.add_argument("--checkpoint", required=True, type=Path, help="Path to checkpoint JSON")
-    p.add_argument("--qdrant-url", default="http://localhost:6333")
+    p.add_argument("--pinecone-api-key", default=None)
     p.add_argument("--dedup-db-dir", type=Path, default=Path("artifacts/dedup"))
     p.add_argument(
         "--confirm-full-ingest",
@@ -26,13 +27,12 @@ def main() -> None:
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
 
-    from qdrant_client import QdrantClient
+    from pinecone import Pinecone
 
     from hhgoa_rag.ingestion.checkpoint import IngestCheckpoint
     from hhgoa_rag.ingestion.dedup import ContentDeduplicator
     from hhgoa_rag.ingestion.engine import IngestionConfig, ingest_shard
-    from hhgoa_rag.retrieval.embedder import FakeEmbedder
-    from hhgoa_rag.retrieval.sparse_encoder import BM25SparseEncoder
+    from hhgoa_rag.pinecone_store import PineconeStore
 
     ckpt = IngestCheckpoint.load(args.checkpoint)
 
@@ -52,9 +52,16 @@ def main() -> None:
             print(f"Checkpoint already complete: {args.checkpoint}")
         sys.exit(0)
 
+    api_key = args.pinecone_api_key or os.environ.get("PINECONE_API_KEY")
+    if not api_key:
+        print("ERROR: PINECONE_API_KEY must be set", file=sys.stderr)
+        sys.exit(1)
+
     cfg = IngestionConfig(
         mode=ckpt.mode,
-        physical_collection=ckpt.physical_collection,
+        pinecone_index=ckpt.pinecone_index,
+        pinecone_namespace=ckpt.pinecone_namespace,
+        embed_model=ckpt.embed_model,
         chunk_strategy=ckpt.chunk_strategy,
         chunk_strategy_version=ckpt.chunk_strategy_version,
         dataset_revision=ckpt.dataset_revision,
@@ -62,9 +69,8 @@ def main() -> None:
         checkpoint_dir=args.checkpoint.parent,
     )
 
-    client = QdrantClient(url=args.qdrant_url, timeout=60)
-    dense_embedder = FakeEmbedder()
-    sparse_encoder = BM25SparseEncoder()
+    pc = Pinecone(api_key=api_key)
+    store = PineconeStore(pc.Index(ckpt.pinecone_index), embed_model=ckpt.embed_model)
 
     dedup_en = ContentDeduplicator(cfg.dedup_db_dir / f"{ckpt.run_id}_en_global.db")
     dedup_lang = ContentDeduplicator(cfg.dedup_db_dir / f"{ckpt.run_id}_{ckpt.config_language}.db")
@@ -75,9 +81,7 @@ def main() -> None:
             split=ckpt.split,
             shard_idx=ckpt.source_shard,
             cfg=cfg,
-            dense_embedder=dense_embedder,
-            sparse_encoder=sparse_encoder,
-            client=client,
+            store=store,
             dedup_en=dedup_en,
             dedup_lang=dedup_lang,
             run_id=ckpt.run_id,
@@ -86,14 +90,14 @@ def main() -> None:
             "run_id": ckpt.run_id,
             "resumed_from_row": ckpt.last_acknowledged_row,
             "source_rows_total": stats.source_rows,
-            "qdrant_points_total": stats.qdrant_points_uploaded,
+            "indexed_points_total": stats.indexed_points,
         }
         if args.output_json:
             print(json.dumps(result, indent=2))
         else:
             print(
                 f"Resumed {ckpt.config_language}/{ckpt.split}/shard{ckpt.source_shard}: "
-                f"{stats.qdrant_points_uploaded} total points"
+                f"{stats.indexed_points} total points"
             )
         sys.exit(0)
     except Exception as e:

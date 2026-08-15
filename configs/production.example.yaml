@@ -1,11 +1,13 @@
 # Production config example — fill in real values and rename to production.yaml
 # DO NOT commit production.yaml (it contains secrets)
 corpus_mode: full
-qdrant_url: https://your-qdrant-cloud-url:6333
-qdrant_api_key: YOUR_QDRANT_API_KEY_HERE
+pinecone_index: msmarco-xi-prod
+pinecone_namespace: full
+pinecone_cloud: aws
+pinecone_region: us-east-1
+pinecone_embed_model: multilingual-e5-large
+# PINECONE_API_KEY should be set via environment variable, not this file
 sarvam_api_key: YOUR_SARVAM_KEY_HERE
 index_manifest_id: full-v001
-model_manifest_id: multilingual-e5-small-full-precision-v001
-dense_prefetch_k: 64
-sparse_prefetch_k: 64
-fused_k: 20
+model_manifest_id: pinecone-multilingual-e5-large-v001
+retrieval_top_k: 20

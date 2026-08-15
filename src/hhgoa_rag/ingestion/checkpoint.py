@@ -2,7 +2,7 @@
 
 Checkpoints are written atomically (temp file + rename) so a crash mid-write
 never leaves a partially-valid checkpoint. A resume refuses if any key schema
-field (dataset, model, collection, chunk strategy) differs from the checkpoint.
+field (dataset, model, index, chunk strategy) differs from the checkpoint.
 """
 
 from __future__ import annotations
@@ -23,17 +23,17 @@ class IngestCheckpoint:
     source_shard: int
     chunk_strategy: str
     chunk_strategy_version: str
-    dense_model_id: str
-    sparse_model_name: str
-    physical_collection: str
-    schema_fingerprint: str  # hash of collection config
-    last_acknowledged_row: int  # last row safely upserted to Qdrant
+    embed_model: str          # Pinecone integrated embed model (e.g. multilingual-e5-large)
+    pinecone_index: str       # Pinecone index name
+    pinecone_namespace: str   # Namespace for this run (smoke / pilot_<lang> / full)
+    schema_fingerprint: str   # hash of index config
+    last_acknowledged_row: int  # last row safely upserted to Pinecone
     cumulative_source_rows: int
     cumulative_valid_occurrences: int
     cumulative_duplicate_occurrences: int
     cumulative_rejected_occurrences: int
     cumulative_chunks_emitted: int
-    cumulative_qdrant_points: int
+    cumulative_indexed_points: int
     started_at: str
     updated_at: str
     mode: str  # "pilot" or "full"
@@ -51,9 +51,9 @@ class IngestCheckpoint:
             "source_shard",
             "chunk_strategy",
             "chunk_strategy_version",
-            "dense_model_id",
-            "sparse_model_name",
-            "physical_collection",
+            "embed_model",
+            "pinecone_index",
+            "pinecone_namespace",
             "schema_fingerprint",
         ):
             if getattr(self, attr) != getattr(other, attr):
@@ -83,9 +83,9 @@ class IngestCheckpoint:
 
 
 def make_schema_fingerprint(
-    physical_collection: str, dense_dim: int, sparse_model: str, chunk_strategy_version: str
+    pinecone_index: str, pinecone_namespace: str, embed_model: str, chunk_strategy_version: str
 ) -> str:
     import hashlib
 
-    s = f"{physical_collection}|dense_dim={dense_dim}|sparse={sparse_model}|chunk={chunk_strategy_version}"
+    s = f"{pinecone_index}|ns={pinecone_namespace}|embed={embed_model}|chunk={chunk_strategy_version}"
     return hashlib.sha256(s.encode()).hexdigest()[:16]

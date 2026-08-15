@@ -1,14 +1,13 @@
-"""FastAPI application with lifespan resource management.
+"""FastAPI application with Pinecone lifespan resource management.
 
-Dense embedder, BM25 sparse encoder, and Qdrant client are loaded once on startup
-and warmed up before readiness transitions to True. Requests reuse these resources —
-no model loading happens inside a request handler.
+PineconeStore is created once on startup using the integrated multilingual
+embedding model. No local model is loaded; Pinecone handles embedding
+server-side. The store is reused across all requests.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -26,59 +25,53 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     try:
-        # 1. Load dense embedder
-        use_fake = os.environ.get("HHGOA_USE_FAKE_EMBEDDER") == "1"
-        if use_fake:
-            from hhgoa_rag.retrieval.embedder import FakeEmbedder
+        if not settings.pinecone_api_key:
+            resources.mark_not_ready("PINECONE_API_KEY not set")
+            logger.warning("PINECONE_API_KEY not set; serving will be degraded")
+            yield
+            return
 
-            resources.embedder = FakeEmbedder()
-        else:
-            from hhgoa_rag.retrieval.embedder import E5MultilingualEmbedder
+        from pinecone import Pinecone
 
-            resources.embedder = E5MultilingualEmbedder(model_id=settings.embedding_model_id)
+        from hhgoa_rag.pinecone_lifecycle import validate_index
+        from hhgoa_rag.pinecone_store import PineconeStore
 
-        # 2. Load sparse encoder (BM25 — loads model on first encode call)
-        from hhgoa_rag.retrieval.sparse_encoder import BM25SparseEncoder
-
-        resources.sparse_encoder = BM25SparseEncoder()
-
-        # 3. Create Qdrant client
-        resources.qdrant_client = QdrantClient(
-            url=settings.qdrant_url,
-            api_key=settings.qdrant_api_key,
-            timeout=int(settings.qdrant_connect_timeout_ms / 1000),
+        pc = Pinecone(api_key=settings.pinecone_api_key)
+        index = pc.Index(settings.pinecone_index)
+        store = PineconeStore(
+            index=index,
+            embed_model=settings.pinecone_embed_model,
+            upsert_timeout=settings.pinecone_upsert_timeout_ms / 1000,
+            search_timeout=settings.pinecone_search_timeout_ms / 1000,
         )
 
-        # 4. Warmup: embed a dummy passage (loads model weights from disk)
-        _ = resources.embedder.embed_query("warmup passage")
-        _ = resources.sparse_encoder.encode_query("warmup")
-
-        # 5. Verify Qdrant alias exists and has points
-        try:
-            collections = {c.name for c in resources.qdrant_client.get_collections().collections}
-            alias_target = settings.qdrant_collection_alias
-            # Accept alias or physical collection name
-            if alias_target not in collections:
-                # Try resolving alias
-                aliases = resources.qdrant_client.get_collection_aliases(alias_target)
-                if not aliases.aliases:
-                    resources.mark_not_ready(f"alias '{alias_target}' not found")
-                    logger.warning("Qdrant alias not found; readiness False")
-                else:
-                    resources.mark_ready()
-                    logger.info("Lifespan startup complete — ready")
-            else:
+        # Validate index config
+        errors = validate_index(
+            pc,
+            settings.pinecone_index,
+            embed_model=settings.pinecone_embed_model,
+            cloud=settings.pinecone_cloud,
+            region=settings.pinecone_region,
+        )
+        if errors:
+            resources.mark_not_ready(f"index_config_errors: {errors}")
+            logger.warning("Pinecone index config errors: %s", errors)
+        else:
+            # Probe — lightweight health check
+            try:
+                store.health()
+                resources.pinecone_store = store
                 resources.mark_ready()
-                logger.info("Lifespan startup complete — ready")
-        except Exception as e:
-            resources.mark_not_ready(f"qdrant_check_failed: {e}")
-            logger.warning("Qdrant unreachable at startup; serving will retry: %s", e)
+                logger.info("Lifespan startup complete — Pinecone ready")
+            except Exception as e:
+                resources.mark_not_ready(f"pinecone_probe_failed: {e}")
+                logger.warning("Pinecone probe failed: %s", e)
 
         resources.readiness_detail.update(
             {
-                "embedder": type(resources.embedder).__name__,
-                "sparse_encoder": resources.sparse_encoder.model_name,
-                "qdrant_url": settings.qdrant_url,
+                "pinecone_index": settings.pinecone_index,
+                "pinecone_embed_model": settings.pinecone_embed_model,
+                "pinecone_namespace": settings.pinecone_namespace,
             }
         )
 
@@ -88,18 +81,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown: close Qdrant client
-    if resources.qdrant_client is not None:
-        try:
-            resources.qdrant_client.close()
-        except Exception:
-            pass
+    resources.pinecone_store = None
     resources.ready = False
     logger.info("Lifespan shutdown complete")
 
-
-# Import QdrantClient here to avoid circular import issues
-from qdrant_client import QdrantClient  # noqa: E402
 
 from .routes import health, query, system  # noqa: E402
 

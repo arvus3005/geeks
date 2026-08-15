@@ -17,12 +17,27 @@ def test_max_query_chars_default():
     assert s.max_query_chars == 512
 
 
-def test_qdrant_url_default():
+def test_pinecone_index_default():
     s = Settings()
-    assert "localhost" in s.qdrant_url
+    assert s.pinecone_index == "msmarco-xi"
+
+
+def test_pinecone_embed_model_default():
+    s = Settings()
+    assert s.pinecone_embed_model == "multilingual-e5-large"
+
+
+def test_pinecone_namespace_default():
+    s = Settings()
+    assert s.pinecone_namespace == "smoke"
+
+
+def test_missing_pinecone_api_key_ok():
+    # Key is optional at startup; app marks not-ready instead of crashing
+    s = Settings()
+    assert s.pinecone_api_key is None
 
 
 def test_missing_sarvam_key_ok():
-    # Sarvam key is optional at startup (fails only at STT time)
     s = Settings()
     assert s.sarvam_api_key is None

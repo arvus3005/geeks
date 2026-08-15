@@ -30,8 +30,7 @@ async def readiness():
 
     details = dict(resources.readiness_detail)
     if not resources.ready:
-        details.setdefault("qdrant", "not_verified")
-        details.setdefault("embedder", "not_loaded")
+        details.setdefault("pinecone", "not_verified")
 
     return ReadyResponse(
         status="ready" if resources.ready else "initializing",

@@ -1,14 +1,13 @@
+# Base configuration — Pinecone integrated multilingual embedding
+pinecone_index: msmarco-xi
+pinecone_namespace: smoke
+pinecone_cloud: aws
+pinecone_region: us-east-1
+pinecone_embed_model: multilingual-e5-large
 corpus_mode: smoke
-qdrant_url: http://localhost:6333
-qdrant_collection_alias: msmarco_xi_passages_current
-qdrant_collection_physical: msmarco_xi_passages_v001
-embedding_model_id: intfloat/multilingual-e5-small
-embedding_dim: 384
-dense_prefetch_k: 32
-sparse_prefetch_k: 32
-fused_k: 20
 context_n: 3
+retrieval_top_k: 20
 max_query_chars: 512
 min_retrieval_score: 0.45
 index_manifest_id: smoke-v001
-model_manifest_id: multilingual-e5-small-full-precision-v001
+model_manifest_id: pinecone-multilingual-e5-large-v001

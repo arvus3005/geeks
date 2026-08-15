@@ -12,12 +12,9 @@ dependencies = [
     "uvicorn[standard]==0.32.1",
     "pydantic==2.10.3",
     "pydantic-settings==2.7.0",
-    "qdrant-client==1.13.3",
+    "pinecone==9.1.0",
     "httpx==0.28.1",
     "numpy==1.26.4",
-    "sentence-transformers==3.4.1",
-    "torch==2.5.1",
-    "transformers==4.47.1",
     "datasets==3.2.0",
     "pyarrow==18.1.0",
     "websockets==14.1",
@@ -26,7 +23,6 @@ dependencies = [
     "unicodedata2==15.1.0",
     "langdetect==1.0.9",
     "pyyaml>=6.0",
-    "fastembed==0.4.2",
 ]
 
 [tool.hatch.build.targets.wheel]

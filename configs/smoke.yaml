@@ -1,9 +1,10 @@
 # Smoke corpus config — used in tests and CI
 corpus_mode: smoke
+pinecone_index: msmarco-xi
+pinecone_namespace: smoke
+pinecone_cloud: aws
+pinecone_region: us-east-1
+pinecone_embed_model: multilingual-e5-large
 index_manifest_id: smoke-v001
-qdrant_collection_physical: msmarco_xi_passages_smoke_v001
-qdrant_url: http://localhost:6333
-embedding_model_id: fake-embedder-v0
-embedding_dim: 384
 chunk_strategy: passage_native
 dataset_repo: ai4bharat/MSMARCO-XI

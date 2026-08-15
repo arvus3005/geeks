@@ -1,8 +1,8 @@
 """Application-level resource container.
 
-Dense embedder, sparse encoder, and Qdrant client are loaded once during
-FastAPI lifespan and reused across all requests. Readiness stays False until
-all three are verified and a lightweight retrieval probe passes.
+PineconeStore is loaded once during FastAPI lifespan and reused across all
+requests. Readiness stays False until the store is verified and a lightweight
+describe_index_stats probe passes.
 """
 
 from __future__ import annotations
@@ -10,19 +10,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from qdrant_client import QdrantClient
-
-from hhgoa_rag.retrieval.embedder import BaseEmbedder
-from hhgoa_rag.retrieval.sparse_encoder import BM25SparseEncoder
+from hhgoa_rag.pinecone_store import PineconeStore
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class AppResources:
-    embedder: BaseEmbedder | None = None
-    sparse_encoder: BM25SparseEncoder | None = None
-    qdrant_client: QdrantClient | None = None
+    pinecone_store: PineconeStore | None = None
     ready: bool = False
     readiness_detail: dict = field(default_factory=dict)
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Ingest a single shard from MSMARCO-XI into Qdrant.
+"""Ingest a single shard from MSMARCO-XI into Pinecone.
 
 Pilot mode: bounded by --pilot-rows. Full mode requires --confirm-full-ingest.
+Pinecone handles server-side embedding; no local model is loaded.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -17,17 +19,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Ingest one MSMARCO-XI shard into Qdrant")
+    p = argparse.ArgumentParser(description="Ingest one MSMARCO-XI shard into Pinecone")
     p.add_argument("--config-lang", required=True, help="Language config code (e.g. bn)")
     p.add_argument("--split", required=True, choices=["train", "validation"])
     p.add_argument("--shard", type=int, default=0)
     p.add_argument("--mode", choices=["pilot", "full"], required=True)
-    p.add_argument("--collection", required=True, help="Physical collection name")
-    p.add_argument("--qdrant-url", default="http://localhost:6333")
+    p.add_argument("--pinecone-api-key", default=None)
+    p.add_argument("--pinecone-index", required=True, help="Pinecone index name")
+    p.add_argument("--pinecone-namespace", required=True, help="Target namespace")
     p.add_argument("--chunk-strategy", default="passage_native")
     p.add_argument("--dataset-revision", default=None)
     p.add_argument("--pilot-rows", type=int, default=1000, help="Max rows in pilot mode")
-    p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--batch-size", type=int, default=96)
     p.add_argument("--checkpoint-dir", type=Path, default=Path("artifacts/checkpoints"))
     p.add_argument("--dedup-db-dir", type=Path, default=Path("artifacts/dedup"))
     p.add_argument("--run-id", default=None, help="Use existing run ID to resume")
@@ -43,19 +46,30 @@ def main() -> None:
         )
         sys.exit(1)
 
-    from qdrant_client import QdrantClient
+    api_key = args.pinecone_api_key or os.environ.get("PINECONE_API_KEY")
+    if not api_key:
+        print("ERROR: PINECONE_API_KEY must be set", file=sys.stderr)
+        sys.exit(1)
+
+    from pinecone import Pinecone
 
     from hhgoa_rag.ingestion.dedup import ContentDeduplicator
     from hhgoa_rag.ingestion.engine import IngestionConfig, ingest_shard
-    from hhgoa_rag.qdrant_lifecycle import create_collection
-    from hhgoa_rag.retrieval.embedder import FakeEmbedder
-    from hhgoa_rag.retrieval.sparse_encoder import BM25SparseEncoder
+    from hhgoa_rag.pinecone_store import FULL_NAMESPACE, PineconeStore
 
     run_id = args.run_id or str(uuid.uuid4())[:8]
 
+    if args.mode == "full" and args.pinecone_namespace != FULL_NAMESPACE:
+        print(
+            f"ERROR: Full mode must use namespace '{FULL_NAMESPACE}', got '{args.pinecone_namespace}'",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     cfg = IngestionConfig(
         mode=args.mode,
-        physical_collection=args.collection,
+        pinecone_index=args.pinecone_index,
+        pinecone_namespace=args.pinecone_namespace,
         chunk_strategy=args.chunk_strategy,
         dataset_revision=args.dataset_revision,
         batch_size=args.batch_size,
@@ -66,13 +80,8 @@ def main() -> None:
     cfg.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     cfg.dedup_db_dir.mkdir(parents=True, exist_ok=True)
 
-    client = QdrantClient(url=args.qdrant_url, timeout=60)
-    existing = {c.name for c in client.get_collections().collections}
-    if args.collection not in existing:
-        create_collection(client, args.collection, force=False)
-
-    dense_embedder = FakeEmbedder()  # swap for E5MultilingualEmbedder in production
-    sparse_encoder = BM25SparseEncoder()
+    pc = Pinecone(api_key=api_key)
+    store = PineconeStore(pc.Index(args.pinecone_index), embed_model=cfg.embed_model)
 
     dedup_en = ContentDeduplicator(cfg.dedup_db_dir / f"{run_id}_en_global.db")
     dedup_lang = ContentDeduplicator(cfg.dedup_db_dir / f"{run_id}_{args.config_lang}.db")
@@ -83,9 +92,7 @@ def main() -> None:
             split=args.split,
             shard_idx=args.shard,
             cfg=cfg,
-            dense_embedder=dense_embedder,
-            sparse_encoder=sparse_encoder,
-            client=client,
+            store=store,
             dedup_en=dedup_en,
             dedup_lang=dedup_lang,
             run_id=run_id,
@@ -97,19 +104,15 @@ def main() -> None:
             "split": args.split,
             "shard": args.shard,
             "source_rows": stats.source_rows,
-            "qdrant_points": stats.qdrant_points_uploaded,
+            "indexed_points": stats.indexed_points,
             "chunks_emitted": stats.chunks_emitted,
             "elapsed_s": round(stats.elapsed_seconds, 1),
-            "note": "EXPERIMENT SUBSET — NOT FULL CORPUS"
-            if args.mode == "pilot"
-            else "FULL CORPUS",
+            "note": "EXPERIMENT SUBSET — NOT FULL CORPUS" if args.mode == "pilot" else "FULL CORPUS",
         }
         if args.output_json:
             print(json.dumps(result, indent=2))
         else:
-            print(
-                f"Shard {args.config_lang}/{args.split}/{args.shard}: {stats.qdrant_points_uploaded} points uploaded"
-            )
+            print(f"Shard {args.config_lang}/{args.split}/{args.shard}: {stats.indexed_points} points")
         sys.exit(0)
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
