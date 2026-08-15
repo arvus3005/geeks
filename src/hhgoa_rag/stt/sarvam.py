@@ -1,6 +1,8 @@
-from .base import BaseSTTAdapter, TranscriptResult
-import httpx
 import time
+
+import httpx
+
+from .base import BaseSTTAdapter, TranscriptResult
 
 
 class SarvamSTTAdapter(BaseSTTAdapter):

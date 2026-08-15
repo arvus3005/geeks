@@ -1,4 +1,3 @@
-import pytest
 from hhgoa_rag.schemas.query import QueryRequest, QueryResponse, TimingsMs
 
 

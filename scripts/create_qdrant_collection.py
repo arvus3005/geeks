@@ -1,43 +1,54 @@
-"""Create the Qdrant collection with dense + sparse vectors."""
-from qdrant_client.models import (
-    VectorParams,
-    Distance,
-    SparseVectorParams,
-    SparseIndexParams,
-    HnswConfigDiff,
-)
+#!/usr/bin/env python3
+"""Create a versioned Qdrant collection. Never destructive on production names."""
 
-COLLECTION_PHYSICAL = "msmarco_xi_passages_v001"
-COLLECTION_ALIAS = "msmarco_xi_passages_current"
-DENSE_DIM = 384
+import argparse
+import json
+import sys
 
 
-def build_collection_config() -> dict:
-    return {
-        "vectors_config": {"dense": VectorParams(size=DENSE_DIM, distance=Distance.COSINE)},
-        "sparse_vectors_config": {
-            "sparse": SparseVectorParams(index=SparseIndexParams(on_disk=False))
-        },
-        "hnsw_config": HnswConfigDiff(m=16, ef_construct=200),
-    }
+def main():
+    parser = argparse.ArgumentParser(description="Create Qdrant collection")
+    parser.add_argument("--config", default="configs/smoke.yaml", help="YAML config file")
+    parser.add_argument("--collection", default=None, help="Override collection name")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Delete and recreate (smoke/pilot only)",
+    )
+    parser.add_argument("--qdrant-url", default="http://localhost:6333")
+    parser.add_argument("--output-json", action="store_true")
+    args = parser.parse_args()
 
+    import yaml
 
-def create_collection(url: str = "http://localhost:6333", api_key: str | None = None):
+    cfg = {}
+    if args.config:
+        with open(args.config) as f:
+            cfg = yaml.safe_load(f) or {}
+
+    collection = args.collection or cfg.get(
+        "qdrant_collection_physical", "msmarco_xi_passages_smoke_v001"
+    )
+    qdrant_url = args.qdrant_url or cfg.get("qdrant_url", "http://localhost:6333")
+
     from qdrant_client import QdrantClient
 
-    client = QdrantClient(url=url, api_key=api_key)
-    config = build_collection_config()
-    client.recreate_collection(
-        collection_name=COLLECTION_PHYSICAL,
-        vectors_config=config["vectors_config"],
-        sparse_vectors_config=config["sparse_vectors_config"],
-        hnsw_config=config["hnsw_config"],
-    )
-    print(f"Created collection: {COLLECTION_PHYSICAL}")
+    from hhgoa_rag.qdrant_lifecycle import create_collection, validate_collection
+
+    client = QdrantClient(url=qdrant_url)
+    try:
+        create_collection(client, collection, force=args.force)
+        result = validate_collection(client, collection)
+        if args.output_json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"Created and validated collection: {collection}")
+            print(f"Status: {result['status']}, Points: {result['points']}")
+        sys.exit(0)
+    except Exception as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    import sys
-
-    url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:6333"
-    create_collection(url)
+    main()

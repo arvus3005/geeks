@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "hhgoa-rag"
 version = "0.1.0"
 description = "Voice-enabled multilingual RAG system — HH Goa 2026 Task 2"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi==0.115.6",
     "uvicorn[standard]==0.32.1",
@@ -25,15 +25,7 @@ dependencies = [
     "prometheus-client==0.21.1",
     "unicodedata2==15.1.0",
     "langdetect==1.0.9",
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest==8.3.4",
-    "ruff==0.8.6",
-    "mypy==1.13.0",
-    "pytest-asyncio==0.24.0",
-    "pytest-httpx==0.35.0",
+    "pyyaml>=6.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -46,6 +38,8 @@ dev-dependencies = [
     "mypy==1.13.0",
     "pytest-asyncio==0.24.0",
     "pytest-httpx==0.35.0",
+    "fastembed==0.4.2",
+    "pytest-cov==6.0.0",
 ]
 
 [tool.ruff]

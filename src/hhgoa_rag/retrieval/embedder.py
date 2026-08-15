@@ -1,4 +1,6 @@
+import hashlib
 from abc import ABC, abstractmethod
+
 import numpy as np
 
 
@@ -19,12 +21,16 @@ class BaseEmbedder(ABC):
 
 
 class FakeEmbedder(BaseEmbedder):
-    """Deterministic fake embedder for tests — no model download."""
+    """Deterministic fake embedder — stable across processes (no built-in hash())."""
 
     _DIM = 384
 
+    @staticmethod
+    def _seed(text: str) -> int:
+        return int(hashlib.sha256(text.encode()).hexdigest()[:8], 16)
+
     def embed_query(self, text: str) -> np.ndarray:
-        rng = np.random.default_rng(hash(text) % (2**32))
+        rng = np.random.default_rng(self._seed(text))
         v = rng.standard_normal(self._DIM).astype(np.float32)
         return v / np.linalg.norm(v)
 
