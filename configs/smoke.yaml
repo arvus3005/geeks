@@ -1,0 +1,4 @@
+# Smoke corpus config — used in tests and CI
+corpus_mode: smoke
+index_manifest_id: smoke-v001
+qdrant_collection_physical: msmarco_xi_passages_smoke_v001

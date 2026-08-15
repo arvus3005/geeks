@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hhgoa-rag"
+version = "0.1.0"
+description = "Voice-enabled multilingual RAG system — HH Goa 2026 Task 2"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.32.1",
+    "pydantic==2.10.3",
+    "pydantic-settings==2.7.0",
+    "qdrant-client==1.13.3",
+    "httpx==0.28.1",
+    "numpy==1.26.4",
+    "sentence-transformers==3.4.1",
+    "torch==2.5.1",
+    "transformers==4.47.1",
+    "datasets==3.2.0",
+    "pyarrow==18.1.0",
+    "websockets==14.1",
+    "structlog==24.4.0",
+    "prometheus-client==0.21.1",
+    "unicodedata2==15.1.0",
+    "langdetect==1.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "ruff==0.8.6",
+    "mypy==1.13.0",
+    "pytest-asyncio==0.24.0",
+    "pytest-httpx==0.35.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hhgoa_rag"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest==8.3.4",
+    "ruff==0.8.6",
+    "mypy==1.13.0",
+    "pytest-asyncio==0.24.0",
+    "pytest-httpx==0.35.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

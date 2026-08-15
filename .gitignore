@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv
+.uv/
+uv.lock
+
+# Environment files (NEVER commit secrets)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Large artifacts (store externally)
+artifacts/benchmarks/*.json
+artifacts/benchmarks/*.csv
+artifacts/manifests/*.json
+artifacts/reports/*.html
+
+# Qdrant local storage
+qdrant_data/
+
+# Model cache
+model_cache/
+.cache/
+
+# Pickle / binary checkpoints
+*.pkl
+*.pt
+*.bin
+
+# Audio uploads
+uploads/
+*.wav
+*.mp3
+*.ogg
+
+# Logs
+*.log
+logs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Reference code & documentation
+reference/
+
+# Claude memory file
+CLAUDE.md

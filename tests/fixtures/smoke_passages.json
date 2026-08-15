@@ -1,0 +1,12 @@
+[
+  {"id": "smoke001", "text": "The Taj Mahal is a white marble mausoleum located in Agra, India.", "language": "en", "chunk_ordinal": 0, "chunk_strategy": "passage_native"},
+  {"id": "smoke002", "text": "Delhi is the capital of India and one of the most populous cities in the world.", "language": "en", "chunk_ordinal": 0, "chunk_strategy": "passage_native"},
+  {"id": "smoke003", "text": "ভারতের রাজধানী নয়াদিল্লি। এটি একটি বিশাল শহর।", "language": "bn", "chunk_ordinal": 0, "chunk_strategy": "passage_native"},
+  {"id": "smoke004", "text": "भारत की राजधानी नई दिल्ली है। यह एक बड़ा शहर है।", "language": "hi", "chunk_ordinal": 0, "chunk_strategy": "passage_native"},
+  {"id": "smoke005", "text": "The Ganges is the longest river in India, flowing through northern India.", "language": "en", "chunk_ordinal": 0, "chunk_strategy": "passage_native"},
+  {"id": "smoke006", "text": "Mount Everest is the highest mountain in the world at 8,849 meters.", "language": "en", "chunk_ordinal": 0, "chunk_strategy": "passage_native"},
+  {"id": "smoke007", "text": "গঙ্গা ভারতের দীর্ঘতম নদী। এটি উত্তর ভারতের মধ্য দিয়ে প্রবাহিত।", "language": "bn", "chunk_ordinal": 0, "chunk_strategy": "passage_native"},
+  {"id": "smoke008", "text": "हिमालय पर्वत श्रृंखला दक्षिण एशिया में स्थित है।", "language": "hi", "chunk_ordinal": 0, "chunk_strategy": "passage_native"},
+  {"id": "smoke009", "text": "The Indian Ocean is the third-largest ocean in the world.", "language": "en", "chunk_ordinal": 0, "chunk_strategy": "passage_native"},
+  {"id": "smoke010", "text": "Cricket is the most popular sport in India with millions of fans.", "language": "en", "chunk_ordinal": 0, "chunk_strategy": "passage_native"}
+]
