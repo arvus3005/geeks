@@ -47,5 +47,7 @@ def check_input(text: str, max_chars: int = 512) -> GuardResult:
     if GREETING_PATTERNS.match(stripped):
         return GuardResult(False, "greeting", "Greeting — no retrieval needed.")
     if CURRENT_STATE_PATTERNS.search(text):
-        return GuardResult(False, "current_state", "Cannot answer live/current-state questions from static corpus.")
+        return GuardResult(
+            False, "current_state", "Cannot answer live/current-state questions from static corpus."
+        )
     return GuardResult(True, "allowed", "")

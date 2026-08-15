@@ -1,11 +1,12 @@
 from fastapi import APIRouter
-from hhgoa_rag.schemas.query import QueryRequest, QueryResponse, TimingsMs, Citation
-from hhgoa_rag.observability.timing import RequestTimer
-from hhgoa_rag.guardrails.input_guards import check_input
-from hhgoa_rag.guardrails.output_guards import verify_grounding
-from hhgoa_rag.retrieval.language_routing import get_language_filter
+
 from hhgoa_rag.answer.extractive import extract_answer
 from hhgoa_rag.config.settings import get_settings
+from hhgoa_rag.guardrails.input_guards import check_input
+from hhgoa_rag.guardrails.output_guards import verify_grounding
+from hhgoa_rag.observability.timing import RequestTimer
+from hhgoa_rag.retrieval.language_routing import get_language_filter
+from hhgoa_rag.schemas.query import Citation, QueryRequest, QueryResponse, TimingsMs
 
 router = APIRouter()
 
@@ -84,6 +85,7 @@ async def query_endpoint(req: QueryRequest):
     retrieval_mode = "none"
     try:
         from qdrant_client import QdrantClient
+
         from hhgoa_rag.retrieval.hybrid import HybridRetriever
 
         client = QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key, timeout=10)

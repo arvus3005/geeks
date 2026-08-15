@@ -2,3 +2,8 @@
 corpus_mode: smoke
 index_manifest_id: smoke-v001
 qdrant_collection_physical: msmarco_xi_passages_smoke_v001
+qdrant_url: http://localhost:6333
+embedding_model_id: fake-embedder-v0
+embedding_dim: 384
+chunk_strategy: passage_native
+dataset_repo: ai4bharat/MSMARCO-XI

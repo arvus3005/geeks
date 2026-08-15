@@ -1,4 +1,5 @@
 """Local Whisper fallback — DISABLED BY DEFAULT. Dev use only. Not part of submitted path."""
+
 from .base import BaseSTTAdapter, TranscriptResult
 
 

@@ -1,4 +1,4 @@
-from hhgoa_rag.ingestion.chunkers import PassageNativeChunker, FixedTokenChunker
+from hhgoa_rag.ingestion.chunkers import FixedTokenChunker, PassageNativeChunker
 
 
 def test_passage_native_one_chunk():
