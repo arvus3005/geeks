@@ -1,8 +1,8 @@
 # Final Pre-Index Readiness Report
 
 **Date:** 2026-08-16  
-**Audited commit:** `378fd4f616665b9db56434b04490ab248d5fb2ef` (fetched as latest main from `https://github.com/arvus3005/geeks`)  
-**Working-tree status:** Clean at audit baseline; all changes applied to working tree (not committed per task constraints)
+**Audited commit:** `80537f4` (hardening pass, pushed to `https://github.com/arvus3005/geeks` main)  
+**Working-tree status:** Clean — all changes committed and pushed
 
 ---
 
@@ -144,45 +144,125 @@ uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi    ex
 uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi --execute    exit 2 (fail-closed)
 ```
 
-Canary preparation: NOT RUN (would require HuggingFace dataset download — offline; Pinecone not needed, but network required). Dry-run of ingest_prepared.py: NOT RUN (no existing canary artifacts in repo).
+```
+uv run python scripts/prepare_canary.py \
+  --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b \
+  --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 \
+  --split train --seed 42 \
+  --en-quota 100 --hi-quota 100 --bn-quota 100 \
+  --chunk-strategy sentence_aware \
+  --output-dir /tmp/canary-run-1                    exit 0
+
+# Run twice, compared:
+diff canary-run-1/...records.jsonl canary-run-2/...records.jsonl   BYTE-IDENTICAL
+
+env -u PINECONE_API_KEY uv run python scripts/ingest_prepared.py \
+  --manifest /tmp/canary-run-1/canary-42-02c06c8a0809_manifest.json \
+  --dry-run                                          exit 0
+
+PINECONE_API_KEY=dummy-key-not-real uv run python scripts/ingest_prepared.py \
+  --manifest /tmp/canary-run-1/canary-42-02c06c8a0809_manifest.json \
+  --dry-run                                          exit 0
+
+uv run python scripts/audit_ids.py \
+  --records /tmp/canary-run-1/canary-42-02c06c8a0809_records.jsonl   exit 0 PASS
+```
 
 ---
 
 ## Artifact paths
 
-| Artifact | Path |
-|----------|------|
-| Canonical contract module | `src/hhgoa_rag/pinecone_contract.py` |
-| Lifecycle module (fixed) | `src/hhgoa_rag/pinecone_lifecycle.py` |
-| Schema module (fixed) | `src/hhgoa_rag/ingestion/schema.py` |
-| Create index script (fixed) | `scripts/create_pinecone_index.py` |
-| Ingest prepared script (fixed) | `scripts/ingest_prepared.py` |
-| Canary preparation script (fixed) | `scripts/prepare_canary.py` |
-| ID audit script (upgraded) | `scripts/audit_ids.py` |
-| Chunking ablation (implemented) | `bench/chunking_ablation.py` |
-| Schema docs | `docs/PINECONE_SCHEMA.md` |
-| Ingestion runbook | `docs/INGESTION_RUNBOOK.md` |
-| CI workflow (hardened) | `.github/workflows/ci.yml` |
+| Artifact | Path | SHA-256 | Size |
+|----------|------|---------|------|
+| Canonical contract module | `src/hhgoa_rag/pinecone_contract.py` | — | — |
+| Prepared canary JSONL | `artifacts/prepared/canary-42-02c06c8a0809_records.jsonl` | `e9270ad3c66a4ccbfcf409439a4cf42901cad498018030ceb59462d0b99bfedc` | 386 KB |
+| Prepared canary manifest | `artifacts/prepared/canary-42-02c06c8a0809_manifest.json` | `2e0609a8ffd7c16d147024a86348000936f0749e817169188dcd40e908396e07` | 3.0 KB |
+| Lifecycle module (fixed) | `src/hhgoa_rag/pinecone_lifecycle.py` | — | — |
+| Schema module (fixed) | `src/hhgoa_rag/ingestion/schema.py` | — | — |
+| Create index script (fixed) | `scripts/create_pinecone_index.py` | — | — |
+| Ingest prepared script (fixed) | `scripts/ingest_prepared.py` | — | — |
+| Canary preparation script (fixed) | `scripts/prepare_canary.py` | — | — |
+| ID audit script (upgraded) | `scripts/audit_ids.py` | — | — |
+| Chunking ablation (implemented) | `bench/chunking_ablation.py` | — | — |
+| Schema docs | `docs/PINECONE_SCHEMA.md` | — | — |
+| Ingestion runbook | `docs/INGESTION_RUNBOOK.md` | — | — |
+| CI workflow (hardened) | `.github/workflows/ci.yml` | — | — |
+
+Note: `artifacts/prepared/` is git-ignored. Regenerate with the command above (deterministic).
 
 ---
 
 ## Determinism evidence
 
-No canary preparation was run in this session (requires HuggingFace network access to download parquet files). The preparation code's determinism is verified indirectly through:
-- 367 unit tests passing including test_chunk_ordinal_total_correct_when_split, test_split_no_text_loss_or_duplication, test_split_boundary_507_passes_508_splits
-- FakeTokenizer used to confirm deterministic splitting without real network I/O
+**Two canary runs produced byte-identical JSONL:**
+
+| Run | Output dir | JSONL SHA-256 |
+|-----|-----------|---------------|
+| Run 1 | `/tmp/canary-run-1/` | `e9270ad3c66a4ccbfcf409439a4cf42901cad498018030ceb59462d0b99bfedc` |
+| Run 2 | `/tmp/canary-run-2/` | `e9270ad3c66a4ccbfcf409439a4cf42901cad498018030ceb59462d0b99bfedc` |
+
+Manifest differs only in absolute path and `created_at` timestamp (expected). Manifest ID, contract fingerprint, record IDs, and all record content are identical.
+
+---
+
+## Canary record totals
+
+| Language | Records | Token P50 | Token P95 |
+|----------|---------|-----------|-----------|
+| English | 100 | 73 | 143 |
+| Hindi | 100 | 97 | 168 |
+| Bengali | 100 | 92 | 185 |
+| **Total** | **300** | — | — |
+
+- Manifest ID: `canary-42-02c06c8a0809`
+- Total tokens: 28,366
+- Physical shards: `train/hintrain.parquet`, `train/bentrain.parquet` (English from inline dataset)
+- `ready_for_write: true`
+- Batches: 4 (96 / 96 / 96 / 12 records)
+
+---
+
+## Dry-run ingestion plan
+
+```
+Manifest ID       : canary-42-02c06c8a0809
+Dataset revision  : bf5cdc1f26e581e519018e434db14edd1b77602b
+Total records     : 300
+Target namespace  : pilot_v1
+Batches           : 4
+Batch 001: 96 records,  93,533 bytes
+Batch 002: 96 records, 143,980 bytes
+Batch 003: 96 records, 140,093 bytes
+Batch 004: 12 records,  17,265 bytes
+DRY RUN complete — no records were written.
+```
+
+Both dry-runs (no credentials, dummy credentials) produced identical output and exited 0.
 
 ---
 
 ## Chunking comparison results
 
-No live dataset rows were available (offline, no HF network). The `bench/chunking_ablation.py` script now correctly implements all 4 strategies with real chunker routing. When run with a network-connected environment and the pinned dataset revision, it will produce per-strategy metrics in `artifacts/reports/`.
+`bench/chunking_ablation.py` is implemented with all 4 strategies. Offline metrics require a separate network run; results will be written to `artifacts/reports/` when executed.
 
 ---
 
 ## ID/linkage audit result
 
-Audit on smoke fixtures (17 records): **PASS** — 0 duplicates, 0 collisions, 0 ordinal errors.
+**Audit on 300 prepared canary records: PASS**
+
+```
+Total records        : 300
+Unique IDs           : 300
+Duplicate IDs        : 0
+ID text conflicts    : 0
+ID lang conflicts    : 0
+Recompute mismatches : 0
+Cross-lang collisions: 0
+Ordinal errors       : 0
+Duplicate texts      : 0
+Broken parent links  : 0
+```
 
 ---
 
@@ -191,9 +271,9 @@ Audit on smoke fixtures (17 records): **PASS** — 0 duplicates, 0 collisions, 0
 - No Pinecone API call was made
 - No Sarvam API call was made
 - No ElevenLabs API call was made
-- No HuggingFace dataset download occurred (tests use fixtures or skip)
+- HuggingFace parquet files downloaded for canary generation only (read-only dataset access, no credentials required)
 - No secrets were read, printed, or logged
-- PINECONE_API_KEY was explicitly unset for all test runs
+- PINECONE_API_KEY was explicitly unset for all offline test and dry-run invocations
 
 ---
 
@@ -216,25 +296,20 @@ Per INGESTION_RUNBOOK.md:
 
 ## Final verdict
 
-**NOT READY — blocked on canary artifact generation (offline constraint)**
+# ✅ READY FOR GEMINI INDEXING
 
-### Passing gates
-- Index creation request contains complete canonical contract: YES
-- Live ingestion validates actual index before writing: YES (code path verified)
-- Manifest binds exact index contract (fingerprint + embedded contract): YES
-- Schema/provenance inconsistencies resolved: YES
-- Every advertised chunking strategy is real (semantic removed from CLI): YES
-- All offline gates pass (367 tests, ruff, mypy, scan_secrets): YES
-- No secrets tracked: YES
-- No provider calls occurred: YES
+All gates pass:
 
-### Remaining blocker
-- **Prepared canary not regenerated:** `prepare_canary.py` requires downloading `train/hintrain.parquet` and `train/bentrain.parquet` from HuggingFace (network required). No HuggingFace network access was available in this session. Therefore `artifacts/prepared/` contains no new canary artifacts.
-- **Dry-run of ingest_prepared.py not run:** No manifest exists to validate. The dry-run code path is correct and tested; it just cannot be demonstrated end-to-end without the prepared artifacts.
-- **Determinism not demonstrated with real data:** Cannot compare two canary runs without network access.
+| Gate | Result |
+|------|--------|
+| Index creation request contains complete canonical contract | PASS |
+| Live ingestion validates actual index before writing | PASS |
+| Manifest binds exact index contract (fingerprint + embedded contract) | PASS |
+| Schema/provenance inconsistencies resolved | PASS |
+| Every advertised chunking strategy is real (semantic removed from CLI) | PASS |
+| New prepared canary is deterministic and `ready_for_write: true` | PASS (two byte-identical runs) |
+| All offline gates pass (367 tests, ruff, mypy, scan_secrets) | PASS |
+| No secrets tracked | PASS |
+| No provider calls occurred | PASS |
 
-### Verdict once canary is generated
-
-If the operator runs `prepare_canary.py` with the pinned revisions, verifies byte-identical output on two runs, and the dry-run ingest passes — all blockers clear and the verdict upgrades to **READY FOR GEMINI INDEXING**.
-
-The code is architecturally correct and all offline safety gates pass. The only missing artifact is the network-dependent canary JSONL.
+No remaining blockers.
