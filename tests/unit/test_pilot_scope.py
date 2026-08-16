@@ -22,7 +22,6 @@ import sys
 import uuid
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -32,8 +31,6 @@ import pytest
 
 
 def sys_path_prepend() -> None:
-    import os
-
     scripts_dir = str(Path(__file__).parent.parent.parent / "scripts")
     if scripts_dir not in sys.path:
         sys.path.insert(0, scripts_dir)
@@ -47,6 +44,11 @@ def _make_manifest(
 ) -> Path:
     """Write a minimal valid manifest for the given counts."""
     sys_path_prepend()
+    from index_canary import (
+        CANONICAL_INDEX_NAME,
+        CANONICAL_MAX_INPUT_TOKENS,
+    )  # type: ignore[import]
+
     from hhgoa_rag.pinecone_contract import (
         DATASET_REPO,
         DATASET_REVISION,
@@ -57,7 +59,6 @@ def _make_manifest(
         canonical_contract,
         contract_fingerprint,
     )
-    from index_canary import CANONICAL_INDEX_NAME, CANONICAL_MAX_BATCH_SIZE, CANONICAL_MAX_INPUT_TOKENS  # type: ignore[import]
 
     m: dict[str, Any] = {
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
@@ -121,7 +122,11 @@ def _run_cli(
 
 def test_scope_constants_exist() -> None:
     sys_path_prepend()
-    from index_canary import SCOPE_CANARY_300, SCOPE_PILOT_10000, VALID_SCOPES  # type: ignore[import]
+    from index_canary import (  # type: ignore[import]
+        SCOPE_CANARY_300,
+        SCOPE_PILOT_10000,
+        VALID_SCOPES,
+    )
 
     assert SCOPE_CANARY_300 == "canary-300"
     assert SCOPE_PILOT_10000 == "pilot-10000"
@@ -131,7 +136,11 @@ def test_scope_constants_exist() -> None:
 
 def test_scope_expected_totals() -> None:
     sys_path_prepend()
-    from index_canary import SCOPE_CANARY_300, SCOPE_PILOT_10000, _SCOPE_EXPECTED  # type: ignore[import]
+    from index_canary import (  # type: ignore[import]
+        _SCOPE_EXPECTED,
+        SCOPE_CANARY_300,
+        SCOPE_PILOT_10000,
+    )
 
     assert _SCOPE_EXPECTED[SCOPE_CANARY_300]["total"] == 300
     assert _SCOPE_EXPECTED[SCOPE_PILOT_10000]["total"] == 10_000
@@ -139,7 +148,7 @@ def test_scope_expected_totals() -> None:
 
 def test_scope_expected_per_lang_canary() -> None:
     sys_path_prepend()
-    from index_canary import SCOPE_CANARY_300, _SCOPE_EXPECTED  # type: ignore[import]
+    from index_canary import _SCOPE_EXPECTED, SCOPE_CANARY_300  # type: ignore[import]
 
     pl = _SCOPE_EXPECTED[SCOPE_CANARY_300]["per_lang"]
     assert pl == {"en": 100, "hi": 100, "bn": 100}
@@ -147,7 +156,7 @@ def test_scope_expected_per_lang_canary() -> None:
 
 def test_scope_expected_per_lang_pilot() -> None:
     sys_path_prepend()
-    from index_canary import SCOPE_PILOT_10000, _SCOPE_EXPECTED  # type: ignore[import]
+    from index_canary import _SCOPE_EXPECTED, SCOPE_PILOT_10000  # type: ignore[import]
 
     pl = _SCOPE_EXPECTED[SCOPE_PILOT_10000]["per_lang"]
     assert pl == {"en": 3334, "hi": 3333, "bn": 3333}
@@ -433,7 +442,7 @@ def test_reconciliation_exact_match_passes() -> None:
 
 def test_canary_expected_total_constant_unchanged() -> None:
     sys_path_prepend()
-    from index_canary import CANARY_EXPECTED_TOTAL, CANARY_EXPECTED_PER_LANG  # type: ignore[import]
+    from index_canary import CANARY_EXPECTED_PER_LANG, CANARY_EXPECTED_TOTAL  # type: ignore[import]
 
     assert CANARY_EXPECTED_TOTAL == 300
     assert CANARY_EXPECTED_PER_LANG == 100

@@ -1378,9 +1378,7 @@ def _run(
                 actual_namespace_ids = store.list_vector_ids(namespace=CANONICAL_NAMESPACE)
             except Exception as exc:
                 logger.error("Pre-write resume ownership ID enumeration failed: %s", exc)
-                report_data["preflight_status"] = (
-                    f"FAILED: Resume ownership unverifiable ({exc})"
-                )
+                report_data["preflight_status"] = f"FAILED: Resume ownership unverifiable ({exc})"
                 raise CanaryError(
                     f"Pre-write resume ownership verification failed due to provider error: {exc}",
                     category="ResumeOwnershipUnverifiable",
