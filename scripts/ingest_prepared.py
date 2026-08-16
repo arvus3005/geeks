@@ -43,6 +43,25 @@ import sys
 import time
 from pathlib import Path
 
+# Import canonical contract — no hand-written contract dicts here.
+from hhgoa_rag.pinecone_contract import (
+    CLOUD,
+    DIMENSION,
+    FIELD_MAP,
+    METRIC,
+    MODEL,
+    READ_PARAMETERS,
+    REGION,
+    WRITE_PARAMETERS,
+    canonical_contract,
+)
+from hhgoa_rag.pinecone_contract import (
+    NAMESPACE as SAFE_NAMESPACE,
+)
+from hhgoa_rag.pinecone_contract import (
+    contract_fingerprint as _canonical_fingerprint,
+)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -79,16 +98,16 @@ REQUIRED_MANIFEST_FIELDS = {
 
 FORBIDDEN_FIELDS = {"query", "Answer", "Eng_Query", "Eng_Answer", "query_type", "is_selected"}
 
-# Immutable Pinecone integrated-embedding index contract.
 INDEX_CONTRACT = {
-    "model": "multilingual-e5-large",
-    "dimension": 1024,
-    "metric": "cosine",
-    "field_map": {"text": "chunk_text"},
-    "write_parameters": {"input_type": "passage", "truncate": "NONE"},
-    "read_parameters": {"input_type": "query", "truncate": "NONE"},
+    "model": MODEL,
+    "dimension": DIMENSION,
+    "metric": METRIC,
+    "field_map": FIELD_MAP,
+    "write_parameters": WRITE_PARAMETERS,
+    "read_parameters": READ_PARAMETERS,
+    "cloud": CLOUD,
+    "region": REGION,
 }
-SAFE_NAMESPACE = "pilot_v1"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -172,6 +191,49 @@ def _load_manifest(manifest_path: Path) -> dict:
             f"Manifest forbidden field audit failed: {manifest['forbidden_field_audit']}. "
             "Refusing to ingest."
         )
+
+    # Contract fingerprint validation: if present, must match canonical
+    manifest_contract_fp = manifest.get("contract_fingerprint")
+    if manifest_contract_fp is not None:
+        expected_fp = _canonical_fingerprint()
+        if manifest_contract_fp != expected_fp:
+            raise ValueError(
+                f"Manifest contract_fingerprint {manifest_contract_fp!r} does not match "
+                f"canonical fingerprint {expected_fp!r}. Manifest may bind a different "
+                "index contract. Refusing to ingest."
+            )
+
+    # Contract version validation: if present, must be known
+    manifest_contract_version = manifest.get("contract_version")
+    if manifest_contract_version is not None and manifest_contract_version not in ("1",):
+        raise ValueError(
+            f"Unknown contract_version {manifest_contract_version!r} in manifest. "
+            "Refusing to ingest."
+        )
+
+    # Namespace validation: if declared, must match canonical
+    manifest_namespace = manifest.get("index_namespace")
+    if manifest_namespace is not None and manifest_namespace != SAFE_NAMESPACE:
+        raise ValueError(
+            f"Manifest declares namespace {manifest_namespace!r} but canonical "
+            f"namespace is {SAFE_NAMESPACE!r}. Refusing to ingest."
+        )
+
+    # Embedded index contract validation: if present, must match canonical
+    manifest_contract = manifest.get("index_contract")
+    if manifest_contract is not None:
+        expected_contract = canonical_contract()
+        mismatches = []
+        for key, expected_val in expected_contract.items():
+            actual_val = manifest_contract.get(key)
+            if actual_val != expected_val:
+                mismatches.append(f"  {key}: expected {expected_val!r}, got {actual_val!r}")
+        if mismatches:
+            raise ValueError(
+                "Manifest index_contract differs from canonical:\n"
+                + "\n".join(mismatches)
+                + "\nRefusing to ingest."
+            )
 
     return manifest
 

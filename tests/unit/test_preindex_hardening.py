@@ -273,3 +273,330 @@ def test_index_contract_constant_matches_decisions():
         "truncate": "NONE",
     }
     assert ing.SAFE_NAMESPACE == "pilot_v1"
+
+
+# ── canonical contract module ─────────────────────────────────────────────────
+
+
+def test_contract_fingerprint_is_stable():
+    """Same canonical contract must produce identical fingerprint on repeated calls."""
+    from hhgoa_rag.pinecone_contract import contract_fingerprint
+
+    fp1 = contract_fingerprint()
+    fp2 = contract_fingerprint()
+    assert fp1 == fp2
+    assert len(fp1) == 64  # SHA-256 hex digest
+
+
+def test_contract_contains_all_required_fields():
+    from hhgoa_rag.pinecone_contract import canonical_contract
+
+    c = canonical_contract()
+    for field in [
+        "model",
+        "dimension",
+        "metric",
+        "field_map",
+        "write_parameters",
+        "read_parameters",
+        "cloud",
+        "region",
+        "index_name",
+        "namespace",
+        "max_input_tokens",
+        "max_batch_size",
+        "dataset_repo",
+        "dataset_revision",
+        "tokenizer_repo",
+        "tokenizer_revision",
+        "contract_version",
+    ]:
+        assert field in c, f"canonical_contract missing field: {field}"
+
+
+def test_contract_write_read_parameters():
+    from hhgoa_rag.pinecone_contract import READ_PARAMETERS, WRITE_PARAMETERS
+
+    assert WRITE_PARAMETERS == {"input_type": "passage", "truncate": "NONE"}
+    assert READ_PARAMETERS == {"input_type": "query", "truncate": "NONE"}
+
+
+# ── schema: unknown top-level fields rejected ─────────────────────────────────
+
+
+def test_schema_rejects_unknown_fields():
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, build_record
+
+    rec = build_record(
+        record_id="id-1",
+        chunk_text="hello world",
+        language="en",
+        config_language="en",
+        dataset_revision="bf5cdc1f26e581e519018e434db14edd1b77602b",
+        split="train",
+        physical_shard="train/hintrain.parquet",
+        local_source_row=0,
+        passage_position=0,
+        parent_passage_id="p",
+        content_hash="c",
+        chunk_strategy="passage_native",
+        chunk_strategy_version="v1",
+        chunk_ordinal=0,
+        chunk_total=1,
+        token_length=5,
+        tokenizer_fingerprint="fp",
+        manifest_id="m",
+    )
+    from hhgoa_rag.ingestion.schema import validate_record
+
+    rec["extra_unofficial_field"] = "oops"
+    with pytest.raises(SchemaViolationError, match="unknown top-level fields"):
+        validate_record(rec)
+
+
+def test_schema_rejects_physical_source_unofficial():
+    """physical_source is not an allowed schema field — must be rejected."""
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, build_record, validate_record
+
+    rec = build_record(
+        record_id="id-2",
+        chunk_text="test text",
+        language="hi",
+        config_language="hi",
+        dataset_revision="bf5cdc1f26e581e519018e434db14edd1b77602b",
+        split="train",
+        physical_shard="train/hintrain.parquet",
+        local_source_row=1,
+        passage_position=0,
+        parent_passage_id="p2",
+        content_hash="d" * 40,
+        chunk_strategy="passage_native",
+        chunk_strategy_version="v1",
+        chunk_ordinal=0,
+        chunk_total=1,
+        token_length=3,
+        tokenizer_fingerprint="fp",
+        manifest_id="m",
+    )
+    rec["physical_source"] = "train/hintrain.parquet"
+    with pytest.raises(SchemaViolationError, match="unknown"):
+        validate_record(rec)
+
+
+# ── schema: 507/508 token limit in validate_record ────────────────────────────
+
+
+def test_schema_507_tokens_pass():
+    from hhgoa_rag.ingestion.schema import build_record
+
+    rec = build_record(
+        record_id="id-ok",
+        chunk_text="x " * 100,
+        language="en",
+        config_language="en",
+        dataset_revision="bf5cdc1f26e581e519018e434db14edd1b77602b",
+        split="train",
+        physical_shard="train/hintrain.parquet",
+        local_source_row=0,
+        passage_position=0,
+        parent_passage_id="p",
+        content_hash="a" * 40,
+        chunk_strategy="passage_native",
+        chunk_strategy_version="v1",
+        chunk_ordinal=0,
+        chunk_total=1,
+        token_length=507,
+        tokenizer_fingerprint="fp",
+        manifest_id="m",
+    )
+    assert rec["token_length"] == 507
+
+
+def test_schema_508_tokens_fail():
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, validate_record
+
+    rec = {
+        "id": "id-bad",
+        "chunk_text": "x " * 100,
+        "language": "en",
+        "config_language": "en",
+        "dataset_revision": "bf5cdc1f26e581e519018e434db14edd1b77602b",
+        "split": "train",
+        "physical_shard": "train/hintrain.parquet",
+        "local_source_row": 0,
+        "passage_position": 0,
+        "parent_passage_id": "p",
+        "content_hash": "a" * 40,
+        "chunk_strategy": "passage_native",
+        "chunk_strategy_version": "v1",
+        "chunk_ordinal": 0,
+        "chunk_total": 1,
+        "token_length": 508,
+        "tokenizer_fingerprint": "fp",
+        "manifest_id": "m",
+    }
+    with pytest.raises(SchemaViolationError, match="507"):
+        validate_record(rec)
+
+
+# ── chunking strategy registry matches CLI choices ────────────────────────────
+
+
+def test_every_advertised_chunk_strategy_resolves():
+    """Every strategy in SUPPORTED_CHUNK_STRATEGIES must be in the real registry."""
+    from hhgoa_rag.ingestion.chunkers import CHUNKERS
+
+    for strategy in pc.SUPPORTED_CHUNK_STRATEGIES:
+        assert (
+            strategy in CHUNKERS
+        ), f"Strategy '{strategy}' is in SUPPORTED_CHUNK_STRATEGIES but not in CHUNKERS"
+
+
+def test_semantic_not_in_supported_strategies():
+    """'semantic' is experimental and must NOT appear in SUPPORTED_CHUNK_STRATEGIES."""
+    assert "semantic" not in pc.SUPPORTED_CHUNK_STRATEGIES
+
+
+# ── physical_shard contains real source path ──────────────────────────────────
+
+
+def test_physical_shard_is_real_path():
+    """physical_shard must be the real parquet file path, not hardcoded '0'."""
+    rec_input = {
+        "language": "hi",
+        "config_language": "hi",
+        "split": "train",
+        "physical_source": "train/hintrain.parquet",
+        "local_source_row": 0,
+        "passage_position": 0,
+        "content_hash": "e" * 40,
+        "normalized_text": "Hello world today.",
+    }
+    records = pc._build_prepared_records_for_passage(
+        rec_input,
+        "bf5cdc1f26e581e519018e434db14edd1b77602b",
+        FakeTokenizer(),
+        "passage_native",
+        "v1",
+        "canary-test",
+        {},
+        {},
+    )
+    assert len(records) >= 1
+    for r in records:
+        assert (
+            r["physical_shard"] == "train/hintrain.parquet"
+        ), f"Expected real path, got: {r['physical_shard']!r}"
+        assert r["physical_shard"] != "0"
+
+
+# ── create_pinecone_index dry-run gate ─────────────────────────────────────────
+
+
+def _run_create(args, env_extra=None):
+    import os
+
+    env = dict(os.environ)
+    for k in ["PINECONE_API_KEY", "CONFIRM_PINECONE_CREATE"]:
+        env.pop(k, None)
+    if env_extra:
+        env.update(env_extra)
+    return subprocess.run(
+        [sys.executable, str(Path(_SCRIPTS) / "create_pinecone_index.py"), *args],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_create_index_execute_alone_exits_2():
+    """--execute without CONFIRM_PINECONE_CREATE=1 must exit 2 (fail-closed)."""
+    r = _run_create(["--pinecone-index", "msmarco-xi", "--execute"])
+    assert r.returncode == 2, f"Expected exit 2, got {r.returncode}\nstderr={r.stderr}"
+    assert "CONFIRM_PINECONE_CREATE" in (r.stderr + r.stdout)
+
+
+def test_create_index_dry_run_shows_full_contract():
+    """Dry-run must display complete canonical contract."""
+    r = _run_create(["--pinecone-index", "msmarco-xi"])
+    assert r.returncode == 0
+    out = r.stdout
+    assert "multilingual-e5-large" in out
+    assert "cosine" in out
+    assert "chunk_text" in out
+    assert "contract_fingerprint" in out
+
+
+# ── eval labels cannot cross into production records ─────────────────────────
+
+
+def test_eval_labels_forbidden_in_records():
+    """Evaluation labels must be recursively rejected from production records."""
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, validate_record
+
+    rec = {
+        "id": "id-eval",
+        "chunk_text": "test",
+        "language": "en",
+        "config_language": "en",
+        "dataset_revision": "bf5cdc1f26e581e519018e434db14edd1b77602b",
+        "split": "train",
+        "physical_shard": "train/hintrain.parquet",
+        "local_source_row": 0,
+        "passage_position": 0,
+        "parent_passage_id": "p",
+        "content_hash": "a" * 40,
+        "chunk_strategy": "passage_native",
+        "chunk_strategy_version": "v1",
+        "chunk_ordinal": 0,
+        "chunk_total": 1,
+        "token_length": 3,
+        "tokenizer_fingerprint": "fp",
+        "manifest_id": "m",
+        "is_selected": 1,  # forbidden
+    }
+    with pytest.raises(SchemaViolationError):
+        validate_record(rec)
+
+
+# ── manifest contract fingerprint validation ──────────────────────────────────
+
+
+def test_manifest_wrong_contract_fingerprint_rejected(tmp_path):
+    """Manifest with wrong contract_fingerprint must be rejected."""
+    import json
+
+    # Build a minimal valid manifest with WRONG fingerprint
+    manifest = {
+        "manifest_schema_version": "3",
+        "manifest_id": "test-id",
+        "mode": "canary",
+        "dataset_repo": "ai4bharat/MSMARCO-XI",
+        "dataset_revision": "bf5cdc1f26e581e519018e434db14edd1b77602b",
+        "total_records": 0,
+        "total_tokens": 0,
+        "prepared_record_path": "fake.jsonl",
+        "prepared_record_checksum": "abc",
+        "ready_for_write": False,
+        "readiness_failures": [],
+        "forbidden_field_audit": "PASS",
+        "tokenizer_fingerprint": "fp",
+        "actual_per_language_records": {},
+        "contract_fingerprint": "wrong-fingerprint-value",
+    }
+    # Compute its own checksum
+    m_for_ck = {k: v for k, v in manifest.items() if k != "manifest_checksum"}
+    import hashlib
+
+    manifest["manifest_checksum"] = hashlib.sha256(
+        json.dumps(m_for_ck, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+    mpath = tmp_path / "m.json"
+    mpath.write_text(json.dumps(manifest))
+
+    sys.path.insert(0, str(Path(_SCRIPTS)))
+    import ingest_prepared as ing
+
+    with pytest.raises(ValueError, match="contract_fingerprint"):
+        ing._load_manifest(mpath)

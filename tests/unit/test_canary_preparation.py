@@ -50,11 +50,10 @@ def _make_record(
         "chunk_text": text,
         "language": lang,
         "config_language": config_lang,
-        "dataset_repo": "ai4bharat/MSMARCO-XI",
         "dataset_revision": _DATASET_REV,
         "split": "train",
-        "physical_source": physical_source,
-        "physical_shard": "0",
+        # physical_shard holds the real source path (not the unofficial physical_source field)
+        "physical_shard": physical_source,
         "local_source_row": local_source_row,
         "passage_position": passage_position,
         "parent_passage_id": ch,

@@ -45,13 +45,10 @@ async def lifespan(app: FastAPI):
             search_timeout=settings.pinecone_search_timeout_ms / 1000,
         )
 
-        # Validate index config
+        # Validate index config against all canonical contract fields
         errors = validate_index(
             pc,
             settings.pinecone_index,
-            embed_model=settings.pinecone_embed_model,
-            cloud=settings.pinecone_cloud,
-            region=settings.pinecone_region,
         )
         if errors:
             resources.mark_not_ready(f"index_config_errors: {errors}")

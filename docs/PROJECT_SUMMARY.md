@@ -71,7 +71,7 @@ Every record is built via `build_record()` in `src/hhgoa_rag/ingestion/schema.py
 | `config_language` | str | MSMARCO-XI config identifier |
 | `dataset_revision` | str | Pinned 40-char HuggingFace commit SHA |
 | `split` | str | `train` or `validation` |
-| `physical_source` | str | Physical source shard identifier |
+| `physical_shard` | str | Real physical source parquet path (e.g. `train/hintrain.parquet`) |
 | `local_source_row` | int | Row index within the physical shard |
 | `passage_position` | int | Position of passage in original record |
 | `parent_passage_id` | str | Content hash of source passage |
@@ -132,9 +132,11 @@ Every record is built via `build_record()` in `src/hhgoa_rag/ingestion/schema.py
 - Manifest/index contract mismatch rejected
 
 ### Task 5 — CI isolation
-- Offline CI job no longer receives `PINECONE_API_KEY` or `SARVAM_API_KEY`
+- Offline CI job never receives `PINECONE_API_KEY`, `SARVAM_API_KEY`, or `ELEVENLABS_API_KEY`
 - Writable HF cache configured in CI
-- Separate opt-in `integration` job for live tests
+- Live integration tests moved to `workflow_dispatch` only (manual trigger with `YES_RUN_LIVE` confirmation)
+- Separate `live-integration` job; push/PR CI is unconditionally credential-free
+- `scan_secrets.py` runs in normal offline CI before tests
 - Tokenizer tests do not silently skip
 
 ### Task 6 — STT config update

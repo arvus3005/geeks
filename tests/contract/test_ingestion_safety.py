@@ -71,8 +71,8 @@ def test_create_index_no_args_is_dry_run():
     )
 
 
-def test_create_index_execute_alone_is_dry_run():
-    """--execute alone (no env var) must still be dry-run."""
+def test_create_index_execute_alone_exits_2():
+    """--execute alone (no env var) must exit 2 (fail-closed, not silently dry-run)."""
     result = _run(
         [
             sys.executable,
@@ -82,8 +82,8 @@ def test_create_index_execute_alone_is_dry_run():
             "--execute",
         ]
     )
-    assert result.returncode == 0
-    assert "dry" in result.stderr.lower() or "CONFIRM_PINECONE_CREATE" in result.stderr
+    assert result.returncode == 2
+    assert "CONFIRM_PINECONE_CREATE" in result.stderr
 
 
 def test_create_index_env_alone_is_dry_run():

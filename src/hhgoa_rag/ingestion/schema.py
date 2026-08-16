@@ -118,6 +118,14 @@ def validate_record(record: dict[str, Any]) -> None:
     if missing:
         raise SchemaViolationError(f"Record missing required fields: {sorted(missing)}")
 
+    # Reject unknown top-level fields to prevent leakage of unofficial fields.
+    unknown = set(record.keys()) - REQUIRED_FIELDS
+    if unknown:
+        raise SchemaViolationError(
+            f"Record contains unknown top-level fields: {sorted(unknown)}. "
+            "Only fields in REQUIRED_FIELDS are permitted."
+        )
+
     # Non-empty string ID with Pinecone length bound.
     record_id = record.get("id")
     if not isinstance(record_id, str) or not record_id:
@@ -139,9 +147,14 @@ def validate_record(record: dict[str, Any]) -> None:
             f"Record 'language' {language!r} not in allowed {sorted(ALLOWED_LANGUAGES)}"
         )
 
-    # Positive token length.
+    # Positive token length within model limit.
+    _MAX_TOKENS = 507
     if not isinstance(record.get("token_length"), int) or record["token_length"] <= 0:
         raise SchemaViolationError("Record 'token_length' must be a positive integer")
+    if record["token_length"] > _MAX_TOKENS:
+        raise SchemaViolationError(
+            f"Record 'token_length' {record['token_length']} exceeds model limit {_MAX_TOKENS}"
+        )
 
     # chunk_ordinal / chunk_total consistency: 0 <= ordinal < total.
     ordinal = record.get("chunk_ordinal")

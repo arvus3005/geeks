@@ -76,12 +76,16 @@ def _chunk_parameters(strategy: str) -> dict:
     return params
 
 
-SUPPORTED_CHUNK_STRATEGIES = [
-    "passage_native",
-    "sentence_aware",
-    "fixed_token_overlap",
-    "semantic",
-]
+# Derive CLI choices from the real registry so they always stay in sync.
+# "semantic" is NOT included: SemanticChunker requires an injected similarity
+# provider and is excluded from the default CHUNKERS registry.
+def _get_supported_chunk_strategies() -> list[str]:
+    from hhgoa_rag.ingestion.chunkers import CHUNKERS
+
+    return sorted(CHUNKERS.keys())
+
+
+SUPPORTED_CHUNK_STRATEGIES = _get_supported_chunk_strategies()
 DEFAULT_CHUNK_STRATEGY = "sentence_aware"
 
 # Forbidden fields that must never appear in prepared records
@@ -652,7 +656,7 @@ def _build_prepared_records_for_passage(
                 config_language=rec["config_language"],
                 dataset_revision=dataset_revision,
                 split=rec["split"],
-                physical_shard="0",
+                physical_shard=rec["physical_source"],
                 local_source_row=rec["local_source_row"],
                 passage_position=rec["passage_position"],
                 parent_passage_id=parent_passage_id,
@@ -667,9 +671,8 @@ def _build_prepared_records_for_passage(
             )
         except SchemaViolationError as e:  # pragma: no cover - defensive
             raise RuntimeError(f"build_record rejected a prepared record: {e}") from e
-        # Extra provenance fields not part of the required schema.
-        record["dataset_repo"] = DATASET_REPO
-        record["physical_source"] = rec["physical_source"]
+        # dataset_repo is corpus-level provenance kept in the manifest, not per-record.
+        # physical_source is not an official schema field — physical_shard carries the path.
         records.append(record)
 
     return records
@@ -1023,10 +1026,24 @@ def main() -> None:
 
     created_at = datetime.now(UTC).isoformat()
 
+    from hhgoa_rag.pinecone_contract import (
+        CONTRACT_VERSION,
+        canonical_contract,
+        contract_fingerprint,
+    )
+    from hhgoa_rag.pinecone_contract import (
+        NAMESPACE as _CONTRACT_NAMESPACE,
+    )
+
     manifest: dict = {
-        "manifest_schema_version": "2",
+        "manifest_schema_version": "3",
         "manifest_id": manifest_id,
         "mode": "canary",
+        "contract_version": CONTRACT_VERSION,
+        "contract_fingerprint": contract_fingerprint(),
+        "index_contract": canonical_contract(),
+        "index_name": "msmarco-xi",
+        "index_namespace": _CONTRACT_NAMESPACE,
         "dataset_repo": DATASET_REPO,
         "dataset_revision": dataset_revision,
         "dataset_revision_pinned": is_pinned,
