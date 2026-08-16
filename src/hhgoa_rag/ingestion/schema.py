@@ -13,6 +13,7 @@ import json
 import re
 from typing import Any
 
+from ..pinecone_contract import MAX_INPUT_TOKENS
 from ..pinecone_store import TEXT_RECORD_FIELD
 
 # Languages permitted in prepared records.
@@ -147,13 +148,12 @@ def validate_record(record: dict[str, Any]) -> None:
             f"Record 'language' {language!r} not in allowed {sorted(ALLOWED_LANGUAGES)}"
         )
 
-    # Positive token length within model limit.
-    _MAX_TOKENS = 507
+    # Positive token length within model limit (canonical MAX_INPUT_TOKENS from pinecone_contract).
     if not isinstance(record.get("token_length"), int) or record["token_length"] <= 0:
         raise SchemaViolationError("Record 'token_length' must be a positive integer")
-    if record["token_length"] > _MAX_TOKENS:
+    if record["token_length"] > MAX_INPUT_TOKENS:
         raise SchemaViolationError(
-            f"Record 'token_length' {record['token_length']} exceeds model limit {_MAX_TOKENS}"
+            f"Record 'token_length' {record['token_length']} exceeds model limit {MAX_INPUT_TOKENS}"
         )
 
     # chunk_ordinal / chunk_total consistency: 0 <= ordinal < total.

@@ -23,6 +23,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..pinecone_contract import FIELD_MAP as _CONTRACT_FIELD_MAP
+
 # ── Plan constants ─────────────────────────────────────────────────────────────
 
 PLAN_STARTER = "starter"
@@ -35,12 +37,10 @@ STARTER_MAX_RECORDS = 10_000
 STARTER_MAX_RERANK_REQUESTS = 500
 STARTER_MAX_WRITE_UNITS = 1_800_000  # conservative; hard Starter cap is ~2M
 
-EMBED_MODEL = "multilingual-e5-large"
-TEXT_RECORD_FIELD = "chunk_text"
-FIELD_MAP = {"text": TEXT_RECORD_FIELD}
 RERANK_MODEL = "bge-reranker-v2-m3"
-PINECONE_REGION = "us-east-1"
-PINECONE_CLOUD = "aws"
+
+# Re-export contract field map as a plain dict for JSON-compatibility
+FIELD_MAP: dict[str, str] = dict(_CONTRACT_FIELD_MAP)
 
 # Estimated bytes per indexed record (text + metadata overhead)
 BYTES_PER_RECORD_ESTIMATE = 1_500

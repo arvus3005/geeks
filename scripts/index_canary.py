@@ -48,16 +48,23 @@ import json
 import logging
 import os
 import sys
+
+# ── Canonical constants ───────────────────────────────────────────────────────
+import threading
 import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from hhgoa_rag.pinecone_contract import (
+    DATASET_REPO as CANONICAL_DATASET_REPO,
+)
+from hhgoa_rag.pinecone_contract import (
+    DATASET_REVISION as CANONICAL_DATASET_REVISION,
+)
+from hhgoa_rag.pinecone_contract import (
     INDEX_NAME as CANONICAL_INDEX_NAME,
 )
-
-# ── Canonical constants ───────────────────────────────────────────────────────
 from hhgoa_rag.pinecone_contract import (
     MANIFEST_SCHEMA_VERSION,
     canonical_contract,
@@ -66,7 +73,16 @@ from hhgoa_rag.pinecone_contract import (
     MAX_BATCH_SIZE as CANONICAL_MAX_BATCH_SIZE,
 )
 from hhgoa_rag.pinecone_contract import (
+    MAX_INPUT_TOKENS as CANONICAL_MAX_INPUT_TOKENS,
+)
+from hhgoa_rag.pinecone_contract import (
     NAMESPACE as CANONICAL_NAMESPACE,
+)
+from hhgoa_rag.pinecone_contract import (
+    TOKENIZER_REPO as CANONICAL_TOKENIZER_REPO,
+)
+from hhgoa_rag.pinecone_contract import (
+    TOKENIZER_REVISION as CANONICAL_TOKENIZER_REVISION,
 )
 from hhgoa_rag.pinecone_contract import (
     contract_fingerprint as canonical_fingerprint,
@@ -112,7 +128,14 @@ REQUIRED_MANIFEST_FIELDS = {
     "index_contract",
     "index_name",
     "index_namespace",
+    # Provenance fields
     "dataset_revision",
+    "dataset_repo",
+    "tokenizer_repo",
+    "tokenizer_revision",
+    "tokenizer_fingerprint",
+    "model_input_limit",
+    # Data
     "total_records",
     "total_tokens",
     "prepared_record_path",
@@ -124,6 +147,19 @@ REQUIRED_MANIFEST_FIELDS = {
 }
 
 FORBIDDEN_FIELDS = {"query", "Answer", "Eng_Query", "Eng_Answer", "query_type", "is_selected"}
+
+
+class CanaryError(Exception):
+    """Raised for expected fatal errors so main() can set status:failed before writing reports."""
+
+    def __init__(self, message: str, category: str, safe_next_action: str = "") -> None:
+        super().__init__(message)
+        self.category = category
+        self.safe_next_action = safe_next_action or (
+            "Check the error above. If transient, retry with --resume. "
+            "If permanent, check credentials and index state."
+        )
+
 
 _REGENERATION_COMMAND = (
     "uv run python scripts/prepare_canary.py "
@@ -293,6 +329,35 @@ def _load_manifest(manifest_path: Path) -> dict:
                 f"got {per_lang.get(lang, 0)}."
             )
 
+    # Provenance fields — must match the canonical contract
+    if manifest.get("dataset_repo") != CANONICAL_DATASET_REPO:
+        raise ValueError(
+            f"Manifest dataset_repo {manifest.get('dataset_repo')!r} != "
+            f"canonical {CANONICAL_DATASET_REPO!r}."
+        )
+    if manifest.get("dataset_revision") != CANONICAL_DATASET_REVISION:
+        raise ValueError(
+            f"Manifest dataset_revision {manifest.get('dataset_revision')!r} != "
+            f"canonical {CANONICAL_DATASET_REVISION!r}."
+        )
+    if manifest.get("tokenizer_repo") != CANONICAL_TOKENIZER_REPO:
+        raise ValueError(
+            f"Manifest tokenizer_repo {manifest.get('tokenizer_repo')!r} != "
+            f"canonical {CANONICAL_TOKENIZER_REPO!r}."
+        )
+    if manifest.get("tokenizer_revision") != CANONICAL_TOKENIZER_REVISION:
+        raise ValueError(
+            f"Manifest tokenizer_revision {manifest.get('tokenizer_revision')!r} != "
+            f"canonical {CANONICAL_TOKENIZER_REVISION!r}."
+        )
+    if manifest.get("model_input_limit") != CANONICAL_MAX_INPUT_TOKENS:
+        raise ValueError(
+            f"Manifest model_input_limit {manifest.get('model_input_limit')!r} != "
+            f"canonical {CANONICAL_MAX_INPUT_TOKENS!r}."
+        )
+    if not manifest.get("tokenizer_fingerprint"):
+        raise ValueError("Manifest missing non-empty tokenizer_fingerprint.")
+
     return manifest
 
 
@@ -311,7 +376,13 @@ def _resolve_record_path(manifest: dict, manifest_path: Path) -> Path:
 
 
 def _verify_and_load_records(manifest: dict, manifest_path: Path) -> list[dict]:
-    """Verify the JSONL data file and load all records."""
+    """Verify the JSONL data file and load all records.
+
+    Calls validate_record() from the authoritative schema on EVERY record.
+    This must complete before any Pinecone client is constructed.
+    """
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, validate_record
+
     record_path = _resolve_record_path(manifest, manifest_path)
     if not record_path.exists():
         raise FileNotFoundError(
@@ -329,25 +400,54 @@ def _verify_and_load_records(manifest: dict, manifest_path: Path) -> list[dict]:
         )
 
     records = []
+    seen_ids: set[str] = set()
     with open(record_path, encoding="utf-8") as f:
         for lineno, line in enumerate(f, 1):
             line = line.strip()
             if not line:
                 continue
             rec = json.loads(line)
-            bad = FORBIDDEN_FIELDS & set(rec.keys())
-            if bad:
-                raise ValueError(f"Forbidden fields in record line {lineno}: {sorted(bad)}.")
-            if not rec.get("id"):
-                raise ValueError(f"Record line {lineno} has empty id.")
-            if not rec.get("chunk_text"):
-                raise ValueError(f"Record line {lineno} has empty chunk_text.")
+            # Authoritative schema validation — runs BEFORE any provider client creation.
+            try:
+                validate_record(rec)
+            except SchemaViolationError as e:
+                raise ValueError(f"Record line {lineno} schema violation: {e}") from e
+            # Duplicate ID check
+            rec_id = rec["id"]
+            if rec_id in seen_ids:
+                raise ValueError(f"Duplicate record id {rec_id!r} at line {lineno}.")
+            seen_ids.add(rec_id)
             records.append(rec)
 
     if len(records) != CANARY_EXPECTED_TOTAL:
         raise ValueError(
             f"Record count mismatch: expected {CANARY_EXPECTED_TOTAL}, got {len(records)}."
         )
+
+    # Verify actual language counts match manifest's declared counts.
+    actual_lang_counts: dict[str, int] = {}
+    for rec in records:
+        lang = rec.get("language", "")
+        actual_lang_counts[lang] = actual_lang_counts.get(lang, 0) + 1
+    declared_lang_counts = manifest.get("actual_per_language_records", {})
+    for lang in CANARY_EXPECTED_LANGUAGES:
+        actual = actual_lang_counts.get(lang, 0)
+        declared = declared_lang_counts.get(lang, 0)
+        if actual != declared:
+            raise ValueError(
+                f"Actual JSONL language count for '{lang}' is {actual} "
+                f"but manifest declares {declared}."
+            )
+
+    # Verify token total matches manifest.
+    actual_token_total = sum(r.get("token_length", 0) for r in records)
+    manifest_token_total = manifest.get("total_tokens", -1)
+    if actual_token_total != manifest_token_total:
+        raise ValueError(
+            f"JSONL token total {actual_token_total} does not match manifest "
+            f"total_tokens {manifest_token_total}."
+        )
+
     return records
 
 
@@ -376,14 +476,33 @@ def _save_checkpoint(path: Path, data: dict) -> None:
         raise
 
 
+class _CorruptCheckpointError(Exception):
+    """Raised when a checkpoint file exists but cannot be read or parsed."""
+
+
 def _load_checkpoint(path: Path) -> dict | None:
+    """Load checkpoint file.
+
+    Returns:
+        None if path does not exist (fresh start is OK).
+        dict if the file is valid JSON.
+
+    Raises:
+        _CorruptCheckpointError if the file exists but is unreadable or malformed.
+        Never silently treats a corrupt checkpoint as absent.
+    """
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError(f"Checkpoint is not a JSON object (got {type(data).__name__})")
+        return data
     except Exception as e:
-        logger.warning("Could not read checkpoint %s: %s", path, e)
-        return None
+        raise _CorruptCheckpointError(
+            f"Checkpoint file {path} exists but cannot be read or parsed: {e}. "
+            "Delete or repair the checkpoint file before retrying."
+        ) from e
 
 
 def _validate_checkpoint_compat(
@@ -564,7 +683,18 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _build_parser().parse_args()
 
-    # Validate constraints
+    # Validate zero/negative values — exit 2
+    if args.batch_size <= 0:
+        logger.error("--batch-size must be a positive integer, got %d.", args.batch_size)
+        sys.exit(2)
+    if args.concurrency <= 0:
+        logger.error("--concurrency must be a positive integer, got %d.", args.concurrency)
+        sys.exit(2)
+    if args.token_rate_limit <= 0:
+        logger.error("--token-rate-limit must be positive, got %d.", args.token_rate_limit)
+        sys.exit(2)
+
+    # Validate maximums
     if args.batch_size > CANONICAL_MAX_BATCH_SIZE:
         logger.error(
             "--batch-size %d exceeds canonical maximum %d.",
@@ -607,10 +737,37 @@ def main() -> None:
     json_report: Path | None = None
     md_report: Path | None = None
 
+    _exit_code = 0
     try:
         _run(args, live_mode, run_id, start_time, git_commit, report_data)
-    except SystemExit:
-        raise
+    except SystemExit as se:
+        # sys.exit() from inside _run — convert to CanaryError so reports are written correctly.
+        _exit_code = se.code if isinstance(se.code, int) else 1
+        if report_data.get("status") in ("started", None):
+            report_data.update(
+                {
+                    "status": "failed",
+                    "end_time": datetime.now(UTC).isoformat(),
+                    "failure_category": "FatalExit",
+                    "failure_message": f"Process exited with code {_exit_code} — see logs above.",
+                    "safe_next_action": (
+                        "Check the error above. If transient, retry with --resume. "
+                        "If permanent, check credentials and index state."
+                    ),
+                }
+            )
+    except CanaryError as exc:
+        logger.error("Fatal error [%s]: %s", exc.category, exc, exc_info=False)
+        report_data.update(
+            {
+                "status": "failed",
+                "end_time": datetime.now(UTC).isoformat(),
+                "failure_category": exc.category,
+                "failure_message": str(exc),
+                "safe_next_action": exc.safe_next_action,
+            }
+        )
+        _exit_code = 1
     except Exception as exc:
         logger.error("Fatal error: %s", exc, exc_info=True)
         report_data.update(
@@ -625,8 +782,14 @@ def main() -> None:
                 ),
             }
         )
-        sys.exit(1)
+        _exit_code = 1
     finally:
+        # Ensure status never stays "started" — always has a terminal value.
+        if report_data.get("status") == "started":
+            report_data["status"] = "failed"
+            report_data.setdefault(
+                "failure_message", "Run terminated without setting final status."
+            )
         report_data.setdefault("end_time", datetime.now(UTC).isoformat())
         start_dt = datetime.fromisoformat(start_time)
         end_dt = datetime.fromisoformat(report_data["end_time"])
@@ -636,6 +799,8 @@ def main() -> None:
             logger.info("Reports written: %s  %s", json_report, md_report)
         except Exception as re:
             logger.warning("Could not write reports: %s", re)
+    if _exit_code:
+        sys.exit(_exit_code)
 
 
 def _run(
@@ -700,7 +865,18 @@ def _run(
         )
         if existing_ckpts:
             ckpt_path = existing_ckpts[-1]  # most recent
-            ckpt = _load_checkpoint(ckpt_path)
+            # _load_checkpoint raises _CorruptCheckpointError on malformed files — fail closed.
+            try:
+                ckpt = _load_checkpoint(ckpt_path)
+            except _CorruptCheckpointError as e:
+                raise CanaryError(
+                    str(e),
+                    category="CorruptCheckpoint",
+                    safe_next_action=(
+                        f"Delete or repair {ckpt_path} before retrying. "
+                        "Starting fresh without --resume is also safe."
+                    ),
+                ) from e
             if ckpt is not None:
                 _validate_checkpoint_compat(
                     ckpt,
@@ -762,8 +938,11 @@ def _run(
     # ── Step 5: Live mode — validate remote index ─────────────────────────────
     api_key = os.environ.get("PINECONE_API_KEY")
     if not api_key:
-        logger.error("PINECONE_API_KEY is not set.")
-        sys.exit(1)
+        raise CanaryError(
+            "PINECONE_API_KEY is not set. Export it before running with --execute.",
+            category="MissingAPIKey",
+            safe_next_action="Export PINECONE_API_KEY and retry.",
+        )
 
     # Import Pinecone only in live mode.
     from pinecone import Pinecone
@@ -782,7 +961,11 @@ def _run(
             "\n".join(f"  • {e}" for e in validation_errors),
         )
         report_data["remote_validation"] = f"FAILED: {validation_errors}"
-        sys.exit(1)
+        raise CanaryError(
+            f"Remote index validation failed: {validation_errors}",
+            category="RemoteValidationFailure",
+            safe_next_action="Verify the Pinecone index matches the canonical contract and retry.",
+        )
     logger.info("Remote index validation PASSED.")
     report_data["remote_validation"] = "PASSED"
 
@@ -818,14 +1001,17 @@ def _run(
     total_retries = 0
     total_throttle_wait = 0.0
     tokens_submitted = 0
-    window_start = time.monotonic()
-    window_tokens = 0
+
+    # Thread-safe token rate limiter
+    _rate_lock = threading.Lock()
+    _window_start = time.monotonic()
+    _window_tokens = 0
 
     def _upsert_batch(
         batch_idx: int, batch: list[dict], digest: str
     ) -> tuple[int, int, int, float]:
         """Submit one batch with retry. Returns (submitted, attempts, retries, throttle_wait)."""
-        nonlocal window_start, window_tokens
+        nonlocal _window_start, _window_tokens
         attempts = 0
         retries = 0
         throttle_wait = 0.0
@@ -834,25 +1020,33 @@ def _run(
         batch_tokens = sum(r.get("token_length", 0) for r in batch)
 
         for attempt in range(1, MAX_RETRIES + 1):
-            # Token-rate pacing: check if we need to slow down.
-            elapsed = time.monotonic() - window_start
-            if elapsed >= 60.0:
-                window_start = time.monotonic()
-                window_tokens = 0
-                elapsed = 0.0
-            projected = window_tokens + batch_tokens
-            if projected > token_rate_limit and elapsed < 60.0:
-                wait = 60.0 - elapsed + 0.5
-                logger.info(
-                    "Token rate limit: projected %d > %d tokens/min; waiting %.1fs",
-                    projected,
-                    token_rate_limit,
-                    wait,
-                )
-                time.sleep(wait)
-                throttle_wait += wait
-                window_start = time.monotonic()
-                window_tokens = 0
+            # Thread-safe token-rate pacing.
+            with _rate_lock:
+                elapsed = time.monotonic() - _window_start
+                if elapsed >= 60.0:
+                    _window_start = time.monotonic()
+                    _window_tokens = 0
+                    elapsed = 0.0
+                projected = _window_tokens + batch_tokens
+                if projected > token_rate_limit and elapsed < 60.0:
+                    wait = 60.0 - elapsed + 0.5
+                    logger.info(
+                        "Token rate limit: projected %d > %d tokens/min; waiting %.1fs",
+                        projected,
+                        token_rate_limit,
+                        wait,
+                    )
+                    # Release lock while sleeping so other threads can check.
+                    _rate_lock.release()
+                    try:
+                        time.sleep(wait)
+                        throttle_wait += wait
+                    finally:
+                        _rate_lock.acquire()
+                    _window_start = time.monotonic()
+                    _window_tokens = 0
+                # Reserve tokens inside the lock so concurrent workers cannot double-book.
+                _window_tokens += batch_tokens
 
             try:
                 attempts += 1
@@ -868,7 +1062,6 @@ def _run(
                 submitted = store.upsert_records(
                     batch, namespace=CANONICAL_NAMESPACE, context="pilot"
                 )
-                window_tokens += batch_tokens
                 return submitted, attempts, retries, throttle_wait
             except Exception as exc:
                 last_exc = exc
@@ -945,36 +1138,73 @@ def _run(
 
     if failed_batches > 0:
         logger.error("%d batch(es) failed. Run with --resume to retry.", failed_batches)
-        report_data.update(
-            {
-                "status": "failed",
-                "failure_category": "UpsertError",
-                "failure_message": f"{failed_batches} batch(es) failed permanently.",
-                "safe_next_action": "Run with --resume to retry failed batches.",
-            }
+        raise CanaryError(
+            f"{failed_batches} batch(es) failed permanently.",
+            category="UpsertError",
+            safe_next_action="Run with --resume to retry failed batches.",
         )
-        sys.exit(1)
 
-    # ── Step 7: Freshness reconciliation ─────────────────────────────────────
+    # ── Step 7: Freshness reconciliation — exact count required ───────────────
     logger.info("Waiting for index freshness (max %ds) …", FRESHNESS_POLL_MAX_WAIT)
     deadline = time.monotonic() + FRESHNESS_POLL_MAX_WAIT
     wait = FRESHNESS_POLL_BASE
     final_count: int | None = None
     reconciled = False
+    contaminated = False
+
+    def _get_ns_vector_count(stats: object) -> int | None:
+        """Extract namespace vector count from SDK object or dict-shaped fixture."""
+        # SDK object: stats.namespaces is a dict-like mapping namespace->NamespaceSummary
+        namespaces = getattr(stats, "namespaces", None)
+        if namespaces is None and isinstance(stats, dict):
+            namespaces = stats.get("namespaces")
+        if namespaces is None:
+            return None
+        # namespaces may be dict-like (SDK) or a plain dict (fixture)
+        if isinstance(namespaces, dict):
+            ns_info = namespaces.get(CANONICAL_NAMESPACE)
+        else:
+            try:
+                ns_info = namespaces[CANONICAL_NAMESPACE]
+            except (KeyError, TypeError):
+                ns_info = None
+        if ns_info is None:
+            return 0
+        # SDK struct: ns_info.vector_count; dict fixture: ns_info["vector_count"]
+        vc = getattr(ns_info, "vector_count", None)
+        if vc is None and isinstance(ns_info, dict):
+            vc = ns_info.get("vector_count")
+        return int(vc) if vc is not None else 0
 
     while time.monotonic() < deadline:
         try:
             stats = index.describe_index_stats()
-            ns_stats = (stats.namespaces or {}).get(CANONICAL_NAMESPACE)
-            count = ns_stats.vector_count if ns_stats else 0
-            logger.info("Namespace '%s' vector count: %d", CANONICAL_NAMESPACE, count)
-            if count >= CANARY_EXPECTED_TOTAL:
+            count = _get_ns_vector_count(stats)
+            if count is None:
+                logger.warning("Could not extract namespace count from stats response.")
+            else:
+                logger.info("Namespace '%s' vector count: %d", CANONICAL_NAMESPACE, count)
                 final_count = count
-                reconciled = True
-                break
+                if count == CANARY_EXPECTED_TOTAL:
+                    reconciled = True
+                    break
+                elif count > CANARY_EXPECTED_TOTAL:
+                    contaminated = True
+                    logger.error(
+                        "Namespace '%s' has %d vectors — EXCEEDS expected %d. "
+                        "Namespace may be contaminated or stale. "
+                        "This must be cleared by the live indexing operator before retrying.",
+                        CANONICAL_NAMESPACE,
+                        count,
+                        CANARY_EXPECTED_TOTAL,
+                    )
+                    break
         except Exception as e:
             logger.warning("Freshness poll error: %s", e)
-        time.sleep(min(wait, deadline - time.monotonic()))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(wait, remaining))
         wait = min(wait * 2, 30)
 
     end_time = datetime.now(UTC).isoformat()
@@ -982,7 +1212,12 @@ def _run(
         datetime.fromisoformat(end_time) - datetime.fromisoformat(start_time)
     ).total_seconds()
 
-    if not reconciled:
+    if contaminated:
+        freshness_result = (
+            f"CONTAMINATED — namespace has {final_count} vectors, expected {CANARY_EXPECTED_TOTAL}. "
+            "Must be cleared by the live indexing operator."
+        )
+    elif not reconciled:
         logger.warning(
             "Freshness reconciliation timeout after %ds. Count=%s (expected %d).",
             FRESHNESS_POLL_MAX_WAIT,
@@ -997,9 +1232,15 @@ def _run(
     rps = round(total_records / max(duration, 0.001), 2) if duration > 0 else 0
     tpm = round(tokens_submitted / max(duration / 60, 0.001), 0) if duration > 0 else 0
 
+    # Determine final status: only exact 300 vectors passes.
+    if reconciled:
+        final_status = "success"
+    else:
+        final_status = "failed"
+
     report_data.update(
         {
-            "status": "success" if reconciled else "partial_success",
+            "status": final_status,
             "end_time": end_time,
             "total_batches": total_batches,
             "completed_batches": completed_batches,
@@ -1015,7 +1256,18 @@ def _run(
     )
 
     if not reconciled:
-        sys.exit(1)
+        category = "ContaminatedNamespace" if contaminated else "ReconciliationTimeout"
+        safe_action = (
+            "The namespace must be cleared by the live indexing operator before retrying."
+            if contaminated
+            else "Wait for index propagation and retry with --resume."
+        )
+        raise CanaryError(
+            f"Freshness reconciliation did not reach exactly {CANARY_EXPECTED_TOTAL} vectors: "
+            f"{freshness_result}",
+            category=category,
+            safe_next_action=safe_action,
+        )
 
     logger.info(
         "Canary indexing complete: %d records, %d tokens in %.1fs (%.1f r/s, %d t/min)",

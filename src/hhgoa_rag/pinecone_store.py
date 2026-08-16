@@ -18,6 +18,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from .pinecone_contract import MAX_BATCH_SIZE
+
 logger = logging.getLogger(__name__)
 
 # The field_map key used in create_index_for_model AND in search inputs
@@ -120,9 +122,9 @@ class PineconeStore:
             return 0
 
         # Defense-in-depth: validate batch limits before the SDK call.
-        if len(records) > 96:
+        if len(records) > MAX_BATCH_SIZE:
             raise ValueError(
-                f"Batch has {len(records)} records, exceeding the 96-record Pinecone limit. "
+                f"Batch has {len(records)} records, exceeding the {MAX_BATCH_SIZE}-record Pinecone limit. "
                 "Split the batch before calling upsert_records."
             )
 
