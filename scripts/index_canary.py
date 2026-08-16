@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resumable one-command canary indexer for MSMARCO-XI → Pinecone.
+"""Resumable one-command canary/pilot indexer for MSMARCO-XI → Pinecone.
 
 Default mode: offline dry-run (validates everything, schedules no writes).
 
@@ -8,6 +8,10 @@ Live mode requires ALL of:
   CONFIRM_PINECONE_WRITE=1 environment variable
   PINECONE_API_KEY environment variable
 
+Scopes:
+  --scope canary-300   (default) 300 records: 100 EN / 100 HI / 100 BN
+  --scope pilot-10000  10,000 records: 3334 EN / 3333 HI / 3333 BN
+
 Usage:
   # Dry run (safe, no credentials needed):
   uv run python scripts/index_canary.py --manifest artifacts/prepared/<id>_manifest.json
@@ -15,6 +19,13 @@ Usage:
   # Live canary write:
   CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> \\
     uv run python scripts/index_canary.py \\
+      --manifest artifacts/prepared/<id>_manifest.json \\
+      --execute --resume --concurrency 4
+
+  # Live pilot-10000 write:
+  CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> \\
+    uv run python scripts/index_canary.py \\
+      --scope pilot-10000 \\
       --manifest artifacts/prepared/<id>_manifest.json \\
       --execute --resume --concurrency 4
 
@@ -34,7 +45,7 @@ Usage:
     > artifacts/logs/index_canary.log 2>&1 &
 
 Hard limits:
-  - Only works with a valid 300-record canary manifest bound to pilot_v1.
+  - Scope is fixed: canary-300 or pilot-10000. No arbitrary totals.
   - Batch size capped at canonical maximum of 96.
   - Token rate: 225,000 passage tokens/minute ceiling (configurable downward).
   - Pinecone hard limit: 250,000 passage tokens/minute.
@@ -97,6 +108,24 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%S",
 )
 logger = logging.getLogger("index_canary")
+
+# ── Scope configuration ───────────────────────────────────────────────────────
+
+SCOPE_CANARY_300 = "canary-300"
+SCOPE_PILOT_10000 = "pilot-10000"
+VALID_SCOPES = (SCOPE_CANARY_300, SCOPE_PILOT_10000)
+
+# Fixed scope expectations — no arbitrary totals permitted.
+_SCOPE_EXPECTED: dict[str, dict] = {
+    SCOPE_CANARY_300: {
+        "total": 300,
+        "per_lang": {"en": 100, "hi": 100, "bn": 100},
+    },
+    SCOPE_PILOT_10000: {
+        "total": 10_000,
+        "per_lang": {"en": 3334, "hi": 3333, "bn": 3333},
+    },
+}
 
 # ── Hard limits ───────────────────────────────────────────────────────────────
 CANARY_EXPECTED_TOTAL = 300
@@ -370,8 +399,12 @@ def _batch_digest(manifest_checksum: str, batch_index: int, record_ids: list[str
 # ── Manifest loading ──────────────────────────────────────────────────────────
 
 
-def _load_manifest(manifest_path: Path) -> dict:
-    """Load and strictly validate the canary manifest. Raises on any failure."""
+def _load_manifest(manifest_path: Path, scope: str = SCOPE_CANARY_300) -> dict:
+    """Load and strictly validate the canary/pilot manifest. Raises on any failure."""
+    if scope not in VALID_SCOPES:
+        raise ValueError(f"Unknown scope {scope!r}. Must be one of {VALID_SCOPES}.")
+    _expected_total = _SCOPE_EXPECTED[scope]["total"]
+    _expected_per_lang: dict[str, int] = _SCOPE_EXPECTED[scope]["per_lang"]
     if not manifest_path.exists():
         raise FileNotFoundError(
             f"Manifest not found: {manifest_path}\n" f"Regenerate with:\n  {_REGENERATION_COMMAND}"
@@ -463,18 +496,18 @@ def _load_manifest(manifest_path: Path) -> dict:
             f"Regenerate with:\n  {_REGENERATION_COMMAND}"
         )
 
-    # Record counts
+    # Record counts — validated against scope expectations
     total = manifest.get("total_records", 0)
-    if total != CANARY_EXPECTED_TOTAL:
+    if total != _expected_total:
         raise ValueError(
-            f"Manifest declares {total} total records; expected exactly {CANARY_EXPECTED_TOTAL} "
-            f"for the canary. Refusing to proceed."
+            f"Manifest declares {total} total records; expected exactly {_expected_total} "
+            f"for scope '{scope}'. Refusing to proceed."
         )
     per_lang = manifest.get("actual_per_language_records", {})
-    for lang in CANARY_EXPECTED_LANGUAGES:
-        if per_lang.get(lang, 0) != CANARY_EXPECTED_PER_LANG:
+    for lang, expected_count in _expected_per_lang.items():
+        if per_lang.get(lang, 0) != expected_count:
             raise ValueError(
-                f"Expected {CANARY_EXPECTED_PER_LANG} {lang} records; "
+                f"Expected {expected_count} {lang} records for scope '{scope}'; "
                 f"got {per_lang.get(lang, 0)}."
             )
 
@@ -524,13 +557,18 @@ def _resolve_record_path(manifest: dict, manifest_path: Path) -> Path:
     return sibling
 
 
-def _verify_and_load_records(manifest: dict, manifest_path: Path) -> list[dict]:
+def _verify_and_load_records(
+    manifest: dict, manifest_path: Path, scope: str = SCOPE_CANARY_300
+) -> list[dict]:
     """Verify the JSONL data file and load all records.
 
     Calls validate_record() from the authoritative schema on EVERY record.
     This must complete before any Pinecone client is constructed.
     """
     from hhgoa_rag.ingestion.schema import SchemaViolationError, validate_record
+
+    _expected_total = _SCOPE_EXPECTED[scope]["total"]
+    _expected_per_lang: dict[str, int] = _SCOPE_EXPECTED[scope]["per_lang"]
 
     record_path = _resolve_record_path(manifest, manifest_path)
     if not record_path.exists():
@@ -568,9 +606,10 @@ def _verify_and_load_records(manifest: dict, manifest_path: Path) -> list[dict]:
             seen_ids.add(rec_id)
             records.append(rec)
 
-    if len(records) != CANARY_EXPECTED_TOTAL:
+    if len(records) != _expected_total:
         raise ValueError(
-            f"Record count mismatch: expected {CANARY_EXPECTED_TOTAL}, got {len(records)}."
+            f"Record count mismatch: expected {_expected_total} for scope '{scope}', "
+            f"got {len(records)}."
         )
 
     # Verify actual language counts match manifest's declared counts.
@@ -579,13 +618,18 @@ def _verify_and_load_records(manifest: dict, manifest_path: Path) -> list[dict]:
         lang = rec.get("language", "")
         actual_lang_counts[lang] = actual_lang_counts.get(lang, 0) + 1
     declared_lang_counts = manifest.get("actual_per_language_records", {})
-    for lang in CANARY_EXPECTED_LANGUAGES:
+    for lang, expected_count in _expected_per_lang.items():
         actual = actual_lang_counts.get(lang, 0)
         declared = declared_lang_counts.get(lang, 0)
         if actual != declared:
             raise ValueError(
                 f"Actual JSONL language count for '{lang}' is {actual} "
                 f"but manifest declares {declared}."
+            )
+        if actual != expected_count:
+            raise ValueError(
+                f"Actual JSONL language count for '{lang}' is {actual} "
+                f"but scope '{scope}' expects {expected_count}."
             )
 
     # Verify token total matches manifest.
@@ -786,6 +830,14 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    p.add_argument(
+        "--scope",
+        choices=list(VALID_SCOPES),
+        default=SCOPE_CANARY_300,
+        help=f"Fixed indexing scope (default: {SCOPE_CANARY_300}). "
+        f"'{SCOPE_CANARY_300}' = 300 records 100/100/100. "
+        f"'{SCOPE_PILOT_10000}' = 10,000 records 3334/3333/3333.",
+    )
     p.add_argument("--manifest", type=Path, required=True, help="Path to the _manifest.json")
     p.add_argument(
         "--execute",
@@ -966,16 +1018,19 @@ def _run(
     concurrency = args.concurrency
     token_rate_limit = args.token_rate_limit
     checkpoint_dir = args.checkpoint_dir
+    scope = args.scope
+    expected_total = _SCOPE_EXPECTED[scope]["total"]
 
     # ── Step 1: Load and validate manifest ───────────────────────────────────
     logger.info("Loading manifest: %s", manifest_path)
-    manifest = _load_manifest(manifest_path)
+    manifest = _load_manifest(manifest_path, scope=scope)
     manifest_id = manifest["manifest_id"]
     manifest_checksum = manifest["manifest_checksum"]
     contract_fp = manifest["contract_fingerprint"]
 
     report_data.update(
         {
+            "scope": scope,
             "manifest_id": manifest_id,
             "manifest_checksum": manifest_checksum,
             "contract_fingerprint": contract_fp,
@@ -989,7 +1044,7 @@ def _run(
     )
 
     # ── Step 2: Verify and load records ──────────────────────────────────────
-    records = _verify_and_load_records(manifest, manifest_path)
+    records = _verify_and_load_records(manifest, manifest_path, scope=scope)
     total_records = len(records)
     total_tokens = sum(r.get("token_length", 0) for r in records)
     report_data["total_records"] = total_records
@@ -1156,113 +1211,210 @@ def _run(
         )
 
     is_resume_run = bool(args.resume and completed_digests)
+    expected_id_set_all = {r["id"] for r in records}
 
-    if not is_resume_run:
-        # Fresh canary run: namespace MUST be verifiably empty (0 records).
-        if preflight_count > 0:
-            msg = (
-                f"Namespace '{CANONICAL_NAMESPACE}' is not empty (contains {preflight_count} vectors) "
-                f"for a fresh canary run (expected 0). Refusing to write to prevent contamination. "
-                "The namespace must be manually verified and cleared by the operator before running a fresh canary."
-            )
-            logger.error(msg)
-            report_data["preflight_status"] = f"FAILED: Contaminated ({preflight_count} vectors)"
-            raise CanaryError(
-                msg,
-                category="NamespaceContaminatedPreflight",
-                safe_next_action="Verify index contents. If stale, manually clear vectors in the pilot namespace. Never automatically clear.",
-            )
-        # Defense-in-depth: check ID enumeration on fresh run to ensure 0 IDs
-        try:
-            actual_fresh_ids = store.list_vector_ids(namespace=CANONICAL_NAMESPACE)
-        except Exception as exc:
-            logger.error("Pre-write namespace ID enumeration check failed: %s", exc)
-            report_data["preflight_status"] = f"FAILED: ID enumeration error {exc}"
-            raise CanaryError(
-                f"Pre-write namespace preflight ID enumeration failed: {exc}",
-                category="PreflightProviderFailure",
-                safe_next_action="Verify Pinecone ID enumeration support and connectivity before running.",
-            ) from exc
-
-        if len(actual_fresh_ids) > 0:
-            msg = (
-                f"Namespace '{CANONICAL_NAMESPACE}' contains {len(actual_fresh_ids)} vector IDs "
-                f"for a fresh canary run (expected 0). Refusing to write to prevent contamination."
-            )
-            logger.error(msg)
-            report_data["preflight_status"] = f"FAILED: Contaminated ({len(actual_fresh_ids)} IDs)"
-            raise CanaryError(
-                msg,
-                category="NamespaceContaminatedPreflight",
-                safe_next_action="Verify index contents. If stale, manually clear vectors in the pilot namespace. Never automatically clear.",
-            )
-
-    else:
-        # Resume run: verify exact resume ownership using deterministic vector IDs
-        expected_completed_ids = {
-            r["id"]
-            for i, b in enumerate(batches)
-            if batch_digests[i] in completed_digests
-            for r in b
-        }
-        completed_record_count = len(expected_completed_ids)
-
-        if preflight_count > CANARY_EXPECTED_TOTAL:
+    if scope == SCOPE_PILOT_10000:
+        # ── Pilot-10000 preflight: ownership verification ────────────────────
+        # All current namespace IDs MUST belong to the pilot-10000 expected set.
+        # Re-upserting existing canary vectors is acceptable; any unrelated ID fails.
+        if preflight_count > expected_total:
             msg = (
                 f"Namespace '{CANONICAL_NAMESPACE}' contains {preflight_count} vectors, "
-                f"which exceeds the total expected canary size of {CANARY_EXPECTED_TOTAL}. "
+                f"which exceeds the pilot-10000 expected total of {expected_total}. "
                 "Namespace is contaminated or stale."
             )
             logger.error(msg)
             report_data["preflight_status"] = (
-                f"FAILED: Contaminated ({preflight_count} vectors > {CANARY_EXPECTED_TOTAL})"
+                f"FAILED: Contaminated ({preflight_count} vectors > {expected_total})"
             )
             raise CanaryError(
                 msg,
                 category="NamespaceContaminatedPreflight",
-                safe_next_action="Verify index contents. Stale vectors must be manually cleared by the operator before resuming.",
+                safe_next_action="Verify index contents. Stale vectors must be manually cleared by the operator.",
             )
 
-        # Enumerate vector IDs in namespace
+        # Enumerate current IDs and verify all ⊆ pilot expected set.
         try:
-            actual_namespace_ids = store.list_vector_ids(namespace=CANONICAL_NAMESPACE)
+            current_namespace_ids = store.list_vector_ids(namespace=CANONICAL_NAMESPACE)
         except Exception as exc:
-            logger.error("Pre-write resume ownership ID enumeration failed: %s", exc)
-            report_data["preflight_status"] = f"FAILED: Resume ownership unverifiable ({exc})"
+            logger.error("Pilot preflight ID enumeration failed: %s", exc)
+            report_data["preflight_status"] = f"FAILED: ID enumeration error {exc}"
             raise CanaryError(
-                f"Pre-write resume ownership verification failed due to provider error: {exc}",
-                category="ResumeOwnershipUnverifiable",
-                safe_next_action="Verify Pinecone ID enumeration support, network connectivity, and credentials before retrying with --resume.",
+                f"Pilot preflight ID enumeration failed: {exc}",
+                category="PreflightProviderFailure",
+                safe_next_action="Verify Pinecone ID enumeration support and connectivity before running.",
             ) from exc
 
-        actual_id_set = set(actual_namespace_ids)
+        current_id_set = set(current_namespace_ids)
+        enumerated_count = len(current_namespace_ids)
 
-        # Verify exact ownership: actual namespace IDs must match expected completed IDs precisely
-        if actual_id_set != expected_completed_ids or preflight_count != completed_record_count:
-            missing_ids = expected_completed_ids - actual_id_set
-            unrelated_ids = actual_id_set - expected_completed_ids
+        # Detect duplicate IDs from enumeration
+        if enumerated_count != len(current_id_set):
             msg = (
-                f"Resume ownership verification failed for namespace '{CANONICAL_NAMESPACE}': "
-                f"expected exactly {len(expected_completed_ids)} completed IDs from checkpoint, "
-                f"found {len(actual_id_set)} actual IDs (stats vector count: {preflight_count}). "
-                f"Missing expected IDs: {len(missing_ids)}, Unrelated/extra IDs: {len(unrelated_ids)}."
+                f"Pilot preflight: enumeration returned {enumerated_count} IDs but only "
+                f"{len(current_id_set)} are unique — possible pagination ambiguity or duplicate IDs."
+            )
+            logger.error(msg)
+            report_data["preflight_status"] = "FAILED: Duplicate IDs in enumeration"
+            raise CanaryError(msg, category="PreflightEnumerationAmbiguous")
+
+        # Verify stats count matches enumeration count
+        if preflight_count != enumerated_count:
+            msg = (
+                f"Pilot preflight: stats reports {preflight_count} vectors but enumeration "
+                f"returned {enumerated_count} IDs — possible pagination ambiguity."
+            )
+            logger.error(msg)
+            report_data["preflight_status"] = "FAILED: Stats/enumeration count mismatch"
+            raise CanaryError(msg, category="PreflightEnumerationAmbiguous")
+
+        # Every current ID must belong to the pilot expected set.
+        unrelated_ids = current_id_set - expected_id_set_all
+        if unrelated_ids:
+            msg = (
+                f"Pilot preflight FAILED: namespace '{CANONICAL_NAMESPACE}' contains "
+                f"{len(unrelated_ids)} ID(s) that are NOT in the pilot-10000 expected set. "
+                "Refusing to write. Do not delete or clear automatically."
             )
             logger.error(msg)
             report_data["preflight_status"] = (
-                f"FAILED: Resume ownership mismatch (missing {len(missing_ids)}, unexpected {len(unrelated_ids)})"
+                f"FAILED: {len(unrelated_ids)} unrelated ID(s) in namespace"
             )
             raise CanaryError(
                 msg,
-                category="ResumeOwnershipMismatch",
-                safe_next_action="Verify index contents against checkpoint before retrying with --resume. Do not automatically clear.",
+                category="PilotOwnershipFailure",
+                safe_next_action=(
+                    "Verify namespace contents. All existing IDs must belong to the "
+                    "pilot-10000 manifest before proceeding."
+                ),
             )
 
-    logger.info(
-        "Pre-write namespace preflight PASSED (namespace '%s' has %d vectors, is_resume=%s).",
-        CANONICAL_NAMESPACE,
-        preflight_count,
-        is_resume_run,
-    )
+        logger.info(
+            "Pilot preflight PASSED: namespace '%s' has %d vectors, all belong to the "
+            "pilot-10000 expected set (expected_total=%d, is_resume=%s).",
+            CANONICAL_NAMESPACE,
+            preflight_count,
+            expected_total,
+            is_resume_run,
+        )
+        report_data["preflight_status"] = (
+            f"PASSED (pilot-10000: {preflight_count} existing vectors all ⊆ expected set)"
+        )
+
+    else:
+        # ── Canary-300 preflight (original logic, unchanged) ─────────────────
+        if not is_resume_run:
+            # Fresh canary run: namespace MUST be verifiably empty (0 records).
+            if preflight_count > 0:
+                msg = (
+                    f"Namespace '{CANONICAL_NAMESPACE}' is not empty (contains {preflight_count} vectors) "
+                    f"for a fresh canary run (expected 0). Refusing to write to prevent contamination. "
+                    "The namespace must be manually verified and cleared by the operator before running a fresh canary."
+                )
+                logger.error(msg)
+                report_data["preflight_status"] = (
+                    f"FAILED: Contaminated ({preflight_count} vectors)"
+                )
+                raise CanaryError(
+                    msg,
+                    category="NamespaceContaminatedPreflight",
+                    safe_next_action="Verify index contents. If stale, manually clear vectors in the pilot namespace. Never automatically clear.",
+                )
+            # Defense-in-depth: check ID enumeration on fresh run to ensure 0 IDs
+            try:
+                actual_fresh_ids = store.list_vector_ids(namespace=CANONICAL_NAMESPACE)
+            except Exception as exc:
+                logger.error("Pre-write namespace ID enumeration check failed: %s", exc)
+                report_data["preflight_status"] = f"FAILED: ID enumeration error {exc}"
+                raise CanaryError(
+                    f"Pre-write namespace preflight ID enumeration failed: {exc}",
+                    category="PreflightProviderFailure",
+                    safe_next_action="Verify Pinecone ID enumeration support and connectivity before running.",
+                ) from exc
+
+            if len(actual_fresh_ids) > 0:
+                msg = (
+                    f"Namespace '{CANONICAL_NAMESPACE}' contains {len(actual_fresh_ids)} vector IDs "
+                    f"for a fresh canary run (expected 0). Refusing to write to prevent contamination."
+                )
+                logger.error(msg)
+                report_data["preflight_status"] = (
+                    f"FAILED: Contaminated ({len(actual_fresh_ids)} IDs)"
+                )
+                raise CanaryError(
+                    msg,
+                    category="NamespaceContaminatedPreflight",
+                    safe_next_action="Verify index contents. If stale, manually clear vectors in the pilot namespace. Never automatically clear.",
+                )
+
+        else:
+            # Resume run: verify exact resume ownership using deterministic vector IDs
+            expected_completed_ids = {
+                r["id"]
+                for i, b in enumerate(batches)
+                if batch_digests[i] in completed_digests
+                for r in b
+            }
+            completed_record_count = len(expected_completed_ids)
+
+            if preflight_count > CANARY_EXPECTED_TOTAL:
+                msg = (
+                    f"Namespace '{CANONICAL_NAMESPACE}' contains {preflight_count} vectors, "
+                    f"which exceeds the total expected canary size of {CANARY_EXPECTED_TOTAL}. "
+                    "Namespace is contaminated or stale."
+                )
+                logger.error(msg)
+                report_data["preflight_status"] = (
+                    f"FAILED: Contaminated ({preflight_count} vectors > {CANARY_EXPECTED_TOTAL})"
+                )
+                raise CanaryError(
+                    msg,
+                    category="NamespaceContaminatedPreflight",
+                    safe_next_action="Verify index contents. Stale vectors must be manually cleared by the operator before resuming.",
+                )
+
+            # Enumerate vector IDs in namespace
+            try:
+                actual_namespace_ids = store.list_vector_ids(namespace=CANONICAL_NAMESPACE)
+            except Exception as exc:
+                logger.error("Pre-write resume ownership ID enumeration failed: %s", exc)
+                report_data["preflight_status"] = (
+                    f"FAILED: Resume ownership unverifiable ({exc})"
+                )
+                raise CanaryError(
+                    f"Pre-write resume ownership verification failed due to provider error: {exc}",
+                    category="ResumeOwnershipUnverifiable",
+                    safe_next_action="Verify Pinecone ID enumeration support, network connectivity, and credentials before retrying with --resume.",
+                ) from exc
+
+            actual_id_set = set(actual_namespace_ids)
+
+            # Verify exact ownership: actual namespace IDs must match expected completed IDs precisely
+            if actual_id_set != expected_completed_ids or preflight_count != completed_record_count:
+                missing_ids = expected_completed_ids - actual_id_set
+                unrelated_ids = actual_id_set - expected_completed_ids
+                msg = (
+                    f"Resume ownership verification failed for namespace '{CANONICAL_NAMESPACE}': "
+                    f"expected exactly {len(expected_completed_ids)} completed IDs from checkpoint, "
+                    f"found {len(actual_id_set)} actual IDs (stats vector count: {preflight_count}). "
+                    f"Missing expected IDs: {len(missing_ids)}, Unrelated/extra IDs: {len(unrelated_ids)}."
+                )
+                logger.error(msg)
+                report_data["preflight_status"] = (
+                    f"FAILED: Resume ownership mismatch (missing {len(missing_ids)}, unexpected {len(unrelated_ids)})"
+                )
+                raise CanaryError(
+                    msg,
+                    category="ResumeOwnershipMismatch",
+                    safe_next_action="Verify index contents against checkpoint before retrying with --resume. Do not automatically clear.",
+                )
+
+        logger.info(
+            "Pre-write namespace preflight PASSED (namespace '%s' has %d vectors, is_resume=%s).",
+            CANONICAL_NAMESPACE,
+            preflight_count,
+            is_resume_run,
+        )
     report_data["preflight_status"] = "PASSED"
 
     # ── Step 6: Token-paced parallel upserts ─────────────────────────────────
@@ -1420,14 +1572,13 @@ def _run(
 
     # ── Step 7: Post-write reconciliation — exact COUNT and exact ID SET ──────
     # Count equality alone is insufficient. We require BOTH:
-    #   1. Statistics count == exactly 300, AND
+    #   1. Statistics count == exactly expected_total, AND
     #   2. The enumerated namespace ID set == the manifest-derived expected ID set.
     # Any enumeration failure/ambiguity fails closed. No further upserts occur.
-    expected_id_set = {r["id"] for r in records}
-    if len(expected_id_set) != CANARY_EXPECTED_TOTAL:
+    if len(expected_id_set_all) != expected_total:
         raise CanaryError(
-            f"Expected manifest-derived ID set has {len(expected_id_set)} unique IDs, "
-            f"not {CANARY_EXPECTED_TOTAL}. Refusing to reconcile.",
+            f"Expected manifest-derived ID set has {len(expected_id_set_all)} unique IDs, "
+            f"not {expected_total} for scope '{scope}'. Refusing to reconcile.",
             category="ExpectedIdSetInvalid",
             safe_next_action="Regenerate the manifest — record IDs are not unique.",
         )
@@ -1448,10 +1599,10 @@ def _run(
             else:
                 logger.info("Namespace '%s' vector count: %d", CANONICAL_NAMESPACE, count)
                 final_count = count
-                if count == CANARY_EXPECTED_TOTAL:
+                if count == expected_total:
                     count_reconciled = True
                     break
-                elif count > CANARY_EXPECTED_TOTAL:
+                elif count > expected_total:
                     contaminated = True
                     logger.error(
                         "Namespace '%s' has %d vectors — EXCEEDS expected %d. "
@@ -1459,7 +1610,7 @@ def _run(
                         "This must be cleared by the live indexing operator before retrying.",
                         CANONICAL_NAMESPACE,
                         count,
-                        CANARY_EXPECTED_TOTAL,
+                        expected_total,
                     )
                     break
         except Exception as e:
@@ -1473,10 +1624,10 @@ def _run(
     # Store the COUNT result separately from the exact-ID result.
     if contaminated:
         count_result = (
-            f"CONTAMINATED — namespace has {final_count} vectors, expected {CANARY_EXPECTED_TOTAL}."
+            f"CONTAMINATED — namespace has {final_count} vectors, expected {expected_total}."
         )
     elif not count_reconciled:
-        count_result = f"TIMEOUT — count={final_count}, expected={CANARY_EXPECTED_TOTAL}"
+        count_result = f"TIMEOUT — count={final_count}, expected={expected_total}"
     else:
         count_result = f"PASS — count={final_count}"
     report_data["count_reconciliation"] = count_result
@@ -1514,7 +1665,7 @@ def _run(
         if failure is not None:
             raise failure
         logger.info(
-            "Canary indexing complete: %d records, %d tokens in %.1fs (%.1f r/s, %d t/min). "
+            "Indexing complete: %d records, %d tokens in %.1fs (%.1f r/s, %d t/min). "
             "Exact-ID verification: %s",
             total_records,
             total_tokens,
@@ -1524,7 +1675,7 @@ def _run(
             exact_id_result,
         )
 
-    # If the count never reached exactly 300, fail closed BEFORE ID enumeration.
+    # Fail closed BEFORE ID enumeration if count not reached.
     if not count_reconciled:
         category = "ContaminatedNamespace" if contaminated else "ReconciliationTimeout"
         safe_action = (
@@ -1537,7 +1688,7 @@ def _run(
             "failed",
             "NOT RUN — count precondition not met",
             CanaryError(
-                f"Count reconciliation did not reach exactly {CANARY_EXPECTED_TOTAL} vectors: "
+                f"Count reconciliation did not reach exactly {expected_total} vectors: "
                 f"{count_result}",
                 category=category,
                 safe_next_action=safe_action,
@@ -1545,7 +1696,7 @@ def _run(
         )
         return
 
-    # Count == 300. Now enumerate IDs and require EXACT set equality.
+    # Count == expected_total. Now enumerate IDs and require EXACT set equality.
     logger.info(
         "Count reconciled at %d. Enumerating vector IDs for exact-ID reconciliation …", final_count
     )
@@ -1582,13 +1733,13 @@ def _run(
         )
         return
 
-    if len(enumerated_set) != CANARY_EXPECTED_TOTAL:
+    if len(enumerated_set) != expected_total:
         _finalize(
             "failed",
-            f"FAIL — enumerated {len(enumerated_set)} unique IDs, expected {CANARY_EXPECTED_TOTAL}",
+            f"FAIL — enumerated {len(enumerated_set)} unique IDs, expected {expected_total}",
             CanaryError(
                 f"Post-write ID enumeration returned {len(enumerated_set)} unique IDs, "
-                f"expected exactly {CANARY_EXPECTED_TOTAL}.",
+                f"expected exactly {expected_total} for scope '{scope}'.",
                 category="PostWriteOwnershipMismatch",
                 safe_next_action=(
                     "Namespace contents do not match the manifest. Verify and clear "
@@ -1598,8 +1749,8 @@ def _run(
         )
         return
 
-    missing = expected_id_set - enumerated_set
-    unexpected = enumerated_set - expected_id_set
+    missing = expected_id_set_all - enumerated_set
+    unexpected = enumerated_set - expected_id_set_all
     if missing or unexpected:
         # Report only COUNTS of discrepancies — never dump the ID lists.
         _finalize(
@@ -1617,9 +1768,16 @@ def _run(
         )
         return
 
-    # All conditions satisfied: count == 300 AND exact ID-set equality.
-    logger.info("Post-write EXACT-ID reconciliation PASSED: 300 IDs match manifest exactly.")
-    _finalize("success", "PASS — 300 IDs match manifest exactly", None)
+    # All conditions satisfied: count == expected_total AND exact ID-set equality.
+    logger.info(
+        "Post-write EXACT-ID reconciliation PASSED: %d IDs match manifest exactly.",
+        expected_total,
+    )
+    _finalize(
+        "success",
+        f"PASS — {expected_total} IDs match manifest exactly",
+        None,
+    )
 
 
 if __name__ == "__main__":
