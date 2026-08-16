@@ -15,16 +15,85 @@ that is Gemini's live step in Antigravity IDE.
 
 ---
 
+## Scope
+
+- Pre-index readiness only. No live Pinecone write was performed during this task.
+- Target: 300-record canary (100 English + 100 Hindi + 100 Bengali), namespace
+  `pilot_v1`, index `msmarco-xi`. Pinecone is the sole production vector store.
+- `scripts/index_canary.py` remains the only live canary indexing path.
+- Out of scope: 10,000-record pilot, full 14-config corpus, any live provider call.
+
 ## Commit state
 
-- Starting commit SHA (as provided): `0b4921cccbef4f7c579474c75d4c33e8d8fee967`
-- Repository HEAD at the start of this session: `c66d27df7976fca8888777a45c5dff3bd7f5db92`
+- Starting commit SHA (this hardening pass): `273c290604859355b357df300836930d76cf7b95`
+- Final commit SHA: recorded in the git history of `origin/main` immediately
+  after this report is committed (this file cannot embed its own commit hash — a
+  circular reference). See the "fix(pre-index): close final count and
+  reconciliation gaps" commit at the tip of `main`.
 - Tested tree state: the working tree containing the changes below, with the full
   offline gate suite rerun successfully (see "Gate results").
 
 ---
 
-## Issues fixed (this pass)
+## Fixes completed in this pass (final count/reconciliation hardening)
+
+1. **Genuine fail-closed on non-integer counts.** Both
+   `PineconeStore.count_namespace()` and `index_canary._get_ns_vector_count()`
+   now accept ONLY a genuine non-negative Python `int`. `bool` (checked first,
+   since bool subclasses int), floats (`300.0`, `300.9`), numeric strings
+   (`"300"`), negatives, `None`, and missing `vector_count` are rejected and
+   never coerced. `count_namespace()` raises `PineconeProviderError`;
+   `_get_ns_vector_count()` returns the "unverifiable" `None`. Provider
+   exceptions remain failures. An empty/absent namespace in a valid response
+   still returns 0. Parametrized tests prove every accepted/rejected type across
+   preflight, polling, and reconciliation gates
+   (`tests/unit/test_preindex_hardening_v5.py`).
+2. **Environment-only Pinecone credentials.** Removed the `--pinecone-api-key`
+   CLI flag from `reconcile_corpus.py`, `describe_pinecone_index.py`,
+   `smoke_query_pinecone.py`, and `validate_pinecone_config.py`. Credentials read
+   only from `PINECONE_API_KEY`; a missing/blank value exits non-zero before any
+   provider construction. Tests assert the flag is absent from `--help`, rejected
+   by argparse (exit 2), and that missing env fails closed.
+3. **Secondary reconciliation asserts expected count.** `reconcile_corpus.py`
+   gained `--expected-count` (positive integer). Exit 0 only when the verified
+   namespace count equals the expected count; exit non-zero on mismatch,
+   malformed/unverifiable count, provider failure, or invalid expectation. JSON
+   output includes index, namespace, expected/actual count, and
+   `pass`/`mismatch`/`unverifiable` status with no credentials. Documented as a
+   SECONDARY check in Runbook Step 8; `index_canary.py` exact-ID reconciliation
+   remains authoritative.
+4. **Reproducible dependency installation.** `uv sync` reproduction commands in
+   `README.md`, `Makefile`, and `docs/INGESTION_RUNBOOK.md` now use
+   `uv sync --frozen --all-extras`. `uv.lock` was not modified.
+5. **Removed stale repository-state statements.** `docs/PROJECT_SUMMARY.md` no
+   longer claims "Nothing was committed or pushed"; it now states that offline
+   code/doc changes are committed and pushed while generated artifacts remain
+   git-ignored and no live write occurred.
+6. **Historical audit clearly separated from current truth.**
+   `docs/SKEPTICAL_PREINDEX_AUDIT.md` opens with a prominent HISTORICAL AUDIT
+   notice naming the earlier assessed commit and pointing to this report as the
+   authoritative verdict. Old measurements preserved.
+7. **Removed misleading Qdrant terminology.** `passage_ids.py` now says
+   "deterministic vector ID" / "provenance occurrence ID"; `language_routing.py`
+   says "language metadata filter"; `.gitignore` and `.dockerignore` label
+   `qdrant_data/` as "legacy local vector-store artefacts". Public function names
+   and the deterministic ID algorithm are unchanged. Remaining references
+   (`CLAUDE.md` project rules; the historical audit doc) are canonical or
+   genuinely historical/comparative.
+8. **Corrected background execution example.** `index_canary.py` docstring and
+   the Runbook now use valid `nohup env VAR=val ...` shell with no literal
+   secret, writing to `artifacts/logs/index_canary.log`.
+9. **Makefile correctness.** `canary-dry-run` and `canary-execute` added to
+   `.PHONY`; `$(MANIFEST)` is quoted in `canary-execute`; MANIFEST remains
+   required; `index_canary.py` remains the canonical dry-run/live path; no live
+   target runs during tests/install/CI/default; live execution stays guarded by
+   `CONFIRM_PINECONE_WRITE=1`.
+10. **This report updated** with scope, commit state, fix list, verification
+    evidence, honest limitations, and final verdict.
+
+---
+
+## Prior hardening pass (retained for provenance)
 
 1. **Exact post-write ID reconciliation (`scripts/index_canary.py`).**
    Step 7 no longer accepts count equality alone. After the namespace count
@@ -97,19 +166,18 @@ that is Gemini's live step in Antigravity IDE.
 
 ---
 
-## Files changed
+## Files changed (this pass)
 
-- `src/hhgoa_rag/pinecone_store.py`
-- `scripts/index_canary.py`
-- `scripts/ingest_prepared.py`
-- `scripts/prepare_canary.py`
-- `scripts/measure_corpus_capacity.py`
-- `scripts/reconcile_corpus.py`
-- `scripts/ingest_all.py`, `scripts/ingest_shard.py`, `scripts/resume_ingest.py`
-- `Makefile`, `.github/workflows/ci.yml`
-- `docs/INGESTION_RUNBOOK.md`, `docs/PROJECT_SUMMARY.md`, `docs/PINECONE_SCHEMA.md`, `README.md`
-- `tests/unit/test_preindex_hardening_v4.py` (new)
-- `tests/unit/test_preindex_hardening_v2.py`, `tests/unit/test_preindex_hardening_v3.py`, `tests/unit/test_canary_preparation.py`, `tests/contract/test_ingestion_safety.py`
+- `src/hhgoa_rag/pinecone_store.py` (strict int in `count_namespace`)
+- `scripts/index_canary.py` (strict int in `_get_ns_vector_count`; nohup example)
+- `scripts/reconcile_corpus.py` (env-only key; `--expected-count`)
+- `scripts/describe_pinecone_index.py`, `scripts/smoke_query_pinecone.py` (env-only key)
+- `src/hhgoa_rag/ingestion/passage_ids.py`, `src/hhgoa_rag/retrieval/language_routing.py` (terminology)
+- `Makefile` (`.PHONY`, quoting, frozen install), `.gitignore`, `.dockerignore`
+- `README.md`, `docs/INGESTION_RUNBOOK.md`, `docs/PROJECT_SUMMARY.md`,
+  `docs/SKEPTICAL_PREINDEX_AUDIT.md`, `docs/FINAL_PREINDEX_READINESS_REPORT.md`
+- `tests/unit/test_preindex_hardening_v5.py` (new — 52 tests)
+- `tests/unit/test_preindex_hardening_v4.py` (updated match string for bool)
 
 ---
 
@@ -125,13 +193,29 @@ uv run python scripts/scan_secrets.py .
 uv run pytest tests/unit tests/contract tests/behavioural -q -rs
 ```
 
-## Gate results
+## Gate results (this pass, 2026-08-16)
 
-- `ruff format --check .` — 106 files already formatted (0 errors).
+- `uv sync --frozen --all-extras` — locked environment resolved (exit 0).
+- `ruff format --check .` — 107 files already formatted (0 errors).
 - `ruff check .` — All checks passed (0 errors).
 - `mypy src scripts` — Success: no issues found in 64 source files.
-- `scan_secrets.py .` — no secrets detected; exit 0.
-- `pytest tests/unit tests/contract tests/behavioural` — **557 passed, 0 failed, 0 skipped**.
+- `scan_secrets.py .` — no secrets detected in tracked source files; exit 0.
+- `pytest tests/unit tests/contract tests/behavioural -q -rs`
+  (with `PINECONE_API_KEY`/`SARVAM_API_KEY`/`HF_TOKEN`/`CONFIRM_PINECONE_WRITE`
+  unset) — **609 passed, 0 failed, 0 skipped** (was 557; +52 new v5 tests).
+
+### Targeted checks
+
+- `make -n canary-dry-run MANIFEST=test.json` — expands to
+  `uv run python scripts/index_canary.py --manifest "test.json"` (quoted; no run).
+- `ingest_prepared.py --execute` with `PINECONE_API_KEY` +
+  `CONFIRM_PINECONE_WRITE=1` set — exit 2 before any Pinecone import.
+- `--help` for reconcile/describe/smoke/validate — zero `--pinecone-api-key`
+  occurrences; the flag is rejected by argparse (exit 2).
+- Deterministic preparation: two `prepare_canary.py` runs
+  (`HF_HUB_OFFLINE=1`, seed 42, pinned revisions) into `/tmp/run1` and
+  `/tmp/run2` produced byte-identical JSONL and manifest (`cmp` exit 0); JSONL
+  SHA-256 `ca912d133c3033eca71cc86045923e0165f5b43baba6f1951a1741ff0a3a9217`.
 
 ---
 

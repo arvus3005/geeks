@@ -58,8 +58,8 @@ counts. It is not a verified full-corpus measurement.
 
 ### Quick start (offline — no credentials needed)
 ```bash
-# 1. Install dependencies
-uv sync --all-extras
+# 1. Install dependencies (reproducible, locked environment)
+uv sync --frozen --all-extras
 
 # 2. Run offline test suite
 uv run pytest tests/unit tests/contract tests/behavioural -q

@@ -221,25 +221,22 @@ class PineconeStore:
         if vc is None and isinstance(ns_info, dict):
             vc = ns_info.get("vector_count")
 
-        if vc is None or isinstance(vc, bool):
-            raise PineconeProviderError(
-                f"count_namespace received a malformed vector_count for "
-                f"namespace '{namespace}': {vc!r}."
-            )
-        try:
-            count = int(vc)
-        except (ValueError, TypeError) as e:
+        # Strict type acceptance: only a genuine, non-negative Python ``int``
+        # is valid. ``bool`` (a subclass of int), floats (300.0, 300.9),
+        # numeric strings ("300"), None, and negatives are all malformed and
+        # must NOT be coerced. Coercion would silently accept
+        # ``300.9 -> 300`` or ``"300" -> 300``.
+        if isinstance(vc, bool) or not isinstance(vc, int):
             raise PineconeProviderError(
                 f"count_namespace received a non-integer vector_count for "
-                f"namespace '{namespace}': {vc!r}.",
-                cause=e,
-            ) from e
-        if count < 0:
+                f"namespace '{namespace}': {vc!r}."
+            )
+        if vc < 0:
             raise PineconeProviderError(
                 f"count_namespace received a negative vector_count for "
-                f"namespace '{namespace}': {count}."
+                f"namespace '{namespace}': {vc}."
             )
-        return count
+        return vc
 
     def list_vector_ids(
         self,

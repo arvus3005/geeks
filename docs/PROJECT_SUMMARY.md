@@ -214,8 +214,11 @@ uv run python scripts/prepare_canary.py \
 No Pinecone index was created, listed, queried, upserted or deleted.  
 No Sarvam / ElevenLabs / WhisperFlow calls were made.  
 `.env` was not modified.  
-Nothing was committed or pushed.  
-Remote Pinecone state remains unverified by design.
+Offline code and documentation changes ARE committed and pushed to
+`origin/main` at `https://github.com/arvus3005/geeks`; generated datasets,
+caches, checkpoints, logs, embeddings, and secrets are git-ignored and were
+never committed.  
+Remote Pinecone state remains unverified by design (no live write performed).
 
 ---
 

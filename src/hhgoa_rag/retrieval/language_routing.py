@@ -31,7 +31,7 @@ def detect_script(text: str) -> str:
 
 
 def get_language_filter(detected_lang: str, hint: str | None) -> list[str]:
-    """Return list of language codes to include in Qdrant filter."""
+    """Return list of language codes for the language metadata filter."""
     lang = hint or detected_lang or "en"
     if lang == "hi":
         return ["hi", "en"]

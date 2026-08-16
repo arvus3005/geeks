@@ -24,11 +24,14 @@ Usage:
       --manifest artifacts/prepared/<id>_manifest.json \\
       --execute --resume
 
-  # Background (nohup):
-  nohup CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> \\
+  # Background (nohup) — use `env` so the variables reach the detached process:
+  nohup env \\
+    CONFIRM_PINECONE_WRITE=1 \\
+    PINECONE_API_KEY="$PINECONE_API_KEY" \\
     uv run python scripts/index_canary.py \\
-      --manifest artifacts/prepared/<id>_manifest.json \\
-      --execute --resume > logs/index_canary.log 2>&1 &
+    --manifest <manifest-path> \\
+    --execute \\
+    > artifacts/logs/index_canary.log 2>&1 &
 
 Hard limits:
   - Only works with a valid 300-record canary manifest bound to pilot_v1.
@@ -307,14 +310,15 @@ def _get_ns_vector_count(stats: object, namespace: str = CANONICAL_NAMESPACE) ->
     if vc is None and isinstance(ns_info, dict):
         vc = ns_info.get("vector_count")
 
-    if vc is None or isinstance(vc, bool):
+    # Strict type acceptance: only a genuine, non-negative Python ``int`` is a
+    # verifiable count. ``bool`` (subclass of int), floats (300.0, 300.9),
+    # numeric strings ("300"), None, and negatives are unverifiable and must
+    # NOT be coerced — coercion would silently accept ``300.9 -> 300`` or
+    # ``"300" -> 300`` and let a malformed value pass preflight / polling /
+    # reconciliation gates. Return None (the "unverifiable" result) instead.
+    if isinstance(vc, bool) or not isinstance(vc, int):
         return None
-
-    try:
-        count = int(vc)
-        return count if count >= 0 else None
-    except (ValueError, TypeError):
-        return None
+    return vc if vc >= 0 else None
 
 
 def _sha256_file(path: Path) -> str:

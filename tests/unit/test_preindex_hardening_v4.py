@@ -525,7 +525,7 @@ class TestCountNamespaceFailClosed:
         ns_info.vector_count = True
         stats.namespaces = {"pilot_v1": ns_info}
         index.describe_index_stats.return_value = stats
-        with pytest.raises(PineconeProviderError, match="malformed vector_count"):
+        with pytest.raises(PineconeProviderError, match="non-integer vector_count"):
             self._store(index).count_namespace("pilot_v1")
 
 

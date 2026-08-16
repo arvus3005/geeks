@@ -11,7 +11,9 @@ from hhgoa_rag.pinecone_contract import INDEX_NAME, MODEL
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Query Pinecone smoke namespace")
-    p.add_argument("--pinecone-api-key", default=None)
+    # NOTE: API key comes from PINECONE_API_KEY environment variable ONLY.
+    # A --pinecone-api-key flag would leak credentials via shell history and the
+    # process list; it has been intentionally removed.
     p.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", INDEX_NAME))
     p.add_argument("--query", default="What is the capital of India?")
     p.add_argument("--top-k", type=int, default=5)
@@ -22,7 +24,7 @@ def main() -> None:
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
 
-    api_key = args.pinecone_api_key or os.environ.get("PINECONE_API_KEY")
+    api_key = os.environ.get("PINECONE_API_KEY")
     if not api_key:
         print("ERROR: PINECONE_API_KEY not set", file=sys.stderr)
         sys.exit(1)

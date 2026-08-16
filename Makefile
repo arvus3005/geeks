@@ -1,7 +1,7 @@
-.PHONY: install fmt fmt-check lint typecheck test test-unit ci dry-run-index dry-run-ingest validate-manifest estimate-capacity scan-secrets
+.PHONY: install fmt fmt-check lint typecheck test test-unit ci dry-run-index dry-run-ingest validate-manifest estimate-capacity scan-secrets canary-dry-run canary-execute
 
 install:
-	uv sync --all-extras
+	uv sync --frozen --all-extras
 
 fmt:
 	uv run ruff format src/ tests/ bench/ scripts/
@@ -52,7 +52,7 @@ canary-dry-run:
 canary-execute:
 	@echo "Usage: CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> make canary-execute MANIFEST=..."
 	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set" && exit 1)
-	uv run python scripts/index_canary.py --manifest $(MANIFEST) --execute --resume --concurrency 4
+	uv run python scripts/index_canary.py --manifest "$(MANIFEST)" --execute --resume --concurrency 4
 
 # Estimate indexing capacity for the current budget configuration
 estimate-capacity:

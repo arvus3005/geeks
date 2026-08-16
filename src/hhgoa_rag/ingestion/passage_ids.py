@@ -17,12 +17,12 @@ def make_point_id(
     chunk_strategy_version: str,
     chunk_ordinal: int,
 ) -> str:
-    """Deterministic UUIDv5 Qdrant point ID. Same input = same ID across processes."""
+    """Deterministic vector ID (UUIDv5). Same input = same ID across processes."""
     name = f"{dataset_revision}|{language}|{content_hash}|{chunk_strategy_version}|{chunk_ordinal}"
     return str(uuid.uuid5(_NS, name))
 
 
 def make_passage_id(split: str, language: str, query_id: str, passage_idx: int) -> str:
-    """Legacy occurrence ID for provenance (not used as Qdrant point ID)."""
+    """Provenance occurrence ID (not used as the deterministic vector ID)."""
     raw = f"{split}:{language}:{query_id}:{passage_idx}"
     return hashlib.sha256(raw.encode()).hexdigest()[:24]

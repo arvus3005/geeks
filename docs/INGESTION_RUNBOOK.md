@@ -9,7 +9,7 @@
 ```bash
 git clone https://github.com/arvus3005/geeks
 cd geeks
-uv sync --all-extras
+uv sync --frozen --all-extras
 ```
 
 Verify no secrets in the codebase:
@@ -165,10 +165,13 @@ CONFIRM_PINECONE_WRITE=1 \
 Background execution (nohup + checkpoint resume as primary recovery):
 ```bash
 export PINECONE_API_KEY=<your-key>
-nohup env CONFIRM_PINECONE_WRITE=1 \
+nohup env \
+    CONFIRM_PINECONE_WRITE=1 \
+    PINECONE_API_KEY="$PINECONE_API_KEY" \
     uv run python scripts/index_canary.py \
     --manifest artifacts/prepared/<manifest_id>_manifest.json \
-    --execute --resume > logs/index_canary.log 2>&1 &
+    --execute --resume \
+    > artifacts/logs/index_canary.log 2>&1 &
 ```
 
 > **Important**: Use `nohup env VAR=val ...` syntax so environment variables are
@@ -196,11 +199,17 @@ nohup env CONFIRM_PINECONE_WRITE=1 \
 ## Step 8: Reconcile counts
 
 ```bash
-PINECONE_API_KEY=<your-key> \
-    uv run python scripts/reconcile_corpus.py \
-    --pinecone-index msmarco-xi \
-    --namespace pilot_v1
+PINECONE_API_KEY=<provided-through-environment> \
+uv run python scripts/reconcile_corpus.py \
+  --pinecone-index msmarco-xi \
+  --namespace pilot_v1 \
+  --expected-count 300
 ```
+
+This is a **secondary** count check; `index_canary.py` exact-ID reconciliation
+remains authoritative. With `--expected-count 300`, the script exits 0 only when
+the verified namespace vector count equals exactly 300, and exits non-zero on any
+mismatch, invalid expectation, or unverifiable count.
 
 `reconcile_corpus.py` fails closed: if a valid namespace vector count cannot be
 obtained (provider error, malformed response), it prints "reconciliation

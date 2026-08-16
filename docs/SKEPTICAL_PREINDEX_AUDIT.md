@@ -1,6 +1,9 @@
 # Skeptical Pre-Index Reliability Audit & Historical Report
 
-> **HISTORICAL AUDIT**: This audit documents intermediate findings and resolutions. The authoritative, canonical final report is [`docs/FINAL_PREINDEX_READINESS_REPORT.md`](FINAL_PREINDEX_READINESS_REPORT.md).
+> **HISTORICAL AUDIT — Not the current readiness verdict.**
+> This document assessed the repository at an earlier state (commit `1666db43cb22cf8bf638a16086d281440604e195`).
+> Its test counts and capacity estimates are historical evidence, not current truth.
+> See [docs/FINAL_PREINDEX_READINESS_REPORT.md](FINAL_PREINDEX_READINESS_REPORT.md) for the authoritative current verdict.
 
 **Auditor:** Senior Repository Auditor & Pre-Index Reliability Engineer  
 **Date:** 2026-08-16  

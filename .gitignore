@@ -55,7 +55,7 @@ artifacts/ledgers/
 # Checkpoint files
 *.checkpoint.json
 
-# Qdrant local storage (legacy — unused)
+# Legacy local vector-store artefacts (unused)
 qdrant_data/
 
 # Model cache / tokenizer cache
