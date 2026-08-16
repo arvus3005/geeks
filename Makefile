@@ -1,4 +1,4 @@
-.PHONY: install fmt fmt-check lint typecheck test test-unit ci dry-run-index dry-run-ingest
+.PHONY: install fmt fmt-check lint typecheck test test-unit ci dry-run-index dry-run-ingest validate-manifest estimate-capacity scan-secrets
 
 install:
 	uv sync --all-extras
@@ -19,7 +19,7 @@ test-unit:
 	uv run pytest tests/unit/ tests/behavioural/ tests/contract/ -v
 
 test:
-	uv run pytest tests/ -v --ignore=tests/integration
+	uv run pytest tests/ -q -rs
 
 ci: typecheck lint fmt-check test
 
@@ -40,3 +40,19 @@ scan-secrets:
 	@echo "Scanning for credential literals..."
 	@rg -l "pc-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}" src tests scripts bench || true
 	@echo "Scan complete."
+
+# Validate a prepared-canary manifest (offline, no credentials)
+validate-manifest:
+	@echo "Usage: make validate-manifest MANIFEST=artifacts/prepared/<id>_manifest.json"
+	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set" && exit 1)
+	uv run python scripts/ingest_prepared.py --manifest $(MANIFEST) --dry-run
+
+# Estimate indexing capacity for the current budget configuration
+estimate-capacity:
+	uv run python -c "\
+from hhgoa_rag.ingestion.budget import make_default_guard; \
+g = make_default_guard(); \
+r = g.usage_report(); \
+print('Budget estimate:'); \
+[print(f'  {k}: {v}') for k,v in r.items() if k != 'per_language']; \
+"

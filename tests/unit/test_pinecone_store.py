@@ -96,24 +96,35 @@ def test_upsert_empty_returns_zero():
     assert count == 0
 
 
-def test_upsert_retries_on_failure():
-    index = MagicMock()
-    index.upsert_records.side_effect = [RuntimeError("timeout"), None]
-    store = PineconeStore(index, embed_model="multilingual-e5-large", retry_backoff=0.0)
-    count = store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=SMOKE_NAMESPACE)
-    assert count == 1
-    assert index.upsert_records.call_count == 2
+def test_upsert_raises_raw_exception_on_failure():
+    """PineconeStore.upsert_records makes exactly one SDK call and raises on failure.
 
-
-def test_upsert_raises_provider_error_after_max_retries():
+    Retry logic is owned by the ingestion orchestration layer, not PineconeStore.
+    """
     index = MagicMock()
-    index.upsert_records.side_effect = RuntimeError("persistent failure")
-    store = PineconeStore(
-        index, embed_model="multilingual-e5-large", max_retries=2, retry_backoff=0.0
-    )
-    with pytest.raises(PineconeProviderError):
+    index.upsert_records.side_effect = RuntimeError("transient error")
+    store = PineconeStore(index, embed_model="multilingual-e5-large")
+    with pytest.raises(RuntimeError, match="transient error"):
         store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=SMOKE_NAMESPACE)
-    assert index.upsert_records.call_count == 3  # initial + 2 retries
+    assert index.upsert_records.call_count == 1  # exactly one call, no internal retry
+
+
+def test_upsert_exactly_one_sdk_call_on_success():
+    """PineconeStore.upsert_records makes exactly one SDK call per invocation."""
+    index = MagicMock()
+    store = PineconeStore(index, embed_model="multilingual-e5-large")
+    store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=SMOKE_NAMESPACE)
+    assert index.upsert_records.call_count == 1
+
+
+def test_upsert_rejects_oversized_batch():
+    """Batches exceeding 96 records are rejected before any SDK call."""
+    index = MagicMock()
+    store = PineconeStore(index, embed_model="multilingual-e5-large")
+    records = [{"id": str(i), TEXT_RECORD_FIELD: "t"} for i in range(97)]
+    with pytest.raises(ValueError, match="96"):
+        store.upsert_records(records, namespace=SMOKE_NAMESPACE)
+    index.upsert_records.assert_not_called()
 
 
 # ── Search ────────────────────────────────────────────────────────────────────

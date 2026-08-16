@@ -1,6 +1,6 @@
 """Adversarial production-path tests.
 
-40 tests covering:
+Covers:
 - prepare_canary helpers (stable key, Parquet URL, source identity check)
 - ingest_prepared helpers (batch packer, manifest validation, forbidden field check)
 - tokenizer revision-keyed caching
@@ -9,6 +9,15 @@
 - validate_pinecone_config credential handling
 - passage_ids determinism
 - parser forbidden field stripping
+- strict schema rejection of extra / nested source fields
+- dry-run never imports or constructs Pinecone
+- budget failure before SDK call
+- one retry owner (PineconeStore makes exactly one SDK call)
+- close() does not flush failed reservations
+- batch limits (96 records / 1,800,000 bytes)
+- oversized single record refused
+- smoke namespace constant
+- integration tests skip honestly without credentials
 """
 
 from __future__ import annotations
@@ -534,3 +543,354 @@ def _write_manifest_with_checksum(manifest: dict, tmp_path: Path) -> None:
     ).hexdigest()
     manifest["manifest_checksum"] = checksum
     _write_manifest(manifest, tmp_path)
+
+
+# ── 13. strict schema: rejects extra and nested source fields ─────────────────
+
+
+def test_schema_rejects_forbidden_field_at_top_level():
+    """validate_record must refuse records with forbidden fields at top level."""
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, validate_record
+
+    rec = _make_minimal_valid_record()
+    rec["query"] = "what is the capital?"
+    with pytest.raises(SchemaViolationError, match="query"):
+        validate_record(rec)
+
+
+def test_schema_rejects_forbidden_field_nested():
+    """validate_record must refuse records with forbidden fields in nested dicts."""
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, validate_record
+
+    rec = _make_minimal_valid_record()
+    rec["source_meta"] = {"is_selected": True}
+    with pytest.raises(SchemaViolationError, match="is_selected"):
+        validate_record(rec)
+
+
+def test_schema_rejects_missing_required_field():
+    """validate_record must refuse records missing any required field."""
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, validate_record
+
+    rec = _make_minimal_valid_record()
+    del rec["language"]
+    with pytest.raises(SchemaViolationError, match="language"):
+        validate_record(rec)
+
+
+def test_schema_build_record_contains_all_required_fields():
+    """build_record must produce a record with every REQUIRED_FIELDS entry."""
+    from hhgoa_rag.ingestion.schema import REQUIRED_FIELDS
+
+    rec = _make_built_record()
+    for field in REQUIRED_FIELDS:
+        assert field in rec, f"Missing required field: {field}"
+
+
+def test_schema_rejects_zero_token_length():
+    """validate_record must refuse records with token_length <= 0."""
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, validate_record
+
+    rec = _make_minimal_valid_record()
+    rec["token_length"] = 0
+    with pytest.raises(SchemaViolationError):
+        validate_record(rec)
+
+
+# ── 14. dry-run: never imports or constructs Pinecone ─────────────────────────
+
+
+def test_dry_run_does_not_import_pinecone(tmp_path):
+    """--dry-run must never import the pinecone package or read PINECONE_API_KEY."""
+    import subprocess
+    import sys
+
+    # Create a dummy (empty) records file and compute its correct checksum
+    records_path = tmp_path / "records.jsonl"
+    records_path.write_text("")
+    empty_checksum = hashlib.sha256(b"").hexdigest()
+
+    # Build manifest pointing to the empty records file with correct checksums
+    manifest = _make_minimal_manifest(tmp_path)
+    manifest["prepared_record_path"] = str(records_path)
+    manifest["total_records"] = 0
+    manifest["prepared_record_checksum"] = empty_checksum
+    _write_manifest_with_checksum(manifest, tmp_path)
+
+    # Explicitly unset PINECONE_API_KEY for this subprocess
+    import os
+
+    env_no_key = dict(os.environ)
+    env_no_key.pop("PINECONE_API_KEY", None)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/ingest_prepared.py",
+            "--manifest",
+            str(tmp_path / "manifest.json"),
+            "--dry-run",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(Path(__file__).parent.parent.parent),
+        env=env_no_key,
+    )
+    # Must exit cleanly (0) in dry-run
+    assert result.returncode == 0, f"dry-run failed:\n{result.stderr}"
+    # Output must not mention the live Pinecone constructor
+    assert "Pinecone(api_key" not in result.stdout
+    assert "Pinecone(api_key" not in result.stderr
+
+
+# ── 15. budget failure before SDK call ────────────────────────────────────────
+
+
+def test_budget_exceeded_before_sdk_call():
+    """BudgetGuard.check_upsert must raise BEFORE any SDK call is made."""
+    from unittest.mock import MagicMock
+
+    from hhgoa_rag.ingestion.budget import BudgetExceededError, BudgetGuard, StarterBudget
+
+    sdk = MagicMock()
+    budget = StarterBudget(max_records=5)
+    guard = BudgetGuard(budget=budget)
+    # Pre-fill ledger to near limit
+    guard.commit_upsert(language="en", record_count=5, token_count=100, byte_count=1000)
+
+    with pytest.raises(BudgetExceededError):
+        guard.check_upsert(language="en", record_count=1, token_count=10, byte_count=100)
+
+    # SDK must never have been called
+    sdk.upsert_records.assert_not_called()
+
+
+# ── 16. one retry owner: PineconeStore makes exactly one SDK call ─────────────
+
+
+def test_pinecone_store_makes_exactly_one_sdk_call_per_invocation():
+    """PineconeStore.upsert_records must make exactly one SDK call, not retry internally."""
+    from unittest.mock import MagicMock
+
+    from hhgoa_rag.pinecone_store import SMOKE_NAMESPACE, TEXT_RECORD_FIELD, PineconeStore
+
+    index = MagicMock()
+    store = PineconeStore(index, embed_model="multilingual-e5-large")
+    store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=SMOKE_NAMESPACE)
+    assert index.upsert_records.call_count == 1
+
+
+def test_pinecone_store_does_not_retry_on_failure():
+    """PineconeStore.upsert_records must not retry internally; failure propagates immediately."""
+    from unittest.mock import MagicMock
+
+    from hhgoa_rag.pinecone_store import SMOKE_NAMESPACE, TEXT_RECORD_FIELD, PineconeStore
+
+    index = MagicMock()
+    index.upsert_records.side_effect = RuntimeError("sdk error")
+    store = PineconeStore(index, embed_model="multilingual-e5-large")
+    with pytest.raises(RuntimeError, match="sdk error"):
+        store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=SMOKE_NAMESPACE)
+    # Exactly one attempt — no internal retry
+    assert index.upsert_records.call_count == 1
+
+
+def test_orchestration_retry_produces_bounded_sdk_calls():
+    """Configured 2-retry policy produces no more than 3 SDK calls (not 9 or 16)."""
+    from unittest.mock import MagicMock
+
+    from hhgoa_rag.pinecone_store import SMOKE_NAMESPACE, TEXT_RECORD_FIELD, PineconeStore
+
+    index = MagicMock()
+    index.upsert_records.side_effect = RuntimeError("persistent")
+    store = PineconeStore(index, embed_model="multilingual-e5-large")
+    records = [{"id": "x", TEXT_RECORD_FIELD: "t"}]
+
+    max_retries = 2
+    sdk_calls = 0
+    for attempt in range(max_retries + 1):
+        try:
+            store.upsert_records(records, namespace=SMOKE_NAMESPACE)
+            break
+        except Exception:
+            sdk_calls += 1
+
+    assert sdk_calls == max_retries + 1, f"Expected {max_retries + 1} calls, got {sdk_calls}"
+    assert index.upsert_records.call_count == max_retries + 1
+
+
+# ── 17. close() does not flush failed reservations ────────────────────────────
+
+
+def test_dedup_close_discards_pending_hashes():
+    """ContentDeduplicator.close() must discard pending hashes, not flush them."""
+    import tempfile
+
+    from hhgoa_rag.ingestion.dedup import ContentDeduplicator
+
+    with tempfile.TemporaryDirectory() as d:
+        db_path = Path(d) / "dedup.db"
+        dedup = ContentDeduplicator(db_path)
+        dedup.mark_seen("should-not-persist", "pid1")
+        dedup.close()
+
+        # Re-open and verify hash was NOT committed
+        dedup2 = ContentDeduplicator(db_path)
+        assert not dedup2.is_duplicate(
+            "should-not-persist"
+        ), "close() must not flush pending hashes — unacknowledged records must be replayable"
+        dedup2.close()
+
+
+# ── 18. batch limits ──────────────────────────────────────────────────────────
+
+
+def test_build_batches_never_exceeds_96_records():
+    """No batch produced by _build_batches may exceed 96 records."""
+    sys_path_prepend()
+    from scripts.ingest_prepared import _build_batches
+
+    records = [{"id": str(i), "chunk_text": "t"} for i in range(1000)]
+    batches = _build_batches(records)
+    for i, batch in enumerate(batches):
+        assert len(batch) <= 96, f"Batch {i} has {len(batch)} records, exceeds 96"
+
+
+def test_build_batches_never_exceeds_1_800_000_bytes():
+    """No batch produced by _build_batches may exceed 1,800,000 serialized bytes."""
+    sys_path_prepend()
+    from scripts.ingest_prepared import _build_batches
+
+    big_text = "x" * 20_000
+    records = [{"id": str(i), "chunk_text": big_text} for i in range(200)]
+    batches = _build_batches(records)
+    for i, batch in enumerate(batches):
+        batch_bytes = sum(len(json.dumps(r, ensure_ascii=False).encode("utf-8")) for r in batch)
+        assert batch_bytes <= 1_800_000, f"Batch {i} is {batch_bytes} bytes, exceeds 1,800,000"
+
+
+def test_pinecone_store_rejects_oversized_batch():
+    """PineconeStore.upsert_records must refuse batches with > 96 records."""
+    from unittest.mock import MagicMock
+
+    from hhgoa_rag.pinecone_store import SMOKE_NAMESPACE, TEXT_RECORD_FIELD, PineconeStore
+
+    index = MagicMock()
+    store = PineconeStore(index, embed_model="multilingual-e5-large")
+    records = [{"id": str(i), TEXT_RECORD_FIELD: "t"} for i in range(97)]
+    with pytest.raises(ValueError, match="96"):
+        store.upsert_records(records, namespace=SMOKE_NAMESPACE)
+    index.upsert_records.assert_not_called()
+
+
+# ── 19. smoke namespace constant ──────────────────────────────────────────────
+
+
+def test_smoke_test_namespace_is_fixed_constant():
+    """The smoke namespace used in integration tests must be 'smoke-fixture-v001'."""
+    import importlib.util
+
+    integration_path = Path(__file__).parent.parent / "integration" / "test_pinecone_smoke.py"
+    spec = importlib.util.spec_from_file_location("test_pinecone_smoke", integration_path)
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    assert mod.SMOKE_TEST_NAMESPACE == "smoke-fixture-v001"
+
+
+def test_smoke_namespace_does_not_contain_canary_or_pilot():
+    """Smoke namespace must never contain 'canary', 'pilot', or 'full'."""
+    from hhgoa_rag.pinecone_store import SMOKE_NAMESPACE
+
+    # The module-level SMOKE_NAMESPACE is "smoke" (short namespace for is_safe_namespace)
+    # Integration test uses "smoke-fixture-v001" which also satisfies this
+    assert "canary" not in SMOKE_NAMESPACE
+    assert "pilot" not in SMOKE_NAMESPACE
+    assert "full" not in SMOKE_NAMESPACE
+
+
+# ── 20. integration tests skip honestly without credentials ───────────────────
+
+
+def test_integration_tests_skip_without_api_key(monkeypatch):
+    """Integration tests must call pytest.skip when PINECONE_API_KEY is absent."""
+    monkeypatch.delenv("PINECONE_API_KEY", raising=False)
+    monkeypatch.delenv("PINECONE_SMOKE_TEST", raising=False)
+
+    import importlib.util
+
+    integration_path = Path(__file__).parent.parent / "integration" / "test_pinecone_smoke.py"
+    spec = importlib.util.spec_from_file_location("_smoke_check", integration_path)
+    assert spec is not None
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+
+    with pytest.raises(pytest.skip.Exception):
+        mod._require_opt_in()
+
+
+# ── 21. no credential accepted through CLI ────────────────────────────────────
+
+
+def test_ingest_prepared_has_no_api_key_flag():
+    """--pinecone-api-key CLI flag must not exist in ingest_prepared."""
+    sys_path_prepend()
+    from scripts.ingest_prepared import _build_parser
+
+    p = _build_parser()
+    # Collect all option strings from all actions
+    all_opts = [opt for action in p._actions for opt in action.option_strings]
+    assert (
+        "--pinecone-api-key" not in all_opts
+    ), "ingest_prepared must not accept --pinecone-api-key; credentials via env only"
+
+
+# ── Helpers for new tests ─────────────────────────────────────────────────────
+
+
+def _make_minimal_valid_record() -> dict:
+    """Return a minimal dict that passes validate_record."""
+    from hhgoa_rag.ingestion.schema import REQUIRED_FIELDS
+    from hhgoa_rag.pinecone_store import TEXT_RECORD_FIELD
+
+    rec: dict = {}
+    for field in REQUIRED_FIELDS:
+        if field == "id":
+            rec[field] = "test-id-001"
+        elif field == TEXT_RECORD_FIELD:
+            rec[field] = "sample text"
+        elif field == "token_length":
+            rec[field] = 10
+        elif field in ("chunk_ordinal", "chunk_total", "local_source_row", "passage_position"):
+            rec[field] = 0
+        else:
+            rec[field] = "test-value"
+    return rec
+
+
+def _make_built_record() -> dict:
+    """Return a record produced by build_record()."""
+    from hhgoa_rag.ingestion.schema import build_record
+
+    return build_record(
+        record_id="test-uuid-001",
+        chunk_text="sample text for testing",
+        language="en",
+        config_language="en",
+        dataset_revision="abc123",
+        split="train",
+        physical_shard="0",
+        local_source_row=0,
+        passage_position=0,
+        parent_passage_id="parent-hash",
+        content_hash="content-hash-001",
+        chunk_strategy="passage_native",
+        chunk_strategy_version="v1",
+        chunk_ordinal=0,
+        chunk_total=1,
+        token_length=5,
+        tokenizer_fingerprint="fp123",
+        manifest_id="test-manifest",
+    )

@@ -22,20 +22,26 @@ def test_dedup_is_duplicate_after_mark_in_buffer():
         dedup.close()
 
 
-def test_dedup_persists_after_close():
-    """close() calls flush(), committing pending hashes to SQLite."""
+def test_dedup_close_discards_pending():
+    """close() MUST NOT flush pending hashes.
+
+    Unacknowledged pending entries are discarded on close so that they can be
+    safely replayed on the next run.  Only flush() (called after Pinecone ack)
+    commits hashes to SQLite.
+    """
     with tempfile.TemporaryDirectory() as d:
         db = Path(d) / "test.db"
         dedup = ContentDeduplicator(db)
         dedup.mark_seen("xyz", "p1")
         dedup.close()
+        # After close with pending-but-not-flushed, DB must remain empty
         dedup2 = ContentDeduplicator(db)
-        assert dedup2.is_duplicate("xyz")
+        assert not dedup2.is_duplicate("xyz")
         dedup2.close()
 
 
 def test_dedup_no_auto_flush_many_marks():
-    """mark_seen does NOT auto-flush to SQLite — only explicit flush() or close() does."""
+    """mark_seen does NOT auto-flush to SQLite — only explicit flush() does."""
     with tempfile.TemporaryDirectory() as d:
         db = Path(d) / "test.db"
         dedup = ContentDeduplicator(db)
@@ -47,10 +53,10 @@ def test_dedup_no_auto_flush_many_marks():
         count = dedup._conn.execute("SELECT COUNT(*) FROM seen_hashes").fetchone()[0]
         assert count == 0
         dedup.close()
-        # After close, all 600 should be in DB
+        # close() discards pending; DB still empty
         dedup2 = ContentDeduplicator(db)
-        for i in range(600):
-            assert dedup2.is_duplicate(f"hash{i}")
+        count2 = dedup2._conn.execute("SELECT COUNT(*) FROM seen_hashes").fetchone()[0]
+        assert count2 == 0
         dedup2.close()
 
 

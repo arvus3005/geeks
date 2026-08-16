@@ -15,7 +15,6 @@ when ingesting and the ``text`` input value when searching.
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -71,7 +70,19 @@ def _check_namespace_guard(namespace: str, context: str) -> None:
 
 
 class PineconeStore:
-    """Single-index Pinecone client with integrated multilingual embedding."""
+    """Single-index Pinecone client with integrated multilingual embedding.
+
+    Retry policy ownership
+    ----------------------
+    ``upsert_records()`` makes **exactly one** SDK call per invocation.
+    It does NOT retry internally.  The ingestion orchestration layer (engine.py,
+    ingest_prepared.py) owns the retry policy so that each attempt can be
+    atomically recorded in the state DB before the call is made.
+
+    ``max_retries`` and ``retry_backoff`` are accepted for API compatibility
+    but are ignored for upserts.  They are retained so existing callers that
+    pass keyword arguments do not break.
+    """
 
     def __init__(
         self,
@@ -97,6 +108,10 @@ class PineconeStore:
     ) -> int:
         """Idempotent upsert — same ID overwrites the existing record.
 
+        Makes **exactly one** SDK call.  The caller is responsible for retry
+        logic.  Raises the raw SDK exception on failure so the caller can
+        decide whether to retry and can record the attempt before doing so.
+
         context must be 'full' to write to the full namespace.
         Returns the number of records submitted.
         """
@@ -104,31 +119,19 @@ class PineconeStore:
         if not records:
             return 0
 
-        for attempt in range(self._max_retries + 1):
-            try:
-                self._index.upsert_records(
-                    records=records,
-                    namespace=namespace,
-                    timeout=self._upsert_timeout,
-                )
-                return len(records)
-            except Exception as e:
-                if attempt < self._max_retries:
-                    wait = self._retry_backoff**attempt
-                    logger.warning(
-                        "Pinecone upsert attempt %d/%d failed, retrying in %.1fs: %s",
-                        attempt + 1,
-                        self._max_retries,
-                        wait,
-                        e,
-                    )
-                    time.sleep(wait)
-                else:
-                    raise PineconeProviderError(
-                        f"Pinecone upsert permanently failed after {self._max_retries} retries",
-                        cause=e,
-                    ) from e
-        return 0  # unreachable
+        # Defense-in-depth: validate batch limits before the SDK call.
+        if len(records) > 96:
+            raise ValueError(
+                f"Batch has {len(records)} records, exceeding the 96-record Pinecone limit. "
+                "Split the batch before calling upsert_records."
+            )
+
+        self._index.upsert_records(
+            records=records,
+            namespace=namespace,
+            timeout=self._upsert_timeout,
+        )
+        return len(records)
 
     def search(
         self,

@@ -46,5 +46,13 @@ class ContentDeduplicator:
             self._pending.clear()
 
     def close(self) -> None:
-        self.flush()
+        """Close the connection.  Discards any unacknowledged pending reservations.
+
+        IMPORTANT: close() MUST NOT flush pending hashes.  Pending hashes are
+        only committed by an explicit flush() call after Pinecone acknowledges the
+        batch.  Calling close() with pending entries means the caller never
+        received acknowledgement — the pending reservations are intentionally
+        discarded so the records can be safely replayed on the next run.
+        """
+        self._pending.clear()
         self._conn.close()
