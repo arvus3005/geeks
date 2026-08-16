@@ -186,7 +186,7 @@ def main() -> None:
         sys.exit(0)
 
     # ── Write path — API key required ─────────────────────────────────────────
-    import yaml
+    import yaml  # type: ignore[import-untyped]
 
     cfg: dict = {}
     config_path = Path(args.config)
@@ -309,7 +309,12 @@ def main() -> None:
     if args.output_json:
         print(json.dumps(summary, indent=2))
     else:
-        total = sum(s.get("indexed_points", 0) for s in all_stats if isinstance(s, dict))
+        total = 0
+        for s in all_stats:
+            if isinstance(s, dict) and "indexed_points" in s:
+                val = s["indexed_points"]
+                if isinstance(val, int | float):
+                    total += int(val)
         print(f"Run {run_id}: {total} points in index='{index_name}' ns='{namespace}'")
         print("NOTE: EXPERIMENT SUBSET — NOT FULL CORPUS")
 

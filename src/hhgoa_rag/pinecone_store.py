@@ -193,6 +193,118 @@ class PineconeStore:
         except Exception:
             return 0
 
+    def list_vector_ids(
+        self,
+        namespace: str,
+        prefix: str | None = None,
+        limit: int = 100,
+    ) -> list[str]:
+        """List all vector IDs in a namespace with complete pagination handling.
+
+        Raises PineconeProviderError if enumeration is unsupported, fails, or
+        returns malformed data.
+        """
+        all_ids: list[str] = []
+        pagination_token: str | None = None
+
+        if hasattr(self._index, "list_paginated"):
+            while True:
+                kwargs: dict[str, Any] = {
+                    "namespace": namespace,
+                    "limit": limit,
+                    "timeout": self._search_timeout,
+                }
+                if prefix:
+                    kwargs["prefix"] = prefix
+                if pagination_token:
+                    kwargs["pagination_token"] = pagination_token
+
+                try:
+                    resp = self._index.list_paginated(**kwargs)
+                except Exception as e:
+                    raise PineconeProviderError(
+                        f"list_paginated failed for namespace '{namespace}': {e}",
+                        cause=e,
+                    ) from e
+
+                if resp is None:
+                    raise PineconeProviderError(
+                        f"list_paginated returned None for namespace '{namespace}'"
+                    )
+
+                vectors = getattr(resp, "vectors", None)
+                if vectors is None and isinstance(resp, dict):
+                    vectors = resp.get("vectors")
+                if vectors is None:
+                    raise PineconeProviderError(
+                        f"list_paginated response missing 'vectors' field for namespace '{namespace}'"
+                    )
+
+                for item in vectors:
+                    item_id = getattr(item, "id", None)
+                    if item_id is None and isinstance(item, dict):
+                        item_id = item.get("id")
+                    elif isinstance(item, str):
+                        item_id = item
+                    if item_id is None or not isinstance(item_id, str):
+                        raise PineconeProviderError(
+                            f"Malformed vector item in list response: {item!r}"
+                        )
+                    all_ids.append(item_id)
+
+                pagination = getattr(resp, "pagination", None)
+                if pagination is None and isinstance(resp, dict):
+                    pagination = resp.get("pagination")
+
+                next_token: str | None = None
+                if pagination is not None:
+                    next_token = getattr(pagination, "next", None)
+                    if next_token is None and isinstance(pagination, dict):
+                        next_token = pagination.get("next")
+
+                if not next_token:
+                    break
+                pagination_token = next_token
+
+            return all_ids
+
+        elif hasattr(self._index, "list"):
+            try:
+                pages = self._index.list(
+                    namespace=namespace, prefix=prefix, timeout=self._search_timeout
+                )
+                for page in pages:
+                    vectors = getattr(page, "vectors", None)
+                    if vectors is None and isinstance(page, dict):
+                        vectors = page.get("vectors")
+                    elif isinstance(page, list | tuple):
+                        vectors = page
+                    if vectors is None:
+                        raise PineconeProviderError(f"Malformed page in list iterator: {page!r}")
+                    for item in vectors:
+                        item_id = getattr(item, "id", None)
+                        if item_id is None and isinstance(item, dict):
+                            item_id = item.get("id")
+                        elif isinstance(item, str):
+                            item_id = item
+                        if item_id is None or not isinstance(item_id, str):
+                            raise PineconeProviderError(
+                                f"Malformed vector item in list response: {item!r}"
+                            )
+                        all_ids.append(item_id)
+                return all_ids
+            except Exception as e:
+                if isinstance(e, PineconeProviderError):
+                    raise
+                raise PineconeProviderError(
+                    f"list iterator failed for namespace '{namespace}': {e}",
+                    cause=e,
+                ) from e
+        else:
+            raise PineconeProviderError(
+                "Index object does not support ID enumeration (neither list_paginated nor list found)"
+            )
+
     def health(self) -> dict[str, Any]:
         """Return a health-check dict. Raises PineconeProviderError on failure."""
         stats = self.describe_index_stats()

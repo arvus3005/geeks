@@ -52,6 +52,7 @@ import threading
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -200,8 +201,8 @@ class _TokenRateLimiter:
         self,
         tokens_per_window: int,
         window_seconds: float = 60.0,
-        clock: object = None,
-        sleeper: object = None,
+        clock: Callable[[], float] | None = None,
+        sleeper: Callable[[float], None] | None = None,
     ) -> None:
         if tokens_per_window <= 0:
             raise ValueError(f"tokens_per_window must be positive, got {tokens_per_window}")
@@ -209,8 +210,8 @@ class _TokenRateLimiter:
             raise ValueError(f"window_seconds must be positive, got {window_seconds}")
         self._tokens_per_window = tokens_per_window
         self._window_seconds = window_seconds
-        self._clock = clock if clock is not None else time.monotonic
-        self._sleeper = sleeper if sleeper is not None else time.sleep
+        self._clock: Callable[[], float] = clock if clock is not None else time.monotonic
+        self._sleeper: Callable[[float], None] = sleeper if sleeper is not None else time.sleep
         self._lock = threading.Lock()
         self._reservations: deque[tuple[float, int]] = deque()
         self._current_tokens: int = 0
@@ -279,25 +280,41 @@ class _TokenRateLimiter:
 
 
 def _get_ns_vector_count(stats: object, namespace: str = CANONICAL_NAMESPACE) -> int | None:
-    """Extract namespace vector count from SDK object or dict-shaped fixture."""
+    """Extract namespace vector count from SDK object or dict-shaped fixture.
+
+    Returns:
+        int: Non-negative vector count if verified.
+        None: If stats or namespace vector count is missing, malformed, or unverifiable.
+    """
+    if stats is None:
+        return None
     namespaces = getattr(stats, "namespaces", None)
     if namespaces is None and isinstance(stats, dict):
         namespaces = stats.get("namespaces")
-    if namespaces is None:
+    if namespaces is None or not isinstance(namespaces, dict):
         return None
-    if isinstance(namespaces, dict):
-        ns_info = namespaces.get(namespace)
-    else:
-        try:
-            ns_info = namespaces[namespace]
-        except (KeyError, TypeError):
-            ns_info = None
-    if ns_info is None:
+
+    if namespace not in namespaces:
+        # In Pinecone describe_index_stats, an existing empty namespace is omitted
+        # from the namespaces dictionary when it has 0 vectors.
         return 0
+
+    ns_info = namespaces[namespace]
+    if ns_info is None:
+        return None
+
     vc = getattr(ns_info, "vector_count", None)
     if vc is None and isinstance(ns_info, dict):
         vc = ns_info.get("vector_count")
-    return int(vc) if vc is not None else 0
+
+    if vc is None or isinstance(vc, bool):
+        return None
+
+    try:
+        count = int(vc)
+        return count if count >= 0 else None
+    except (ValueError, TypeError):
+        return None
 
 
 def _sha256_file(path: Path) -> str:
@@ -1102,7 +1119,7 @@ def _run(
 
     store = PineconeStore(index, embed_model=MODEL)
 
-    # ── Step 5.5: Pre-write namespace preflight (fail-closed) ─────────────────
+    # ── Step 5.5: Pre-write namespace preflight & resume ownership verification (fail-closed) ──
     logger.info("Performing pre-write preflight check on namespace '%s' …", CANONICAL_NAMESPACE)
     preflight_stats: object = None
     try:
@@ -1118,12 +1135,23 @@ def _run(
 
     preflight_count = _get_ns_vector_count(preflight_stats, CANONICAL_NAMESPACE)
     if preflight_count is None:
-        preflight_count = 0
+        msg = (
+            f"Namespace '{CANONICAL_NAMESPACE}' preflight unverifiable: "
+            "Pinecone index statistics are missing, malformed, ambiguous, or cannot be parsed. "
+            "Cannot verify whether the target namespace is empty or valid."
+        )
+        logger.error(msg)
+        report_data["preflight_status"] = "FAILED: Preflight unverifiable"
+        raise CanaryError(
+            msg,
+            category="PreflightUnverifiable",
+            safe_next_action="Verify Pinecone index statistics and connectivity before retrying.",
+        )
 
     is_resume_run = bool(args.resume and completed_digests)
 
     if not is_resume_run:
-        # Fresh canary run: namespace MUST be empty (0 records).
+        # Fresh canary run: namespace MUST be verifiably empty (0 records).
         if preflight_count > 0:
             msg = (
                 f"Namespace '{CANONICAL_NAMESPACE}' is not empty (contains {preflight_count} vectors) "
@@ -1137,11 +1165,41 @@ def _run(
                 category="NamespaceContaminatedPreflight",
                 safe_next_action="Verify index contents. If stale, manually clear vectors in the pilot namespace. Never automatically clear.",
             )
+        # Defense-in-depth: check ID enumeration on fresh run to ensure 0 IDs
+        try:
+            actual_fresh_ids = store.list_vector_ids(namespace=CANONICAL_NAMESPACE)
+        except Exception as exc:
+            logger.error("Pre-write namespace ID enumeration check failed: %s", exc)
+            report_data["preflight_status"] = f"FAILED: ID enumeration error {exc}"
+            raise CanaryError(
+                f"Pre-write namespace preflight ID enumeration failed: {exc}",
+                category="PreflightProviderFailure",
+                safe_next_action="Verify Pinecone ID enumeration support and connectivity before running.",
+            ) from exc
+
+        if len(actual_fresh_ids) > 0:
+            msg = (
+                f"Namespace '{CANONICAL_NAMESPACE}' contains {len(actual_fresh_ids)} vector IDs "
+                f"for a fresh canary run (expected 0). Refusing to write to prevent contamination."
+            )
+            logger.error(msg)
+            report_data["preflight_status"] = f"FAILED: Contaminated ({len(actual_fresh_ids)} IDs)"
+            raise CanaryError(
+                msg,
+                category="NamespaceContaminatedPreflight",
+                safe_next_action="Verify index contents. If stale, manually clear vectors in the pilot namespace. Never automatically clear.",
+            )
+
     else:
-        # Resume run: verify checkpoint and existing records
-        completed_record_count = sum(
-            len(batches[i]) for i, d in enumerate(batch_digests) if d in completed_digests
-        )
+        # Resume run: verify exact resume ownership using deterministic vector IDs
+        expected_completed_ids = {
+            r["id"]
+            for i, b in enumerate(batches)
+            if batch_digests[i] in completed_digests
+            for r in b
+        }
+        completed_record_count = len(expected_completed_ids)
+
         if preflight_count > CANARY_EXPECTED_TOTAL:
             msg = (
                 f"Namespace '{CANONICAL_NAMESPACE}' contains {preflight_count} vectors, "
@@ -1157,20 +1215,39 @@ def _run(
                 category="NamespaceContaminatedPreflight",
                 safe_next_action="Verify index contents. Stale vectors must be manually cleared by the operator before resuming.",
             )
-        if preflight_count > completed_record_count:
+
+        # Enumerate vector IDs in namespace
+        try:
+            actual_namespace_ids = store.list_vector_ids(namespace=CANONICAL_NAMESPACE)
+        except Exception as exc:
+            logger.error("Pre-write resume ownership ID enumeration failed: %s", exc)
+            report_data["preflight_status"] = f"FAILED: Resume ownership unverifiable ({exc})"
+            raise CanaryError(
+                f"Pre-write resume ownership verification failed due to provider error: {exc}",
+                category="ResumeOwnershipUnverifiable",
+                safe_next_action="Verify Pinecone ID enumeration support, network connectivity, and credentials before retrying with --resume.",
+            ) from exc
+
+        actual_id_set = set(actual_namespace_ids)
+
+        # Verify exact ownership: actual namespace IDs must match expected completed IDs precisely
+        if actual_id_set != expected_completed_ids or preflight_count != completed_record_count:
+            missing_ids = expected_completed_ids - actual_id_set
+            unrelated_ids = actual_id_set - expected_completed_ids
             msg = (
-                f"Namespace '{CANONICAL_NAMESPACE}' contains {preflight_count} vectors, "
-                f"which exceeds the {completed_record_count} records recorded in the resume checkpoint. "
-                "Unrelated or stale records detected in namespace."
+                f"Resume ownership verification failed for namespace '{CANONICAL_NAMESPACE}': "
+                f"expected exactly {len(expected_completed_ids)} completed IDs from checkpoint, "
+                f"found {len(actual_id_set)} actual IDs (stats vector count: {preflight_count}). "
+                f"Missing expected IDs: {len(missing_ids)}, Unrelated/extra IDs: {len(unrelated_ids)}."
             )
             logger.error(msg)
             report_data["preflight_status"] = (
-                f"FAILED: Unexpected records ({preflight_count} > {completed_record_count})"
+                f"FAILED: Resume ownership mismatch (missing {len(missing_ids)}, unexpected {len(unrelated_ids)})"
             )
             raise CanaryError(
                 msg,
-                category="NamespaceContaminatedPreflight",
-                safe_next_action="Verify index contents against checkpoint before retrying with --resume.",
+                category="ResumeOwnershipMismatch",
+                safe_next_action="Verify index contents against checkpoint before retrying with --resume. Do not automatically clear.",
             )
 
     logger.info(

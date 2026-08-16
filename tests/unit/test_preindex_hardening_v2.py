@@ -1194,6 +1194,17 @@ class TestPreWriteNamespacePreflight:
         }
         mock_index.upsert_records.return_value = 96
 
+        class FakeListItem:
+            def __init__(self, item_id: str) -> None:
+                self.id = item_id
+
+        class FakeListResponse:
+            def __init__(self, ids: list[str]) -> None:
+                self.vectors = [FakeListItem(i) for i in ids]
+                self.pagination = None
+
+        mock_index.list_paginated.return_value = FakeListResponse([r["id"] for r in batches[0]])
+
         monkeypatch.setenv("CONFIRM_PINECONE_WRITE", "1")
         monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake_key_for_testing")
         monkeypatch.setattr("pinecone.Pinecone", lambda api_key: mock_pc)
@@ -1276,6 +1287,19 @@ class TestPreWriteNamespacePreflight:
             "namespaces": {"pilot_v1": {"vector_count": 200}}
         }
 
+        class FakeListItem:
+            def __init__(self, item_id: str) -> None:
+                self.id = item_id
+
+        class FakeListResponse:
+            def __init__(self, ids: list[str]) -> None:
+                self.vectors = [FakeListItem(i) for i in ids]
+                self.pagination = None
+
+        mock_index.list_paginated.return_value = FakeListResponse(
+            [f"rogue-{i}" for i in range(200)]
+        )
+
         monkeypatch.setenv("CONFIRM_PINECONE_WRITE", "1")
         monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake_key_for_testing")
         monkeypatch.setattr("pinecone.Pinecone", lambda api_key: mock_pc)
@@ -1306,8 +1330,8 @@ class TestPreWriteNamespacePreflight:
                 report_data=report_data,
             )
 
-        assert exc_info.value.category == "NamespaceContaminatedPreflight"
-        assert "exceeds" in str(exc_info.value)
+        assert exc_info.value.category == "ResumeOwnershipMismatch"
+        assert "Resume ownership verification failed" in str(exc_info.value)
         mock_index.upsert_records.assert_not_called()
 
     def test_preflight_provider_failure_aborts_without_upsert(self, monkeypatch, tmp_path):
@@ -1372,8 +1396,12 @@ class TestCapacityEstimator:
         r1024 = ec.calculate_estimates(dimension=1024)
         r384 = ec.calculate_estimates(dimension=384)
 
-        dense_1024 = r1024["scopes"]["target_3_languages_en_hi_bn"]["storage"]["dense_vectors_gb"]
-        dense_384 = r384["scopes"]["target_3_languages_en_hi_bn"]["storage"]["dense_vectors_gb"]
+        dense_1024 = r1024["scopes"]["target_3_languages_en_hi_bn"]["storage"][
+            "hypothetical_local_dense_gb"
+        ]
+        dense_384 = r384["scopes"]["target_3_languages_en_hi_bn"]["storage"][
+            "hypothetical_local_dense_gb"
+        ]
 
         ratio = dense_1024 / dense_384
         assert 2.66 < ratio < 2.67  # 1024 / 384 = 2.666666...

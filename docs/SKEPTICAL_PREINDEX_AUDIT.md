@@ -1,4 +1,6 @@
-# Skeptical Pre-Index Reliability Audit & Readiness Report
+# Skeptical Pre-Index Reliability Audit & Historical Report
+
+> **HISTORICAL AUDIT**: This audit documents intermediate findings and resolutions. The authoritative, canonical final report is [`docs/FINAL_PREINDEX_READINESS_REPORT.md`](FINAL_PREINDEX_READINESS_REPORT.md).
 
 **Auditor:** Senior Repository Auditor & Pre-Index Reliability Engineer  
 **Date:** 2026-08-16  
@@ -6,7 +8,7 @@
 **Initial Audited Remote SHA:** `1666db43cb22cf8bf638a16086d281440604e195`  
 **Remote Sync Status:** Verified identical (`origin/main` matches local `main`)  
 **Working Tree Status:** Clean (untracked artifacts and caches ignored)  
-**Final Verdict:** `READY FOR GEMINI CANARY PREFLIGHT`
+**Historical Verdict:** `READY FOR GEMINI CANARY PREFLIGHT`
 
 ---
 
@@ -27,28 +29,28 @@ This audit independently verified the readiness of the repository `https://githu
 
 The following 22 files were systematically audited:
 
-1. [`README.md`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/README.md)
-2. [`.env.example`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/.env.example)
-3. [`.gitignore`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/.gitignore)
-4. [`Makefile`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/Makefile)
-5. [`pyproject.toml`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/pyproject.toml)
-6. [`.github/workflows/ci.yml`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/.github/workflows/ci.yml)
-7. [`docs/FINAL_PREINDEX_READINESS_REPORT.md`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/docs/FINAL_PREINDEX_READINESS_REPORT.md)
-8. [`docs/PROJECT_SUMMARY.md`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/docs/PROJECT_SUMMARY.md)
-9. [`docs/INGESTION_RUNBOOK.md`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/docs/INGESTION_RUNBOOK.md)
-10. [`docs/PINECONE_SCHEMA.md`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/docs/PINECONE_SCHEMA.md)
-11. [`docs/DATASET_CONTRACT.md`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/docs/DATASET_CONTRACT.md)
-12. [`scripts/index_canary.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/scripts/index_canary.py)
-13. [`scripts/prepare_canary.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/scripts/prepare_canary.py)
-14. [`scripts/ingest_prepared.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/scripts/ingest_prepared.py)
-15. [`scripts/create_pinecone_index.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/scripts/create_pinecone_index.py)
-16. [`scripts/describe_pinecone_index.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/scripts/describe_pinecone_index.py)
-17. [`scripts/estimate_capacity.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/scripts/estimate_capacity.py)
-18. [`scripts/scan_secrets.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/scripts/scan_secrets.py)
-19. [`tests/integration/test_pinecone_smoke.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/tests/integration/test_pinecone_smoke.py)
-20. [`src/hhgoa_rag/pinecone_contract.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/pinecone_contract.py)
-21. [`src/hhgoa_rag/pinecone_lifecycle.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/pinecone_lifecycle.py)
-22. [`src/hhgoa_rag/pinecone_store.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/pinecone_store.py)
+1. [`README.md`](../README.md)
+2. [`.env.example`](../.env.example)
+3. [`.gitignore`](../.gitignore)
+4. [`Makefile`](../Makefile)
+5. [`pyproject.toml`](../pyproject.toml)
+6. [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+7. [`docs/FINAL_PREINDEX_READINESS_REPORT.md`](FINAL_PREINDEX_READINESS_REPORT.md)
+8. [`docs/PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md)
+9. [`docs/INGESTION_RUNBOOK.md`](INGESTION_RUNBOOK.md)
+10. [`docs/PINECONE_SCHEMA.md`](PINECONE_SCHEMA.md)
+11. [`docs/DATASET_CONTRACT.md`](DATASET_CONTRACT.md)
+12. [`scripts/index_canary.py`](../scripts/index_canary.py)
+13. [`scripts/prepare_canary.py`](../scripts/prepare_canary.py)
+14. [`scripts/ingest_prepared.py`](../scripts/ingest_prepared.py)
+15. [`scripts/create_pinecone_index.py`](../scripts/create_pinecone_index.py)
+16. [`scripts/describe_pinecone_index.py`](../scripts/describe_pinecone_index.py)
+17. [`scripts/estimate_capacity.py`](../scripts/estimate_capacity.py)
+18. [`scripts/scan_secrets.py`](../scripts/scan_secrets.py)
+19. [`tests/integration/test_pinecone_smoke.py`](../tests/integration/test_pinecone_smoke.py)
+20. [`src/hhgoa_rag/pinecone_contract.py`](../src/hhgoa_rag/pinecone_contract.py)
+21. [`src/hhgoa_rag/pinecone_lifecycle.py`](../src/hhgoa_rag/pinecone_lifecycle.py)
+22. [`src/hhgoa_rag/pinecone_store.py`](../src/hhgoa_rag/pinecone_store.py)
 
 ---
 

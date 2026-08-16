@@ -207,7 +207,7 @@ Do NOT proceed to full corpus indexing until:
 - Canary count reconciles (300 records in pilot_v1)
 - ID audit passes
 - All quality gates documented
-- Full corpus budget approved (Pinecone plan upgrade required for >300 records)
+- Full corpus budget and infrastructure approved (full corpus indexing exceeds Pinecone Starter plan; 300 records is the canary validation sample)
 
 ---
 

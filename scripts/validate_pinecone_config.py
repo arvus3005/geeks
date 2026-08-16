@@ -45,13 +45,7 @@ def main() -> None:
             print(f"ERROR: Index '{args.pinecone_index}' not found. Available: {list(indexes)}")
         sys.exit(1)
 
-    errors = validate_index(
-        pc,
-        args.pinecone_index,
-        embed_model=args.embed_model,
-        cloud=args.cloud,
-        region=args.region,
-    )
+    errors = validate_index(pc, args.pinecone_index)
     info = get_index_info(pc, args.pinecone_index)
 
     result = {

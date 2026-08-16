@@ -61,19 +61,25 @@ def calculate_estimates(
     canary_passages = 300
 
     def _scope_storage(passages: int) -> dict[str, Any]:
+        # Current Pinecone managed integrated embedding model:
+        # Dense vector (1024 * 4 = 4096 bytes) + metadata/text payload (500 bytes) * 1.3 internal overhead
+        pinecone_bytes = passages * (dimension * FLOAT32_BYTES + PAYLOAD_BYTES_ESTIMATE) * 1.3
+
+        # Hypothetical local dense/sparse vector index:
         dense_b = passages * dimension * FLOAT32_BYTES
         sparse_b = passages * SPARSE_NONZERO_ASSUMPTION * SPARSE_BYTES_PER_NONZERO
         payload_b = passages * PAYLOAD_BYTES_ESTIMATE
         hnsw_b = passages * HNSW_INDEX_OVERHEAD_BYTES
-        total_b = dense_b + sparse_b + payload_b + hnsw_b
+        hypothetical_local_b = (dense_b + sparse_b + payload_b + hnsw_b) * safety_factor
+
         return {
             "passages": passages,
-            "dense_vectors_gb": round(dense_b / 1e9, 3),
-            "sparse_vectors_gb": round(sparse_b / 1e9, 3),
-            "payload_gb": round(payload_b / 1e9, 3),
-            "hnsw_index_overhead_gb": round(hnsw_b / 1e9, 3),
-            "total_base_gb": round(total_b / 1e9, 3),
-            "with_safety_margin_gb": round(total_b * safety_factor / 1e9, 3),
+            "pinecone_managed_storage_gb": round(pinecone_bytes / 1e9, 3),
+            "hypothetical_local_dense_gb": round(dense_b / 1e9, 3),
+            "hypothetical_local_sparse_gb": round(sparse_b / 1e9, 3),
+            "hypothetical_local_payload_gb": round(payload_b / 1e9, 3),
+            "hypothetical_local_hnsw_overhead_gb": round(hnsw_b / 1e9, 3),
+            "hypothetical_local_total_with_safety_margin_gb": round(hypothetical_local_b / 1e9, 3),
         }
 
     def _scope_compute(passages: int) -> dict[str, Any]:
@@ -87,7 +93,7 @@ def calculate_estimates(
             "canonical_dimension": dimension,
             "dimension_source": "src/hhgoa_rag/pinecone_contract.py (multilingual-e5-large)",
             "safety_factor": safety_factor,
-            "status": "ESTIMATE ONLY — separates measured inputs from assumptions",
+            "status": "ESTIMATE ONLY — for measured Parquet shard data run scripts/measure_corpus_capacity.py",
         },
         "assumptions_vs_measured": {
             "measured_inputs": {
@@ -122,17 +128,17 @@ def calculate_estimates(
                 "description": "Pinecone Starter 10,000-record operational pilot ceiling",
                 "storage": _scope_storage(pilot_passages),
                 "compute": _scope_compute(pilot_passages),
-                "starter_plan_fit": "FITS WITHIN STARTER 2GB CAP (~0.07 GB)",
+                "starter_plan_fit": "FITS WITHIN STARTER 2GB CAP (~0.06 GB)",
             },
             "target_3_languages_en_hi_bn": {
-                "description": "English, Hindi and Bengali subsets (3 / 14 configs)",
+                "description": "English, Hindi and Bengali subsets (3 / 14 configs) [EXTRAPOLATED ESTIMATE]",
                 "estimated_unique_passages": target_total_passages,
                 "storage": _scope_storage(target_total_passages),
                 "compute": _scope_compute(target_total_passages),
                 "starter_plan_fit": "EXCEEDS STARTER PLAN — requires Pinecone Standard/Enterprise or dedicated local vector store",
             },
             "full_corpus_14_languages": {
-                "description": "Entire MSMARCO-XI dataset (14 Indic configs + English)",
+                "description": "Entire MSMARCO-XI dataset (14 Indic configs + English) [EXTRAPOLATED ESTIMATE]",
                 "estimated_unique_passages": full_total_passages,
                 "storage": _scope_storage(full_total_passages),
                 "compute": _scope_compute(full_total_passages),

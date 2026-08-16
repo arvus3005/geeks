@@ -141,14 +141,14 @@ def main() -> None:
             run_id=ckpt.run_id,
             budget_guard=guard,
         )
-        result = {
+        resumed_result = {
             "run_id": ckpt.run_id,
             "resumed_from_row": ckpt.last_acknowledged_row,
             "source_rows_total": stats.source_rows,
             "indexed_points_total": stats.indexed_points,
         }
         if args.output_json:
-            print(json.dumps(result, indent=2))
+            print(json.dumps(resumed_result, indent=2))
         else:
             print(
                 f"Resumed {ckpt.config_language}/{ckpt.split}/shard{ckpt.source_shard}: "
