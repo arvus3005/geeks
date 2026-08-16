@@ -1,31 +1,61 @@
 # HH Goa 2026 Task 2 — Multilingual RAG System
 
-## Status: Phase 2 (Ingestion Foundation) — In Progress
+## Status: Pre-index readiness — ready for bounded Pinecone Starter pilot
 
-### What works
-- Smoke ingestion: all 15 language codes (14 Indic + en), deterministic point IDs, hybrid retrieval
-- Unit tests: passage IDs, normalizer, dedup, chunkers, sparse encoding, fake embedder
-- Contract tests: leakage prevention, collection safety, alias protection
-- Behavioural tests: retrieval edge cases (no Qdrant required)
-- Integration tests: smoke Qdrant workflow (requires local Docker)
+### What is implemented and tested
+- 4 chunking strategies (passage-native, sentence-aware, fixed-token-overlap, semantic-experimental)
+- `PineconeReranker` with SDK mock coverage; `RetrievalOnlyPassthrough`
+- Resumable per-shard ingestion engine with crash-safe checkpointing
+- Central budget enforcement (`BudgetGuard`): token/record/storage/rerank limits; fail-closed
+- SQLite-backed content deduplication with WAL
+- Safety gates: dry-run by default; full-mode permanently blocked on Starter plan
+- Contract tests: forbidden fields (query, Answer, etc.) cannot enter Pinecone records
+- **208 offline tests pass; 8 real Pinecone integration tests remain opt-in skipped**
 
-### Quick start
-```bash
-uv sync --frozen --all-extras
-docker compose up -d qdrant
-uv run python scripts/create_qdrant_collection.py --config configs/smoke.yaml --force
-uv run python scripts/ingest_all.py --mode smoke --config configs/smoke.yaml
-uv run python scripts/validate_qdrant_collection.py --config configs/smoke.yaml
-uv run pytest tests/unit tests/contract tests/behavioural -q
-uv run pytest tests/integration -q  # requires Qdrant
-```
+### What is NOT yet done (requires live indexing session)
+- Real Pinecone index creation (blocked until credentials and pilot manifest are approved)
+- Real data ingestion — no records have been indexed
+- Live latency measurement — the <200 ms target is unverified until measured
+- Quality evaluation against a real index
 
 ### Architecture
-- Dense: `intfloat/multilingual-e5-small` (384-dim, cosine)
-- Sparse: stable SHA-256 token IDs (production: will use FastEmbed BM25)
-- Retrieval: Qdrant hybrid RRF (dense + sparse prefetch)
-- Full corpus: 11.4M rows × 14 Indic configs = ~160M passage occurrences (estimate)
+- Vector store: **Pinecone Starter** (AWS us-east-1, serverless integrated embedding)
+- Embedding model: `multilingual-e5-large` (server-side; no local model weights)
+- Reranker: `bge-reranker-v2-m3` (Pinecone inference API)
+- Pipeline: Pinecone Top-8 retrieval → bge reranker → Top-3 → answer stage
+- STT: Sarvam (planned; not yet integrated in this session)
+- Languages: English + 14 Indic MSMARCO-XI configs:
+  `as, bn, gu, hi, kn, ml, mr, ne, or, pa, sa, ta, te, ur`
 
-See `docs/INGESTION_RUNBOOK.md` for full ingestion procedure.
-See `docs/DATASET_CONTRACT.md` for leakage boundary rules.
-See `docs/QDRANT_SCHEMA.md` for collection schema.
+### Planned pilot allocation (bounded sample — NOT full corpus)
+| Language group     | Token budget | Records (est.) |
+|--------------------|-------------|----------------|
+| English            | 25% (~1M)   | ~2,500         |
+| Hindi              | 15% (~600K) | ~1,500         |
+| Bengali            | 15% (~600K) | ~1,500         |
+| 12 other Indic     | 45% (~150K each) | ~375 each |
+| **Total cap**      | **4M tokens** | **10,000 records** |
+
+### Quick start (offline — no credentials needed)
+```bash
+uv sync --all-extras
+uv run pytest tests/unit tests/contract tests/behavioural -q
+uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi     # dry-run
+uv run python scripts/ingest_all.py --mode pilot                                # dry-run
+```
+
+### Running real integration tests (opt-in, requires PINECONE_API_KEY)
+```bash
+export PINECONE_API_KEY=<your-key>
+uv run pytest tests/integration -q
+```
+
+### Key guardrails
+- Credentials must come only from environment variables — never CLI arguments or config files
+- Full-corpus ingestion is permanently blocked while `PINECONE_PLAN=starter`
+- Budget limits are enforced before every API call; retries cannot bypass them
+- The under-200 ms latency target is unverified — no fabricated numbers are reported
+
+See `docs/INGESTION_RUNBOOK.md` for the live ingestion procedure.
+See `docs/PINECONE_SCHEMA.md` for the Pinecone record schema.
+See `docs/DATASET_CONTRACT.md` for the data leakage boundary rules.

@@ -1,4 +1,4 @@
-.PHONY: install fmt fmt-check lint typecheck test test-unit test-behav ci smoke-up smoke-down
+.PHONY: install fmt fmt-check lint typecheck test test-unit ci dry-run-index dry-run-ingest
 
 install:
 	uv sync --all-extras
@@ -21,10 +21,17 @@ test-unit:
 test:
 	uv run pytest tests/ -v --ignore=tests/integration
 
-ci: typecheck lint fmt-check test-unit
+ci: typecheck lint fmt-check test
 
-smoke-up:
-	docker compose up -d qdrant
+# Offline dry-runs — require no credentials, make no Pinecone calls
+dry-run-index:
+	uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi
 
-smoke-down:
-	docker compose down
+dry-run-ingest:
+	uv run python scripts/ingest_all.py --mode pilot
+
+# Secret scan (filenames only — never prints secret values)
+scan-secrets:
+	@echo "Scanning for credential literals..."
+	@rg -l "pc-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}" src tests scripts bench || true
+	@echo "Scan complete."
