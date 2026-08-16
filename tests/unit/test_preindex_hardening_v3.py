@@ -330,7 +330,10 @@ class TestResumeOwnershipVerification:
     def test_exact_expected_id_set_passes_resume(self, monkeypatch, tmp_path):
         args, mock_index, expected_ids = self._setup_resume_test(tmp_path, monkeypatch)
 
-        # Mock list_paginated to return exactly the expected IDs
+        # All 300 record IDs — the post-write reconciliation compares against
+        # the full manifest-derived expected set.
+        all_ids = [f"rec-{i:04d}" for i in range(300)]
+
         class FakeListItem:
             def __init__(self, item_id: str) -> None:
                 self.id = item_id
@@ -340,7 +343,12 @@ class TestResumeOwnershipVerification:
                 self.vectors = [FakeListItem(i) for i in ids]
                 self.pagination = None
 
-        mock_index.list_paginated.return_value = FakeListResponse(expected_ids)
+        # First enumeration is the resume-ownership preflight (96 completed IDs);
+        # second enumeration is the post-write exact-ID reconciliation (all 300).
+        mock_index.list_paginated.side_effect = [
+            FakeListResponse(expected_ids),
+            FakeListResponse(all_ids),
+        ]
 
         report_data = {}
         ic._run(
@@ -354,6 +362,7 @@ class TestResumeOwnershipVerification:
         assert report_data["status"] == "success"
         assert report_data["skipped_batches"] == 1
         assert report_data["completed_batches"] == 3
+        assert report_data["exact_id_reconciliation"].startswith("PASS")
 
     def test_same_count_wrong_ids_fails_closed(self, monkeypatch, tmp_path):
         args, mock_index, expected_ids = self._setup_resume_test(tmp_path, monkeypatch)

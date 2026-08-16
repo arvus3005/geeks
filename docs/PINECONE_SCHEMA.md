@@ -89,7 +89,9 @@ Manifests produced by `prepare_canary.py` now include:
 | `index_name` | `"msmarco-xi"` |
 | `index_namespace` | `"pilot_v1"` |
 
-`ingest_prepared.py` validates all of these before any Pinecone client construction.
+`index_canary.py` validates all of these before any Pinecone client construction.
+(`ingest_prepared.py` performs the same offline validation for dry-run only; its
+`--execute` live path is disabled.)
 
 ---
 

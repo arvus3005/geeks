@@ -122,9 +122,9 @@ def main() -> None:
             "--tokenizer-revision <sha>\n"
             "  uv run python scripts/ingest_prepared.py "
             "--manifest artifacts/prepared/<id>_manifest.json --dry-run\n"
-            "  PINECONE_API_KEY=... CONFIRM_PINECONE_WRITE=1 \\\n"
-            "    uv run python scripts/ingest_prepared.py "
-            "--manifest artifacts/prepared/<id>_manifest.json --execute",
+            "  CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=... \\\n"
+            "    uv run python scripts/index_canary.py "
+            "--manifest artifacts/prepared/<id>_manifest.json --execute --resume",
             file=sys.stderr,
         )
         sys.exit(1)

@@ -652,7 +652,7 @@ def test_ingest_all_blocks_pilot_mode(tmp_path: Path) -> None:
         cwd=str(Path(__file__).parent.parent.parent),
     )
     assert result.returncode == 1
-    assert "ingest_prepared.py" in result.stderr
+    assert "index_canary.py" in result.stderr
 
 
 def test_ingest_shard_blocks_pilot_mode() -> None:
@@ -679,7 +679,7 @@ def test_ingest_shard_blocks_pilot_mode() -> None:
         cwd=str(Path(__file__).parent.parent.parent),
     )
     assert result.returncode == 1
-    assert "ingest_prepared.py" in result.stderr
+    assert "index_canary.py" in result.stderr
 
 
 # ── Test 16: Full ingestion blocked on Starter ────────────────────────────────

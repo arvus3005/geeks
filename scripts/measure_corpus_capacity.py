@@ -372,7 +372,19 @@ def main() -> None:
     try:
         tok = get_tokenizer(revision=args.tokenizer_revision)
     except Exception as e:
-        logger.warning("Could not load HuggingFace tokenizer (%s); using whitespace fallback", e)
+        # Fail closed: canonical measured token counts must never be silently
+        # replaced by an approximate whitespace count. There is no constructed
+        # fallback tokenizer — refuse rather than produce misleading numbers.
+        print(
+            f"ERROR: Could not load the pinned HuggingFace tokenizer "
+            f"(revision={args.tokenizer_revision!r}): {e}\n"
+            "Refusing to substitute an approximate whitespace token count into "
+            "canonical measured results. Ensure the tokenizer revision is "
+            "downloadable (network/cache) and retry.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     import prepare_canary as pc
 
     _download_and_read_parquet = pc._download_and_read_parquet

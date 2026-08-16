@@ -1203,7 +1203,13 @@ class TestPreWriteNamespacePreflight:
                 self.vectors = [FakeListItem(i) for i in ids]
                 self.pagination = None
 
-        mock_index.list_paginated.return_value = FakeListResponse([r["id"] for r in batches[0]])
+        # First enumeration: resume-ownership preflight (96 completed IDs).
+        # Second enumeration: post-write exact-ID reconciliation (all 300 IDs).
+        all_ids = [r["id"] for r in records]
+        mock_index.list_paginated.side_effect = [
+            FakeListResponse([r["id"] for r in batches[0]]),
+            FakeListResponse(all_ids),
+        ]
 
         monkeypatch.setenv("CONFIRM_PINECONE_WRITE", "1")
         monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake_key_for_testing")

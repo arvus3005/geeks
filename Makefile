@@ -13,7 +13,7 @@ lint:
 	uv run ruff check src/ tests/ bench/ scripts/
 
 typecheck:
-	uv run mypy src/
+	uv run mypy src scripts
 
 test-unit:
 	uv run pytest tests/unit/ tests/behavioural/ tests/contract/ -v
@@ -27,30 +27,25 @@ ci: typecheck lint fmt-check scan-secrets test
 dry-run-index:
 	uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi
 
+# Offline dry-run of the APPROVED canary indexer against a prepared manifest.
+# Requires MANIFEST=<path>. Makes no Pinecone calls.
 dry-run-ingest:
-	uv run python scripts/ingest_all.py --mode pilot
-
-dry-run-ingest-prepared:
-	@echo "Usage: make dry-run-ingest-prepared MANIFEST=artifacts/prepared/<id>_manifest.json"
-	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set" && exit 1)
-	uv run python scripts/ingest_prepared.py --manifest $(MANIFEST) --dry-run
+	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set. Usage: make dry-run-ingest MANIFEST=artifacts/prepared/<id>_manifest.json" && exit 1)
+	uv run python scripts/index_canary.py --manifest "$(MANIFEST)"
 
 # Secret scan (filenames only — never prints secret values)
 scan-secrets:
-	uv run python scripts/scan_secrets.py
+	uv run python scripts/scan_secrets.py .
 
 # Validate a prepared-canary manifest (offline, no credentials)
 validate-manifest:
-	@echo "Usage: make validate-manifest MANIFEST=artifacts/prepared/<id>_manifest.json"
-	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set" && exit 1)
-	uv run python scripts/ingest_prepared.py --manifest $(MANIFEST) --dry-run
+	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set. Usage: make validate-manifest MANIFEST=artifacts/prepared/<id>_manifest.json" && exit 1)
+	uv run python scripts/ingest_prepared.py --manifest "$(MANIFEST)" --dry-run
 
 # Dry-run the canary indexer (no credentials needed)
-# Usage: make canary-dry-run MANIFEST=artifacts/prepared/<id>_manifest.json
 canary-dry-run:
-	@echo "Usage: make canary-dry-run MANIFEST=artifacts/prepared/<id>_manifest.json"
-	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set" && exit 1)
-	uv run python scripts/index_canary.py --manifest $(MANIFEST)
+	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set. Usage: make canary-dry-run MANIFEST=artifacts/prepared/<id>_manifest.json" && exit 1)
+	uv run python scripts/index_canary.py --manifest "$(MANIFEST)"
 
 # Live canary execution (requires PINECONE_API_KEY and CONFIRM_PINECONE_WRITE=1)
 # Usage: CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> make canary-execute MANIFEST=artifacts/prepared/<id>_manifest.json

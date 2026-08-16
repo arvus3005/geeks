@@ -30,13 +30,21 @@ def main() -> None:
 
     from pinecone import Pinecone
 
-    from hhgoa_rag.pinecone_store import PineconeStore
+    from hhgoa_rag.pinecone_store import PineconeProviderError, PineconeStore
 
     pc = Pinecone(api_key=api_key)
     store = PineconeStore(pc.Index(args.pinecone_index), embed_model=MODEL)
 
-    total = store.count_namespace(args.namespace)
-    stats = store.describe_index_stats()
+    try:
+        total = store.count_namespace(args.namespace)
+        stats = store.describe_index_stats()
+    except PineconeProviderError as e:
+        print(
+            f"ERROR: reconciliation UNVERIFIABLE — could not obtain a valid vector "
+            f"count for namespace '{args.namespace}': {e}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     manifest_per_lang: dict[str, int] = {}
     discrepancies: list[dict] = []

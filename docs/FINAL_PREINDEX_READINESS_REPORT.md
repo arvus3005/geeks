@@ -1,154 +1,196 @@
-# Final Pre-Index Reliability & Readiness Report
+# Final Pre-Index Readiness Report
 
-**Author / Auditor:** Senior Repository Auditor & Pre-Index Reliability Engineer  
-**Date:** 2026-08-16  
-**Audited Branch:** `main`  
-**Starting Remote Commit SHA:** `21498593a5ccbf00a48f1cee8cfaac2cd974341a`  
-**Working Tree Status:** Clean and hardened  
+## Verdict
 
----
+**READY FOR GEMINI LIVE 300-RECORD CANARY**
 
-## 1. Canonical Verdicts
+All offline gates pass with zero live provider calls, zero unexpected skips, and
+zero committed secrets. The legacy live-ingestion bypass is disabled, and the
+canary indexer now requires exact post-write ID-set equality before reporting
+success. The live 300-record canary itself has NOT been executed or verified —
+that is Gemini's live step in Antigravity IDE.
 
-### Primary Gateway Verdict:
-```
-READY FOR GEMINI CANARY PREFLIGHT
-```
-
-### Explicit Scope Disclaimers:
-- **LIVE CANARY:** `NOT YET VERIFIED` (requires live Pinecone execution in Antigravity IDE)
-- **BOUNDED PILOT:** `NOT YET VALIDATED` (architectural ceiling only; unvalidated pending live canary verification)
-- **FULL EN/HI/BN CORPUS:** `NOT YET CAPACITY-VALIDATED OR AUTHORIZED` (exceeds Starter plan; full corpus local disk requirement unverified)
+- **10,000-record Starter pilot: NOT AUTHORIZED and NOT validated.**
+- **Full English/Hindi/Bengali corpus: NOT AUTHORIZED and NOT capacity-validated.**
 
 ---
 
-## 2. Authorization Boundary Adherence
+## Commit state
 
-Throughout this audit and hardening pass:
-- **Zero Live API Calls:** No network requests were made to Pinecone, Sarvam, ElevenLabs, Whisper, or any paid provider.
-- **Zero Remote Mutations:** No indexes or namespaces were created, altered, deleted, or queried.
-- **Zero Secret Commits or Leaks:** No credentials or API keys were printed, inspected, committed, or exposed.
-- **Fail-Closed Safety Preserved:** Auto-clearing of namespaces was not implemented; preflight aborts on any unexpected, contaminated, or unverifiable state.
-- **Architecture Preserved:** Pinecone Serverless integrated-embedding model (`multilingual-e5-large`, 1024-dim, cosine) is preserved for the canary.
+- Starting commit SHA (as provided): `0b4921cccbef4f7c579474c75d4c33e8d8fee967`
+- Repository HEAD at the start of this session: `c66d27df7976fca8888777a45c5dff3bd7f5db92`
+- Tested tree state: the working tree containing the changes below, with the full
+  offline gate suite rerun successfully (see "Gate results").
 
 ---
 
-## 3. Pre-Index Hardening Improvements
+## Issues fixed (this pass)
 
-### 1. Fail-Closed Namespace Preflight (`PreflightUnverifiable`)
-- Updated `_get_ns_vector_count` in `scripts/index_canary.py` to return `int | None` and strictly validate stats responses.
-- If stats are missing, malformed, non-numeric, or total-only (missing the `namespaces` dictionary), preflight aborts before any upserts with typed error `CanaryError(category="PreflightUnverifiable")`.
-- Added defense-in-depth vector ID enumeration check on fresh runs to ensure 0 IDs are present in the target namespace.
+1. **Exact post-write ID reconciliation (`scripts/index_canary.py`).**
+   Step 7 no longer accepts count equality alone. After the namespace count
+   reaches exactly 300, it enumerates vector IDs via
+   `PineconeStore.list_vector_ids(namespace="pilot_v1")` and requires: count ==
+   300 AND exactly 300 unique enumerated IDs AND the enumerated set equals the
+   manifest-derived expected ID set (no missing, no extra). Failure categories:
+   `PostWriteReconciliationUnverifiable` (enumeration error/unsupported/malformed/
+   duplicate) and `PostWriteOwnershipMismatch` (count 300 but ID set differs).
+   Count result and exact-ID result are stored separately in the report
+   (`count_reconciliation`, `exact_id_reconciliation`). No upserts occur after a
+   reconciliation failure. Discrepancy reporting shows only counts, never ID lists.
 
-### 2. Deterministic Resume Ownership Verification (`ResumeOwnershipMismatch`)
-- Added `PineconeStore.list_vector_ids()` adapter in `src/hhgoa_rag/pinecone_store.py` supporting paginated ID listing.
-- Before executing a resumed run, Step 5.5 derives the exact deterministic expected vector IDs from completed checkpoint batches and queries the namespace.
-- Asserts exact set equality (`set(actual_ids) == expected_completed_ids`). If IDs do not match, missing IDs exist, or unrelated IDs are found, the run immediately aborts with `CanaryError(category="ResumeOwnershipMismatch")` without writing any records.
-- If ID enumeration is unsupported or fails, aborts with `CanaryError(category="ResumeOwnershipUnverifiable")`.
+2. **Legacy live-ingestion path disabled (`scripts/ingest_prepared.py`).**
+   `--execute` exits non-zero (2) before constructing a Pinecone client or
+   reading `PINECONE_API_KEY`, even when `CONFIRM_PINECONE_WRITE=1` and
+   `PINECONE_API_KEY` are present. The dead live code path was removed; the script
+   remains a full offline validator/dry-run tool. Redirect messages in
+   `ingest_all.py`, `ingest_shard.py`, and `resume_ingest.py` now point to
+   `index_canary.py`.
 
-### 3. Read-Only Corpus Capacity Measurement Tool (`scripts/measure_corpus_capacity.py`)
-- Created read-only measurement tool inspecting pinned Parquet shards with fast bounded sampling (`--sample-rows`).
-- Measures raw English passages, translated passages, cross-config deduplication, chunk expansion, token lengths, and serialized payload bytes.
-- Strictly separates measured metrics from extrapolated assumptions.
-- Differentiates Pinecone managed integrated embedding storage from a hypothetical local dense+sparse HNSW index.
-- Corrected storage claims: Explicitly notes that a 200 GB Mac cannot be assumed sufficient for the full 14-config corpus without full storage verification.
+3. **Deterministic canary preparation (`scripts/prepare_canary.py`).**
+   The canonical manifest no longer contains `created_at` or
+   `prepared_record_path_full`. Runtime metadata is written to a separate
+   non-canonical `<id>_runtime.json` sidecar (excluded from identity, checksum,
+   checkpoints). The manifest is serialized deterministically (sorted keys, UTF-8,
+   single trailing newline). Two runs with identical inputs into different output
+   directories/times produce identical manifest IDs, byte-identical JSONL, and
+   byte-identical manifest JSON.
 
-### 4. Fresh-Clone Reproduction & Truthful Scope Documentation
-- Updated `README.md`, `docs/INGESTION_RUNBOOK.md`, and `docs/PROJECT_SUMMARY.md` removing broken pilot commands and clarifying scope boundaries.
-- Documented deterministic canary regeneration and discovery workflow.
-- Cleaned all machine-local links (`file:///...`) across `docs/` and `README.md`.
-- Marked `docs/SKEPTICAL_PREINDEX_AUDIT.md` as historical reference.
+4. **Pinecone ID pagination hardening (`PineconeStore.list_vector_ids`).**
+   Tracks seen pagination tokens (fail closed on a repeated token); fails closed
+   when a next token yields no progress; detects duplicate IDs across pages;
+   rejects non-string/empty IDs; adds a conservative maximum-page guard
+   (`MAX_ENUMERATION_PAGES`); supports both `list_paginated` and iterator-style
+   `list`; wraps provider exceptions as `PineconeProviderError`.
+
+5. **Fail-closed counting (`PineconeStore.count_namespace`).**
+   Returns 0 only when a valid statistics response proves the namespace is
+   absent/empty. Provider exceptions, malformed responses, non-integer/boolean/
+   negative counts raise `PineconeProviderError`. `scripts/reconcile_corpus.py`
+   catches that error, prints "reconciliation UNVERIFIABLE", and exits non-zero.
+   No safety tool treats an exception as an empty namespace.
+
+6. **Capacity tokenizer fallback repaired (`scripts/measure_corpus_capacity.py`).**
+   On tokenizer-load failure it prints an actionable error and exits non-zero. The
+   previously-broken undefined-`tok` whitespace "fallback" is gone; no approximate
+   token counts are substituted into canonical measured results.
+
+7. **Makefile and CI gates.**
+   `make dry-run-ingest` requires `MANIFEST=<path>` and runs
+   `uv run python scripts/index_canary.py --manifest "$(MANIFEST)"`. Duplicate
+   dry-run targets consolidated. `make typecheck` runs `uv run mypy src scripts`.
+   CI offline job enforces `uv sync --frozen --all-extras`,
+   `uv run ruff format --check .`, `uv run ruff check .`,
+   `uv run mypy src scripts`, the secret scan, and unit+contract+behavioural tests.
+   Live integration tests remain `workflow_dispatch`-only with `YES_RUN_LIVE`;
+   normal CI receives no provider credentials.
+
+8. **Documentation reconciled** (`docs/INGESTION_RUNBOOK.md`,
+   `docs/PROJECT_SUMMARY.md`, `docs/PINECONE_SCHEMA.md`, `README.md`): removed live
+   `ingest_prepared.py --execute` commands; replaced the broken
+   `diff <(sha256sum ...)` determinism check with `cmp` / extracted-hash
+   comparison; used full dataset revision
+   `bf5cdc1f26e581e519018e434db14edd1b77602b` and tokenizer revision
+   `3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3`; updated stale figures (557 tests,
+   64 mypy source files); reconciled corpus terminology (source rows / unique
+   passages / chunks / Pinecone vectors / measured / extrapolated) and labelled
+   ~24.87M vectors / ~171.67 GB explicitly as EXTRAPOLATED.
 
 ---
 
-## 4. Quality Gate & Test Execution Evidence
+## Files changed
 
-All verification gates were executed locally with zero live provider credentials:
-
-| Gate | Tool / Command | Result / Evidence |
-|---|---|---|
-| **Code Formatting** | `uv run ruff format --check .` | **PASSED** (105 files checked, clean formatting) |
-| **Linting** | `uv run ruff check .` | **PASSED** (105 files checked, 0 errors) |
-| **Static Type Checking** | `uv run mypy src scripts` | **PASSED** (64 source files checked, 0 issues) |
-| **Secret Scan** | `uv run python scripts/scan_secrets.py .` | **PASSED** (0 credentials detected in tracked files) |
-| **Offline Test Suite** | `uv run pytest tests/unit tests/contract tests/behavioural -q` | **PASSED** (529 passed in 5.90s, 0 failed, 0 errors) |
-| **Canary Dry Run** | `uv run python scripts/index_canary.py --manifest ...` | **PASSED** (Dry-run validation complete, 0 writes) |
-
----
-
-## 5. Measured Dataset Sample Metrics (`scripts/measure_corpus_capacity.py`)
-
-Sample measurement from pinned HuggingFace Parquet shards (`bf5cdc1f26e581e519018e434db14edd1b77602b`):
-
-| Metric | Measured Sample Value |
-|---|---|
-| **Sample rows inspected** | 10 (5 Hindi + 5 Bengali) |
-| **Raw English passages** | 100 |
-| **Unique English passages** | 49 (cross-language dedup rate: 51%) |
-| **Raw translated passages** | 100 (98 unique) |
-| **Total unique passages** | 147 |
-| **Chunks produced** | 150 (chunk expansion factor: 1.0204x) |
-| **Average tokens per chunk** | 78.9 tokens |
-| **Average serialized payload** | 1,213.3 bytes per record |
-| **Canary 300 records storage** | 2.07 MB (fits comfortably in Starter plan) |
-| **Pilot 10,000 records storage** | 69.0 MB (fits within 2 GB Starter limit) |
-| **Target 3-language corpus (extrapolated)** | ~171.67 GB (exceeds Starter plan capacity) |
+- `src/hhgoa_rag/pinecone_store.py`
+- `scripts/index_canary.py`
+- `scripts/ingest_prepared.py`
+- `scripts/prepare_canary.py`
+- `scripts/measure_corpus_capacity.py`
+- `scripts/reconcile_corpus.py`
+- `scripts/ingest_all.py`, `scripts/ingest_shard.py`, `scripts/resume_ingest.py`
+- `Makefile`, `.github/workflows/ci.yml`
+- `docs/INGESTION_RUNBOOK.md`, `docs/PROJECT_SUMMARY.md`, `docs/PINECONE_SCHEMA.md`, `README.md`
+- `tests/unit/test_preindex_hardening_v4.py` (new)
+- `tests/unit/test_preindex_hardening_v2.py`, `tests/unit/test_preindex_hardening_v3.py`, `tests/unit/test_canary_preparation.py`, `tests/contract/test_ingestion_safety.py`
 
 ---
 
-## 6. Fresh-Clone Executable Reproduction Workflow
-
-To execute canary preparation and dry-run from a fresh clone where `artifacts/prepared/` is absent:
+## Exact commands executed (offline, no credentials in scope)
 
 ```bash
-# 1. Install locked dependencies
-uv sync --all-extras
-
-# 2. Run offline tests
-uv run pytest tests/unit tests/contract tests/behavioural -q
-
-# 3. Deterministically regenerate canary prepared artifact
-uv run python scripts/prepare_canary.py \
-    --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b \
-    --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 \
-    --split train \
-    --seed 42 \
-    --chunk-strategy sentence_aware
-
-# 4. Safely locate generated manifest path
-MANIFEST_PATH=$(find artifacts/prepared -name "*canary-42*_manifest.json" | sort | tail -n 1)
-
-# 5. Run offline canary dry-run
-uv run python scripts/index_canary.py --manifest "$MANIFEST_PATH"
+uv sync --frozen --all-extras
+uv run ruff format .
+uv run ruff format --check .
+uv run ruff check .
+uv run mypy src scripts
+uv run python scripts/scan_secrets.py .
+uv run pytest tests/unit tests/contract tests/behavioural -q -rs
 ```
 
----
+## Gate results
 
-## 7. Next Steps for Gemini Live Canary Session
-
-When ready to perform the live Pinecone indexing session in Antigravity IDE:
-
-1. **Set Environment Credentials & Safeguard:**
-   ```bash
-   export PINECONE_API_KEY=<your-pinecone-api-key>
-   export CONFIRM_PINECONE_WRITE=1
-   ```
-2. **Execute Canary Indexing:**
-   ```bash
-   uv run python scripts/index_canary.py \
-       --manifest artifacts/prepared/canary-42-ee540c17772a_manifest.json \
-       --execute --resume --concurrency 4
-   ```
-3. **Verify Freshness & Reconcile:**
-   - Preflight will verify the target namespace is clean.
-   - 4 batches (96, 96, 96, 12 records) will be upserted.
-   - Post-write reconciliation will assert exact 300 vector count and verify IDs.
+- `ruff format --check .` — 106 files already formatted (0 errors).
+- `ruff check .` — All checks passed (0 errors).
+- `mypy src scripts` — Success: no issues found in 64 source files.
+- `scan_secrets.py .` — no secrets detected; exit 0.
+- `pytest tests/unit tests/contract tests/behavioural` — **557 passed, 0 failed, 0 skipped**.
 
 ---
 
-## 8. Remaining Post-Index Work (Out of Scope for This Pass)
+## Determinism evidence
 
-- Live Pinecone index provisioning and vector ingestion.
-- Live retrieval latency and quality benchmarking against the live index.
-- Sarvam STT integration and voice UI streaming pipeline.
-- Generative answer synthesis using retrieved contexts.
+Two `prepare_canary.py` runs with identical pinned inputs into different output
+directories (`/tmp/run1`, `/tmp/run2`):
+
+```
+dataset-revision   bf5cdc1f26e581e519018e434db14edd1b77602b
+tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3
+seed 42, chunk-strategy sentence_aware
+```
+
+- Manifest ID (both runs): `canary-42-ee540c17772a`
+- JSONL SHA-256 (both runs): `ca912d133c3033eca71cc86045923e0165f5b43baba6f1951a1741ff0a3a9217`
+- Manifest JSON SHA-256 (both runs): `26fe3d5213bef8424e6bf3035cce46baea0174844f87da60b6152a4703ed79c9`
+- `cmp` on both the JSONL and the manifest returned byte-identical (exit 0).
+- Only the non-canonical `<id>_runtime.json` sidecar differs (timestamp/abs paths),
+  as designed.
+
+---
+
+## Confirmations
+
+- **No live API calls.** No Pinecone index was created, listed, queried, upserted,
+  or deleted. No Sarvam / ElevenLabs / Whisper calls were made.
+  `index_canary.py --execute` was not run. All verification stayed offline.
+- **No secrets printed or committed.** `scan_secrets.py` prints filenames only;
+  `.env` is git-ignored and was not modified. No credentials appear in staged
+  changes.
+- **Legacy live path blocked.** `ingest_prepared.py --execute` exits 2 before any
+  Pinecone import even with `CONFIRM_PINECONE_WRITE=1` and `PINECONE_API_KEY`
+  present (verified by test and subprocess).
+- **Post-write reconciliation requires exact ID-set equality.** The canary run is
+  marked `success` only when count == 300 AND the enumerated ID set equals the
+  manifest-derived expected set exactly.
+
+---
+
+## Remaining limitations
+
+- The live 300-record canary has not been executed against real Pinecone; the
+  post-write reconciliation logic is verified only against mocked providers.
+- Pinecone latency, retrieval quality, and live correctness are unmeasured. The
+  <200 ms target is unverified. No such numbers are claimed.
+- The 10,000-record pilot and full corpus remain UNAUTHORIZED and unvalidated.
+- Full-corpus scope figures (~24.87M vectors, ~171.67 GB) are EXTRAPOLATED from a
+  bounded measured sample, not a verified full-corpus measurement.
+
+---
+
+## Scope verdicts (unchanged unless live evidence exists)
+
+| Scope | Verdict |
+|---|---|
+| Offline gates | PASSED (independently rerun successfully) |
+| 300-record canary | READY (after this hardening pass) |
+| Live canary | NOT yet executed or verified |
+| 10,000-record pilot | NOT validated / NOT authorized |
+| Full En/Hi/Bn corpus | NOT authorized or capacity-validated |
+| Voice, retrieval quality, latency benchmarking | Post-index work |

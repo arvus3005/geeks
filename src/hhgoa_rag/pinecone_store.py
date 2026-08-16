@@ -37,6 +37,11 @@ FULL_NAMESPACE = "full"
 SMOKE_NAMESPACE = "smoke"
 PILOT_NAMESPACE_PREFIX = "pilot_"
 
+# Conservative guard against runaway pagination during ID enumeration.
+# At the default page size of 100 IDs, this bounds enumeration to ~1M IDs —
+# far above any canary/pilot namespace, while preventing infinite loops.
+MAX_ENUMERATION_PAGES = 10_000
+
 
 class PineconeProviderError(Exception):
     """Raised when a Pinecone API call fails after exhausting retries."""
@@ -182,16 +187,59 @@ class PineconeStore:
             raise PineconeProviderError(f"describe_index_stats failed: {e}", cause=e) from e
 
     def count_namespace(self, namespace: str) -> int:
-        """Return the vector count for a specific namespace. Returns 0 if namespace absent."""
+        """Return the vector count for a specific namespace.
+
+        Fail-closed: returns 0 ONLY when a valid Pinecone statistics response
+        proves the namespace is absent or empty. Provider exceptions, malformed
+        responses, and invalid counts (booleans, negative, non-integer) raise
+        PineconeProviderError. An exception is NEVER interpreted as "empty".
+        """
         try:
             stats = self._index.describe_index_stats()
-            ns_map = getattr(stats, "namespaces", None) or {}
-            ns_info = ns_map.get(namespace)
-            if ns_info is None:
-                return 0
-            return int(getattr(ns_info, "vector_count", 0))
-        except Exception:
+        except Exception as e:
+            raise PineconeProviderError(
+                f"count_namespace failed for namespace '{namespace}': "
+                f"provider error while fetching index statistics: {e}",
+                cause=e,
+            ) from e
+
+        namespaces = getattr(stats, "namespaces", None)
+        if namespaces is None and isinstance(stats, dict):
+            namespaces = stats.get("namespaces")
+        if namespaces is None or not isinstance(namespaces, dict):
+            raise PineconeProviderError(
+                f"count_namespace received a malformed statistics response for "
+                f"namespace '{namespace}': missing or non-dict 'namespaces' field."
+            )
+
+        ns_info = namespaces.get(namespace)
+        if ns_info is None:
+            # A valid response that omits the namespace proves it is absent/empty.
             return 0
+
+        vc = getattr(ns_info, "vector_count", None)
+        if vc is None and isinstance(ns_info, dict):
+            vc = ns_info.get("vector_count")
+
+        if vc is None or isinstance(vc, bool):
+            raise PineconeProviderError(
+                f"count_namespace received a malformed vector_count for "
+                f"namespace '{namespace}': {vc!r}."
+            )
+        try:
+            count = int(vc)
+        except (ValueError, TypeError) as e:
+            raise PineconeProviderError(
+                f"count_namespace received a non-integer vector_count for "
+                f"namespace '{namespace}': {vc!r}.",
+                cause=e,
+            ) from e
+        if count < 0:
+            raise PineconeProviderError(
+                f"count_namespace received a negative vector_count for "
+                f"namespace '{namespace}': {count}."
+            )
+        return count
 
     def list_vector_ids(
         self,
@@ -201,14 +249,44 @@ class PineconeStore:
     ) -> list[str]:
         """List all vector IDs in a namespace with complete pagination handling.
 
+        Fail-closed against pagination hazards:
+          - Repeated pagination tokens raise PineconeProviderError.
+          - A next token that yields no progress raises PineconeProviderError.
+          - Duplicate vector IDs across pages raise PineconeProviderError.
+          - Non-string / empty IDs raise PineconeProviderError.
+          - A conservative maximum-page guard bounds runaway pagination.
+
         Raises PineconeProviderError if enumeration is unsupported, fails, or
         returns malformed data.
         """
         all_ids: list[str] = []
-        pagination_token: str | None = None
+        seen_ids: set[str] = set()
+
+        def _extract_id(item: object) -> str:
+            item_id: object = None
+            if isinstance(item, str):
+                item_id = item
+            else:
+                item_id = getattr(item, "id", None)
+                if item_id is None and isinstance(item, dict):
+                    item_id = item.get("id")
+            if not isinstance(item_id, str) or not item_id:
+                raise PineconeProviderError(f"Malformed vector item in list response: {item!r}")
+            return item_id
+
+        def _record(item_id: str) -> None:
+            if item_id in seen_ids:
+                raise PineconeProviderError(
+                    f"Duplicate vector ID enumerated across pages in namespace "
+                    f"'{namespace}': {item_id!r}. Refusing to proceed with unreliable enumeration."
+                )
+            seen_ids.add(item_id)
+            all_ids.append(item_id)
 
         if hasattr(self._index, "list_paginated"):
-            while True:
+            pagination_token: str | None = None
+            seen_tokens: set[str] = set()
+            for _page_num in range(MAX_ENUMERATION_PAGES):
                 kwargs: dict[str, Any] = {
                     "namespace": namespace,
                     "limit": limit,
@@ -240,17 +318,10 @@ class PineconeStore:
                         f"list_paginated response missing 'vectors' field for namespace '{namespace}'"
                     )
 
+                ids_before = len(all_ids)
                 for item in vectors:
-                    item_id = getattr(item, "id", None)
-                    if item_id is None and isinstance(item, dict):
-                        item_id = item.get("id")
-                    elif isinstance(item, str):
-                        item_id = item
-                    if item_id is None or not isinstance(item_id, str):
-                        raise PineconeProviderError(
-                            f"Malformed vector item in list response: {item!r}"
-                        )
-                    all_ids.append(item_id)
+                    _record(_extract_id(item))
+                progressed = len(all_ids) > ids_before
 
                 pagination = getattr(resp, "pagination", None)
                 if pagination is None and isinstance(resp, dict):
@@ -263,17 +334,42 @@ class PineconeStore:
                         next_token = pagination.get("next")
 
                 if not next_token:
-                    break
+                    return all_ids
+
+                # Fail closed on a repeated token (would loop forever).
+                if next_token in seen_tokens:
+                    raise PineconeProviderError(
+                        f"list_paginated repeated pagination token for namespace "
+                        f"'{namespace}'. Refusing to loop on unreliable enumeration."
+                    )
+                # Fail closed if a next token is supplied but the page made no progress.
+                if not progressed:
+                    raise PineconeProviderError(
+                        f"list_paginated supplied a next token but returned no new IDs for "
+                        f"namespace '{namespace}'. Refusing to proceed with stalled enumeration."
+                    )
+                seen_tokens.add(next_token)
                 pagination_token = next_token
 
-            return all_ids
+            raise PineconeProviderError(
+                f"list_paginated exceeded the maximum page guard "
+                f"({MAX_ENUMERATION_PAGES}) for namespace '{namespace}'. "
+                "Refusing to proceed with unbounded enumeration."
+            )
 
         elif hasattr(self._index, "list"):
             try:
                 pages = self._index.list(
                     namespace=namespace, prefix=prefix, timeout=self._search_timeout
                 )
+                page_count = 0
                 for page in pages:
+                    page_count += 1
+                    if page_count > MAX_ENUMERATION_PAGES:
+                        raise PineconeProviderError(
+                            f"list iterator exceeded the maximum page guard "
+                            f"({MAX_ENUMERATION_PAGES}) for namespace '{namespace}'."
+                        )
                     vectors = getattr(page, "vectors", None)
                     if vectors is None and isinstance(page, dict):
                         vectors = page.get("vectors")
@@ -282,16 +378,7 @@ class PineconeStore:
                     if vectors is None:
                         raise PineconeProviderError(f"Malformed page in list iterator: {page!r}")
                     for item in vectors:
-                        item_id = getattr(item, "id", None)
-                        if item_id is None and isinstance(item, dict):
-                            item_id = item.get("id")
-                        elif isinstance(item, str):
-                            item_id = item
-                        if item_id is None or not isinstance(item_id, str):
-                            raise PineconeProviderError(
-                                f"Malformed vector item in list response: {item!r}"
-                            )
-                        all_ids.append(item_id)
+                        _record(_extract_id(item))
                 return all_ids
             except Exception as e:
                 if isinstance(e, PineconeProviderError):

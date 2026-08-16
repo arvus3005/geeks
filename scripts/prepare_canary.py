@@ -1045,8 +1045,6 @@ def main() -> None:
 
     ready_for_write = len(readiness_failures) == 0
 
-    created_at = datetime.now(UTC).isoformat()
-
     manifest: dict = {
         "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "manifest_id": manifest_id,
@@ -1088,7 +1086,6 @@ def main() -> None:
             "PASS" if not forbidden_found else f"FAIL: {sorted(set(forbidden_found))}"
         ),
         "prepared_record_path": jsonl_path.name,
-        "prepared_record_path_full": str(jsonl_path),
         "prepared_record_checksum": jsonl_checksum,
         "prepared_data_checksum": prepared_data_checksum,
         "number_of_planned_requests": num_planned_requests,
@@ -1100,25 +1097,47 @@ def main() -> None:
             "storage_ok": projected_indexed_bytes <= int(1.5 * 1024 * 1024 * 1024),
             "total_ok": starter_budget_ok,
         },
-        "created_at": created_at,
         "ready_for_write": ready_for_write,
         "readiness_failures": readiness_failures,
     }
 
+    # Deterministic canonical checksum: stable key ordering + UTF-8. This is
+    # already reproducible; non-determinism previously came only from the removed
+    # runtime fields (created_at, prepared_record_path_full).
     manifest_for_checksum = {k: v for k, v in manifest.items() if k != "manifest_checksum"}
     manifest_checksum = hashlib.sha256(
         json.dumps(manifest_for_checksum, sort_keys=True, ensure_ascii=False).encode("utf-8")
     ).hexdigest()
     manifest["manifest_checksum"] = manifest_checksum
 
+    # Serialize the canonical manifest deterministically: stable key ordering,
+    # UTF-8, and a single trailing newline. Two runs with identical inputs but
+    # different output directories/times produce byte-identical manifest JSON.
+    manifest_bytes = (
+        json.dumps(manifest, sort_keys=True, ensure_ascii=False, indent=2) + "\n"
+    ).encode("utf-8")
+
     manifest_path = args.output_dir / f"{manifest_id}_manifest.json"
     manifest_tmp = manifest_path.with_suffix(".json.tmp")
     try:
-        manifest_tmp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+        manifest_tmp.write_bytes(manifest_bytes)
         manifest_tmp.rename(manifest_path)
     except Exception:
         manifest_tmp.unlink(missing_ok=True)
         raise
+
+    # Runtime metadata is written to a SEPARATE non-canonical sidecar file. It is
+    # NOT used for identity, checksums, or checkpoints and never affects bytes of
+    # the canonical manifest.
+    runtime_meta = {
+        "manifest_id": manifest_id,
+        "created_at": datetime.now(UTC).isoformat(),
+        "prepared_record_path_full": str(jsonl_path.resolve()),
+        "manifest_path_full": str(manifest_path.resolve()),
+        "note": "Non-canonical runtime metadata. Not part of manifest identity or checksum.",
+    }
+    runtime_meta_path = args.output_dir / f"{manifest_id}_runtime.json"
+    runtime_meta_path.write_text(json.dumps(runtime_meta, indent=2, ensure_ascii=False))
 
     if args.output_json:
         print(json.dumps(manifest, indent=2, ensure_ascii=False))

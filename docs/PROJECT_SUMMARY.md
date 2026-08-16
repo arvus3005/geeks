@@ -124,13 +124,17 @@ Every record is built via `build_record()` in `src/hhgoa_rag/ingestion/schema.py
 - Conservative storage estimate (not `total_records * 1500`)
 
 ### Task 4 — Ingest CLI (fail-closed)
-- `scripts/ingest_prepared.py`: `--dry-run` and `--execute` mutually exclusive (exit 2)
-- `--execute` requires `CONFIRM_PINECONE_WRITE=1` (exit 2 otherwise)
-- `--dry-run` never goes live even with credentials + confirmation present
+- `scripts/index_canary.py` is the ONLY live ingestion path. It performs the
+  empty-namespace preflight, exact resume ownership, atomic per-batch
+  checkpointing, and post-write reconciliation that requires exact ID-set equality.
+- `scripts/ingest_prepared.py` is an offline validator/dry-run tool ONLY; its
+  `--execute` path is DISABLED and exits non-zero before any Pinecone import,
+  even with `CONFIRM_PINECONE_WRITE=1` and `PINECONE_API_KEY` present.
+- `--execute` (canary indexer) requires `CONFIRM_PINECONE_WRITE=1` (exit 2 otherwise)
+- Dry-run never goes live even with credentials + confirmation present
 - No Pinecone import on any dry-run path
 - Index-contract validation (`model`, `dimension`, `metric`, `field_map`, `write_parameters`, `read_parameters`)
-- Namespace locked to `pilot_v1` unless explicitly overridden
-- Manifest/index contract mismatch rejected
+- Namespace locked to `pilot_v1`
 
 ### Task 5 — CI isolation
 - Offline CI job never receives `PINECONE_API_KEY`, `SARVAM_API_KEY`, or `ELEVENLABS_API_KEY`
@@ -157,11 +161,11 @@ Every record is built via `build_record()` in `src/hhgoa_rag/ingestion/schema.py
 
 | Gate | Result |
 |------|--------|
-| `ruff format --check src tests bench scripts` | 99 files clean |
-| `ruff check src tests bench scripts` | All passed |
-| `mypy src` | 0 issues in 47 source files |
-| `pytest tests/unit tests/behavioural tests/contract` (no credentials) | **353 passed, 0 failed, 0 skipped** |
-| `scripts/scan_secrets.py` | No committed secrets |
+| `ruff format --check .` | 106 files clean |
+| `ruff check .` | All passed |
+| `mypy src scripts` | 0 issues in 64 source files |
+| `pytest tests/unit tests/contract tests/behavioural` (no credentials) | **557 passed, 0 failed, 0 skipped** |
+| `scripts/scan_secrets.py .` | No committed secrets |
 
 ---
 
@@ -199,8 +203,9 @@ uv run python scripts/prepare_canary.py \
 |----------|--------|
 | `--dry-run` from repo root with live-looking credentials | Offline; printed plan; no Pinecone client constructed |
 | `--dry-run` from `/tmp` (different CWD) | Resolved data via manifest-relative path; 4 batches; namespace `pilot_v1` |
-| `--dry-run --execute` together (ingest_prepared) | Exit 2 (mutually exclusive) |
-| `--execute` without `CONFIRM_PINECONE_WRITE=1` | Exit 2 |
+| `ingest_prepared.py --execute` (even with confirm + key) | Exit 2 (legacy live path DISABLED; redirects to index_canary.py) |
+| `index_canary.py --execute` without `CONFIRM_PINECONE_WRITE=1` | Exit 2 |
+| Two `prepare_canary.py` runs into different dirs | Byte-identical JSONL and byte-identical manifest (same SHA-256) |
 
 ---
 
@@ -234,4 +239,4 @@ CONFIRM_PINECONE_WRITE=1 \
     --execute --resume --concurrency 4
 ```
 
-*(Note: `scripts/ingest_prepared.py` remains available as a lower-level legacy alternative, but `scripts/index_canary.py` is the approved canonical path with pre-write preflight and atomic checkpointing).*
+*(Note: `scripts/ingest_prepared.py` is an offline validator/dry-run tool only; its `--execute` live path is DISABLED. `scripts/index_canary.py` is the sole approved live path, with empty-namespace preflight, atomic per-batch checkpointing, and post-write reconciliation requiring exact ID-set equality.)*

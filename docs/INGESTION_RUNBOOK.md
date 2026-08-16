@@ -38,16 +38,34 @@ Outputs:
 - `artifacts/prepared/<manifest_id>_records.jsonl`
 - `artifacts/prepared/<manifest_id>_manifest.json`
 
-Verify determinism (run twice into separate directories, compare):
+Verify determinism (run twice into separate directories, compare exact bytes).
+Note: the manifest ID is derived from the inputs, so both runs share the same
+filename. Compare the file contents directly with `cmp` (do NOT `diff` two
+`sha256sum` outputs whose filenames differ — that always reports a difference):
 
 ```bash
-uv run python scripts/prepare_canary.py --dataset-revision bf5cdc1f... \
-    --tokenizer-revision 3d7cfd... --seed 42 --output-dir /tmp/run1
-uv run python scripts/prepare_canary.py --dataset-revision bf5cdc1f... \
-    --tokenizer-revision 3d7cfd... --seed 42 --output-dir /tmp/run2
-diff <(sha256sum /tmp/run1/*_records.jsonl) <(sha256sum /tmp/run2/*_records.jsonl)
-# must output: (empty — identical)
+uv run python scripts/prepare_canary.py \
+    --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b \
+    --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 \
+    --seed 42 --output-dir /tmp/run1
+uv run python scripts/prepare_canary.py \
+    --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b \
+    --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 \
+    --seed 42 --output-dir /tmp/run2
+
+# Byte-identical JSONL and byte-identical manifest (exit 0, no output):
+cmp /tmp/run1/*_records.jsonl /tmp/run2/*_records.jsonl
+cmp /tmp/run1/*_manifest.json /tmp/run2/*_manifest.json
+
+# Or compare only the extracted hash values (not the filenames):
+test "$(shasum -a 256 /tmp/run1/*_records.jsonl | awk '{print $1}')" \
+   = "$(shasum -a 256 /tmp/run2/*_records.jsonl | awk '{print $1}')" \
+   && echo "JSONL identical"
 ```
+
+The runtime sidecar (`<id>_runtime.json`) intentionally differs between runs; it
+holds non-canonical metadata (timestamp, absolute paths) and is excluded from the
+manifest identity, checksum, and checkpoints.
 
 Run ID/linkage audit:
 
@@ -61,13 +79,14 @@ uv run python scripts/audit_ids.py \
 
 ## Step 3: Offline dry-run
 
-**Preferred path** (uses the approved canary indexer with full record validation):
+**Approved path** (the canary indexer with full record validation):
 ```bash
 uv run python scripts/index_canary.py \
     --manifest artifacts/prepared/<manifest_id>_manifest.json
 ```
 
-**Legacy-compatible path** (lower-level, still supported):
+**Offline manifest validation only** (`ingest_prepared.py` is a validator/dry-run
+tool — its `--execute` live path is DISABLED and exits non-zero):
 ```bash
 uv run python scripts/ingest_prepared.py \
     --manifest artifacts/prepared/<manifest_id>_manifest.json \
@@ -163,17 +182,13 @@ nohup env CONFIRM_PINECONE_WRITE=1 \
 4. Validate remote index contract against canonical values
 5. Only then submit batches (max 96 records, 225,000 tokens/min ceiling)
 6. Save checkpoint after each acknowledged batch (resumable)
-7. Perform freshness reconciliation — must reach exactly 300 vectors
+7. Perform post-write reconciliation — the run is marked `success` ONLY when the
+   namespace vector count is exactly 300 AND the enumerated vector-ID set equals
+   the manifest-derived expected ID set exactly (no missing IDs, no extra IDs).
+   Any enumeration failure/ambiguity fails closed and performs no further writes.
 
-### Legacy-compatible alternative (scripts/ingest_prepared.py)
-
-```bash
-PINECONE_API_KEY=<your-key> CONFIRM_PINECONE_WRITE=1 \
-    uv run python scripts/ingest_prepared.py \
-    --manifest artifacts/prepared/<manifest_id>_manifest.json \
-    --namespace pilot_v1 \
-    --execute
-```
+> `scripts/ingest_prepared.py --execute` is DISABLED. It is retained only for
+> offline manifest validation / dry-run. `index_canary.py` is the sole live path.
 
 ---
 
@@ -184,9 +199,13 @@ PINECONE_API_KEY=<your-key> CONFIRM_PINECONE_WRITE=1 \
 PINECONE_API_KEY=<your-key> \
     uv run python scripts/reconcile_corpus.py \
     --pinecone-index msmarco-xi \
-    --namespace pilot_v1 \
-    --expected 300
+    --namespace pilot_v1
 ```
+
+`reconcile_corpus.py` fails closed: if a valid namespace vector count cannot be
+obtained (provider error, malformed response), it prints "reconciliation
+UNVERIFIABLE" and exits non-zero. An exception is never treated as an empty
+namespace.
 
 ---
 
@@ -214,7 +233,9 @@ Do NOT proceed to full corpus indexing until:
 ## Safety rules
 
 - `CONFIRM_PINECONE_CREATE=1` + `--execute` required for index creation
-- `CONFIRM_PINECONE_WRITE=1` + `--execute` required for ingestion
+- `CONFIRM_PINECONE_WRITE=1` + `--execute` required for ingestion (via `index_canary.py` only)
+- `scripts/ingest_prepared.py --execute` is DISABLED and exits non-zero — the legacy
+  live path bypassed preflight/reconciliation; use `index_canary.py` for all live writes
 - `--execute` alone exits 2 (never silently downgraded to dry-run)
 - Namespace `pilot_v1` is the only permitted namespace for canary writes
 - Full corpus mode on Starter plan is permanently blocked (no bypass)

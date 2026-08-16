@@ -741,7 +741,8 @@ def _write_reports(
         "## Validation",
         f"- Resume used: {data.get('resume_used', False)}",
         f"- Remote index validation: {data.get('remote_validation', 'not run')}",
-        f"- Freshness reconciliation: {data.get('freshness_reconciliation', 'not run')}",
+        f"- Count reconciliation: {data.get('count_reconciliation', 'not run')}",
+        f"- Exact-ID reconciliation: {data.get('exact_id_reconciliation', 'not run')}",
         "",
     ]
     if data.get("failure_category"):
@@ -1411,12 +1412,25 @@ def _run(
             safe_next_action="Run with --resume to retry failed batches.",
         )
 
-    # ── Step 7: Freshness reconciliation — exact count required ───────────────
+    # ── Step 7: Post-write reconciliation — exact COUNT and exact ID SET ──────
+    # Count equality alone is insufficient. We require BOTH:
+    #   1. Statistics count == exactly 300, AND
+    #   2. The enumerated namespace ID set == the manifest-derived expected ID set.
+    # Any enumeration failure/ambiguity fails closed. No further upserts occur.
+    expected_id_set = {r["id"] for r in records}
+    if len(expected_id_set) != CANARY_EXPECTED_TOTAL:
+        raise CanaryError(
+            f"Expected manifest-derived ID set has {len(expected_id_set)} unique IDs, "
+            f"not {CANARY_EXPECTED_TOTAL}. Refusing to reconcile.",
+            category="ExpectedIdSetInvalid",
+            safe_next_action="Regenerate the manifest — record IDs are not unique.",
+        )
+
     logger.info("Waiting for index freshness (max %ds) …", FRESHNESS_POLL_MAX_WAIT)
     deadline = time.monotonic() + FRESHNESS_POLL_MAX_WAIT
     wait = FRESHNESS_POLL_BASE
     final_count: int | None = None
-    reconciled = False
+    count_reconciled = False
     contaminated = False
 
     while time.monotonic() < deadline:
@@ -1429,7 +1443,7 @@ def _run(
                 logger.info("Namespace '%s' vector count: %d", CANONICAL_NAMESPACE, count)
                 final_count = count
                 if count == CANARY_EXPECTED_TOTAL:
-                    reconciled = True
+                    count_reconciled = True
                     break
                 elif count > CANARY_EXPECTED_TOTAL:
                     contaminated = True
@@ -1450,76 +1464,156 @@ def _run(
         time.sleep(min(wait, remaining))
         wait = min(wait * 2, 30)
 
-    end_time = datetime.now(UTC).isoformat()
-    duration = (
-        datetime.fromisoformat(end_time) - datetime.fromisoformat(start_time)
-    ).total_seconds()
-
+    # Store the COUNT result separately from the exact-ID result.
     if contaminated:
-        freshness_result = (
-            f"CONTAMINATED — namespace has {final_count} vectors, expected {CANARY_EXPECTED_TOTAL}. "
-            "Must be cleared by the live indexing operator."
+        count_result = (
+            f"CONTAMINATED — namespace has {final_count} vectors, expected {CANARY_EXPECTED_TOTAL}."
         )
-    elif not reconciled:
-        logger.warning(
-            "Freshness reconciliation timeout after %ds. Count=%s (expected %d).",
-            FRESHNESS_POLL_MAX_WAIT,
-            final_count,
-            CANARY_EXPECTED_TOTAL,
+    elif not count_reconciled:
+        count_result = f"TIMEOUT — count={final_count}, expected={CANARY_EXPECTED_TOTAL}"
+    else:
+        count_result = f"PASS — count={final_count}"
+    report_data["count_reconciliation"] = count_result
+
+    def _finalize(
+        status: str,
+        exact_id_result: str,
+        failure: CanaryError | None,
+    ) -> None:
+        end_time = datetime.now(UTC).isoformat()
+        duration = (
+            datetime.fromisoformat(end_time) - datetime.fromisoformat(start_time)
+        ).total_seconds()
+        rps = round(total_records / max(duration, 0.001), 2) if duration > 0 else 0
+        tpm = round(tokens_submitted / max(duration / 60, 0.001), 0) if duration > 0 else 0
+        report_data.update(
+            {
+                "status": status,
+                "end_time": end_time,
+                "total_batches": total_batches,
+                "completed_batches": completed_batches,
+                "skipped_batches": skipped_batches,
+                "failed_batches": failed_batches,
+                "total_attempts": total_attempts,
+                "total_retries": total_retries,
+                "total_throttle_wait_seconds": round(total_throttle_wait, 2),
+                "records_per_second": rps,
+                "tokens_per_minute": tpm,
+                "count_reconciliation": count_result,
+                "exact_id_reconciliation": exact_id_result,
+                # Retained for backward-compatible report readers.
+                "freshness_reconciliation": count_result,
+            }
         )
-        freshness_result = f"TIMEOUT — count={final_count}, expected={CANARY_EXPECTED_TOTAL}"
-    else:
-        freshness_result = f"PASS — count={final_count}"
-        logger.info("Freshness reconciliation PASSED: count=%d", final_count)
+        if failure is not None:
+            raise failure
+        logger.info(
+            "Canary indexing complete: %d records, %d tokens in %.1fs (%.1f r/s, %d t/min). "
+            "Exact-ID verification: %s",
+            total_records,
+            total_tokens,
+            duration,
+            rps,
+            tpm,
+            exact_id_result,
+        )
 
-    rps = round(total_records / max(duration, 0.001), 2) if duration > 0 else 0
-    tpm = round(tokens_submitted / max(duration / 60, 0.001), 0) if duration > 0 else 0
-
-    # Determine final status: only exact 300 vectors passes.
-    if reconciled:
-        final_status = "success"
-    else:
-        final_status = "failed"
-
-    report_data.update(
-        {
-            "status": final_status,
-            "end_time": end_time,
-            "total_batches": total_batches,
-            "completed_batches": completed_batches,
-            "skipped_batches": skipped_batches,
-            "failed_batches": failed_batches,
-            "total_attempts": total_attempts,
-            "total_retries": total_retries,
-            "total_throttle_wait_seconds": round(total_throttle_wait, 2),
-            "records_per_second": rps,
-            "tokens_per_minute": tpm,
-            "freshness_reconciliation": freshness_result,
-        }
-    )
-
-    if not reconciled:
+    # If the count never reached exactly 300, fail closed BEFORE ID enumeration.
+    if not count_reconciled:
         category = "ContaminatedNamespace" if contaminated else "ReconciliationTimeout"
         safe_action = (
             "The namespace must be cleared by the live indexing operator before retrying."
             if contaminated
             else "Wait for index propagation and retry with --resume."
         )
-        raise CanaryError(
-            f"Freshness reconciliation did not reach exactly {CANARY_EXPECTED_TOTAL} vectors: "
-            f"{freshness_result}",
-            category=category,
-            safe_next_action=safe_action,
+        logger.error("Count reconciliation failed: %s", count_result)
+        _finalize(
+            "failed",
+            "NOT RUN — count precondition not met",
+            CanaryError(
+                f"Count reconciliation did not reach exactly {CANARY_EXPECTED_TOTAL} vectors: "
+                f"{count_result}",
+                category=category,
+                safe_next_action=safe_action,
+            ),
         )
+        return
 
+    # Count == 300. Now enumerate IDs and require EXACT set equality.
     logger.info(
-        "Canary indexing complete: %d records, %d tokens in %.1fs (%.1f r/s, %d t/min)",
-        total_records,
-        total_tokens,
-        duration,
-        rps,
-        tpm,
+        "Count reconciled at %d. Enumerating vector IDs for exact-ID reconciliation …", final_count
     )
+    try:
+        enumerated = store.list_vector_ids(namespace=CANONICAL_NAMESPACE)
+    except Exception as exc:
+        logger.error("Post-write ID enumeration failed: %s", exc)
+        _finalize(
+            "failed",
+            f"UNVERIFIABLE — enumeration error: {type(exc).__name__}",
+            CanaryError(
+                f"Post-write reconciliation could not enumerate vector IDs: {exc}",
+                category="PostWriteReconciliationUnverifiable",
+                safe_next_action=(
+                    "Verify Pinecone ID enumeration support and connectivity. "
+                    "Do not assume success — the exact ID set is unverified."
+                ),
+            ),
+        )
+        return
+
+    # Duplicates are already rejected inside list_vector_ids (fail-closed), but
+    # guard again defensively: a set smaller than the list would signal a bug.
+    enumerated_set = set(enumerated)
+    if len(enumerated) != len(enumerated_set):
+        _finalize(
+            "failed",
+            "UNVERIFIABLE — duplicate IDs enumerated",
+            CanaryError(
+                "Post-write ID enumeration returned duplicate IDs.",
+                category="PostWriteReconciliationUnverifiable",
+                safe_next_action="ID enumeration is unreliable; do not assume success.",
+            ),
+        )
+        return
+
+    if len(enumerated_set) != CANARY_EXPECTED_TOTAL:
+        _finalize(
+            "failed",
+            f"FAIL — enumerated {len(enumerated_set)} unique IDs, expected {CANARY_EXPECTED_TOTAL}",
+            CanaryError(
+                f"Post-write ID enumeration returned {len(enumerated_set)} unique IDs, "
+                f"expected exactly {CANARY_EXPECTED_TOTAL}.",
+                category="PostWriteOwnershipMismatch",
+                safe_next_action=(
+                    "Namespace contents do not match the manifest. Verify and clear "
+                    "manually before retrying. Do not automatically clear."
+                ),
+            ),
+        )
+        return
+
+    missing = expected_id_set - enumerated_set
+    unexpected = enumerated_set - expected_id_set
+    if missing or unexpected:
+        # Report only COUNTS of discrepancies — never dump the ID lists.
+        _finalize(
+            "failed",
+            f"FAIL — missing {len(missing)}, unexpected {len(unexpected)}",
+            CanaryError(
+                f"Post-write ID set does not equal the manifest-derived expected set: "
+                f"missing {len(missing)} expected IDs, {len(unexpected)} unexpected IDs.",
+                category="PostWriteOwnershipMismatch",
+                safe_next_action=(
+                    "Namespace contents do not match the manifest. Verify and clear "
+                    "manually before retrying. Do not automatically clear."
+                ),
+            ),
+        )
+        return
+
+    # All conditions satisfied: count == 300 AND exact ID-set equality.
+    logger.info("Post-write EXACT-ID reconciliation PASSED: 300 IDs match manifest exactly.")
+    _finalize("success", "PASS — 300 IDs match manifest exactly", None)
 
 
 if __name__ == "__main__":

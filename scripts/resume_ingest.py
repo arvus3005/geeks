@@ -39,9 +39,10 @@ def main() -> None:
     if getattr(ckpt, "mode", None) in ("pilot", "canary"):
         print(
             f"ERROR: Resuming raw-HF pilot/canary checkpoints via {__file__} is blocked.\n"
-            "Use the prepared-data path for pilot ingestion:\n"
-            "  uv run python scripts/ingest_prepared.py "
-            "--manifest artifacts/prepared/<id>_manifest.json --execute",
+            "Use the approved canary indexer for pilot ingestion:\n"
+            "  CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=... \\\n"
+            "    uv run python scripts/index_canary.py "
+            "--manifest artifacts/prepared/<id>_manifest.json --execute --resume",
             file=sys.stderr,
         )
         sys.exit(1)

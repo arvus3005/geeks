@@ -168,7 +168,7 @@ def test_ingest_all_pilot_blocked_redirects_to_ingest_prepared():
     """Pilot mode via ingest_all.py must be blocked and redirect to ingest_prepared.py."""
     result = _run([sys.executable, "scripts/ingest_all.py", "--mode", "pilot"])
     assert result.returncode == 1
-    assert "ingest_prepared.py" in result.stderr
+    assert "index_canary.py" in result.stderr
 
 
 def test_ingest_all_batch_size_over_96_rejected():
@@ -251,7 +251,7 @@ def test_ingest_shard_pilot_blocked_redirects_to_ingest_prepared():
         ]
     )
     assert result.returncode == 1
-    assert "ingest_prepared.py" in result.stderr
+    assert "index_canary.py" in result.stderr
 
 
 def test_ingest_shard_batch_size_over_96_rejected():
@@ -312,7 +312,7 @@ def test_resume_pilot_checkpoint_blocked(tmp_path):
     _make_pilot_ckpt(ckpt_path)
     result = _run([sys.executable, "scripts/resume_ingest.py", "--checkpoint", str(ckpt_path)])
     assert result.returncode == 1
-    assert "ingest_prepared.py" in result.stderr
+    assert "index_canary.py" in result.stderr
 
 
 def test_resume_old_checkpoint_without_num_workers_fails_closed(tmp_path):

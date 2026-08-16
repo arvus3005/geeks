@@ -1,36 +1,32 @@
 #!/usr/bin/env python3
-"""Prepared-data-only ingestion from a canary/pilot manifest.
+"""Prepared-data-only OFFLINE VALIDATION / DRY-RUN for a canary/pilot manifest.
 
-Reads the JSONL produced by prepare_canary.py and ingests it into Pinecone.
+Reads the JSONL produced by prepare_canary.py, validates the manifest and every
+record, builds batches, and prints a plan. It performs NO live writes.
 
-Dry-run mode (default — without --execute and CONFIRM_PINECONE_WRITE=1):
-  - Validates manifest and data file
-  - Builds batches and calculates budget
-  - Prints a full plan
-  - NEVER imports or instantiates Pinecone
-  - NEVER reads PINECONE_API_KEY
+The legacy live-ingestion path (`--execute`) is DISABLED: it lacks the canonical
+empty-namespace preflight, exact resume ownership verification, atomic per-batch
+checkpointing, and post-write exact-ID reconciliation. Live indexing is performed
+exclusively by scripts/index_canary.py.
 
-Live mode (--execute AND CONFIRM_PINECONE_WRITE=1 AND PINECONE_API_KEY set):
-  - Requires all manifest/data validations to pass before constructing Pinecone client
-  - Credentials must come from PINECONE_API_KEY environment variable only
-  - Refuses unsafe collection names (smoke/pilot safety guards apply)
+Behaviour:
+  - Default / --dry-run: validate manifest and data file, build batches, print
+    plan. NEVER imports or instantiates Pinecone. NEVER reads PINECONE_API_KEY.
+  - --execute: exits non-zero (2) BEFORE constructing any Pinecone client or
+    reading credentials, even when CONFIRM_PINECONE_WRITE=1 and
+    PINECONE_API_KEY are present. Redirects the operator to index_canary.py.
 
 Usage:
-  # Dry run (no credentials needed):
+  # Offline validation / dry-run (no credentials needed):
   uv run python scripts/ingest_prepared.py \\
-      --manifest artifacts/prepared/<id>_manifest.json \\
-      --dry-run
+      --manifest artifacts/prepared/<id>_manifest.json --dry-run
 
-  # Dry run (also works without --dry-run if CONFIRM_PINECONE_WRITE not set):
-  uv run python scripts/ingest_prepared.py \\
-      --manifest artifacts/prepared/<id>_manifest.json
-
-  # Live ingest:
-  PINECONE_API_KEY=... CONFIRM_PINECONE_WRITE=1 \\
-      uv run python scripts/ingest_prepared.py \\
+  # Live ingestion (use the approved canary indexer):
+  export PINECONE_API_KEY=<your-key>
+  CONFIRM_PINECONE_WRITE=1 \\
+      uv run python scripts/index_canary.py \\
       --manifest artifacts/prepared/<id>_manifest.json \\
-      --execute \\
-      --namespace pilot_canary_v1
+      --execute --resume --concurrency 4
 """
 
 from __future__ import annotations
@@ -40,7 +36,6 @@ import hashlib
 import json
 import logging
 import sys
-import time
 from pathlib import Path
 
 # Import canonical contract — no hand-written contract dicts here.
@@ -536,26 +531,41 @@ def main() -> None:
 
     manifest_path: Path = args.manifest
 
-    import os
-
     # Fail closed on contradictory flags.
     if args.dry_run and args.execute:
         logger.error("--dry-run and --execute are mutually exclusive. Aborting.")
         sys.exit(2)
 
-    # --execute without the confirmation variable is an error (never silently
-    # downgraded to a live write, never silently ignored).
-    if args.execute and os.environ.get("CONFIRM_PINECONE_WRITE") != "1":
+    # ── Legacy live-ingestion path is permanently DISABLED ────────────────────
+    # This script is retained ONLY for offline manifest validation and dry-run
+    # planning. Live writes bypass the canonical empty-namespace preflight, exact
+    # resume ownership, atomic checkpointing, and post-write exact-ID
+    # reconciliation. The refusal occurs BEFORE any Pinecone client construction
+    # or credential read, even when CONFIRM_PINECONE_WRITE=1 and
+    # PINECONE_API_KEY are present.
+    if args.execute:
         logger.error(
-            "--execute requires CONFIRM_PINECONE_WRITE=1 to be set. "
-            "Refusing to proceed. (Default, no --execute, is always safe dry-run.)"
+            "Live ingestion via ingest_prepared.py --execute is DISABLED.\n"
+            "This legacy path lacks the canonical empty-namespace preflight, exact\n"
+            "resume ownership verification, atomic per-batch checkpointing, and\n"
+            "post-write exact-ID reconciliation.\n"
+            "\n"
+            "Use the approved canary indexer instead:\n"
+            "  export PINECONE_API_KEY=<your-key>\n"
+            "  CONFIRM_PINECONE_WRITE=1 \\\n"
+            "    uv run python scripts/index_canary.py \\\n"
+            "    --manifest %s \\\n"
+            "    --execute --resume --concurrency 4\n"
+            "\n"
+            "ingest_prepared.py remains available for offline validation:\n"
+            "  uv run python scripts/ingest_prepared.py --manifest %s --dry-run",
+            manifest_path,
+            manifest_path,
         )
         sys.exit(2)
 
-    # Determine mode BEFORE touching any Pinecone-related code.
-    # --dry-run ALWAYS stays offline even if credentials are present.
-    live_mode = (not args.dry_run) and _is_live_mode(args)
-    dry_mode = not live_mode
+    # Past the --execute refusal above, this script is ALWAYS an offline dry-run.
+    # Pinecone is never imported and PINECONE_API_KEY is never read below.
 
     # Step 1: Load and validate manifest (always, including dry-run)
     logger.info("Loading manifest: %s", manifest_path)
@@ -581,140 +591,13 @@ def main() -> None:
     batches = _build_batches(records)
     logger.info("Built %d batches from %d records", len(batches), len(records))
 
-    if dry_mode:
-        _print_plan(manifest, records, batches, namespace)
-        print("DRY RUN complete — no records were written.")
-        sys.exit(0)
-
-    # Step 5: Live mode — all validations must pass before constructing Pinecone client
-    if not manifest.get("ready_for_write"):
-        failures = manifest.get("readiness_failures", ["unknown"])
-        logger.error("Manifest is not ready_for_write: %s", failures)
-        sys.exit(1)
-
-    # Require the exact safe namespace for the pilot write.
-    if namespace != SAFE_NAMESPACE:
-        logger.error(
-            "Live ingestion is restricted to the safe namespace %r; got %r.",
-            SAFE_NAMESPACE,
-            namespace,
-        )
-        sys.exit(1)
-
-    # Reject manifest / index-contract mismatches before any client construction.
-    if args.embed_model != INDEX_CONTRACT["model"]:
-        logger.error(
-            "Embed model %r does not match index contract %r.",
-            args.embed_model,
-            INDEX_CONTRACT["model"],
-        )
-        sys.exit(1)
-
-    api_key = os.environ.get("PINECONE_API_KEY")
-    if not api_key:
-        logger.error("PINECONE_API_KEY environment variable is not set. Cannot proceed.")
-        sys.exit(1)
-
-    index_name = args.pinecone_index or os.environ.get("PINECONE_INDEX", CANONICAL_INDEX_NAME)
-    if index_name != CANONICAL_INDEX_NAME:
-        logger.error(
-            "Index name %r does not match canonical index %r. Refusing to proceed.",
-            index_name,
-            CANONICAL_INDEX_NAME,
-        )
-        sys.exit(1)
-
-    # Only import Pinecone after all validations pass
-    from pinecone import Pinecone
-
-    from hhgoa_rag.pinecone_store import PineconeStore, is_safe_namespace
-
-    if not is_safe_namespace(namespace):
-        logger.error(
-            "Namespace '%s' is not a safe namespace for prepared ingestion. "
-            "Only smoke/* and pilot_* namespaces are permitted.",
-            namespace,
-        )
-        sys.exit(1)
-
-    logger.info("Connecting to Pinecone index: %s", index_name)
-    pc = Pinecone(api_key=api_key)
-
-    # Validate remote index BEFORE constructing data-plane client or attempting any upsert.
-    from hhgoa_rag.pinecone_lifecycle import validate_index
-
-    logger.info("Validating remote index '%s' against canonical contract …", index_name)
-    validation_errors = validate_index(pc, index_name)
-    if validation_errors:
-        logger.error(
-            "Remote index validation failed — refusing to write:\n%s",
-            "\n".join(f"  • {e}" for e in validation_errors),
-        )
-        sys.exit(1)
-    logger.info("Remote index validation PASSED.")
-
-    index = pc.Index(index_name)
-    store = PineconeStore(index, embed_model=args.embed_model)
-
-    total_submitted = 0
-    for i, batch in enumerate(batches):
-        last_exc: Exception | None = None
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                logger.info(
-                    "Upserting batch %d/%d (%d records) into namespace '%s' (attempt %d/%d) …",
-                    i + 1,
-                    len(batches),
-                    len(batch),
-                    namespace,
-                    attempt,
-                    MAX_RETRIES,
-                )
-                submitted = store.upsert_records(batch, namespace=namespace, context="pilot")
-                total_submitted += submitted
-                logger.info(
-                    "Batch %d/%d complete: %d records submitted",
-                    i + 1,
-                    len(batches),
-                    submitted,
-                )
-                last_exc = None
-                break
-            except Exception as exc:
-                last_exc = exc
-                if attempt < MAX_RETRIES:
-                    delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
-                    logger.warning(
-                        "Batch %d/%d attempt %d/%d failed: %s — retrying in %.1fs",
-                        i + 1,
-                        len(batches),
-                        attempt,
-                        MAX_RETRIES,
-                        exc,
-                        delay,
-                    )
-                    time.sleep(delay)
-
-        if last_exc is not None:
-            logger.error(
-                "Batch %d/%d failed after %d attempts: %s",
-                i + 1,
-                len(batches),
-                MAX_RETRIES,
-                last_exc,
-            )
-            sys.exit(1)
-
-    logger.info(
-        "Ingestion complete: %d/%d records submitted to namespace '%s'",
-        total_submitted,
-        len(records),
-        namespace,
+    # Offline dry-run is the only supported mode for this script.
+    _print_plan(manifest, records, batches, namespace)
+    print("DRY RUN complete — no records were written.")
+    print(
+        "NOTE: Live ingestion is performed exclusively by scripts/index_canary.py "
+        "(ingest_prepared.py --execute is disabled)."
     )
-    if total_submitted != len(records):
-        logger.error("Submitted %d but expected %d!", total_submitted, len(records))
-        sys.exit(1)
-
     sys.exit(0)
 
 
