@@ -2,10 +2,14 @@
 
 1. PassageNativeChunker   — preserve passage as-is
 2. SentenceAwareChunker   — split on sentence boundaries, group to target size
-3. FixedTokenChunker      — fixed approximate-token windows with overlap
+3. FixedTokenChunker      — fixed exact-token windows with overlap (requires real tokenizer)
 4. SemanticChunker        — split on similarity drops (EXPERIMENTAL)
 
 All chunkers are deterministic given the same input.
+
+FixedTokenChunker requires a real tokenizer injected at construction time.
+For isolated tests only, pass allow_approximate=True to enable the whitespace
+fallback — this path is ineligible for production or readiness decisions.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 STRATEGY_VERSION = "v1"
 
@@ -31,7 +35,7 @@ class Chunk:
     parent_passage_id: str
     token_length: int | None = None
     char_length: int = 0
-    # label set to "approximate_whitespace" when real tokenizer unavailable
+    # "real" when a real tokenizer was used; "approximate_whitespace" otherwise.
     tokenizer_label: str = "real"
 
 
@@ -138,16 +142,19 @@ class SentenceAwareChunker(BaseChunker):
         return chunks
 
 
-# ── 3. Fixed-token fallback ───────────────────────────────────────────────────
+# ── 3. Fixed-token chunker (requires real tokenizer) ─────────────────────────
 
 
 class FixedTokenChunker(BaseChunker):
-    """Fixed approximate-token windows with overlap.
+    """Fixed exact-token windows with overlap.
 
-    Uses whitespace tokenization when a real tokenizer is unavailable.
-    When the whitespace fallback is active, tokenizer_label is set to
-    'approximate_whitespace' on every Chunk so downstream code can
-    distinguish approximate from real token counts.
+    Requires a real tokenizer wrapper (duck-typed: must have encode(text)->list[int]
+    and decode(ids)->str methods, or count_tokens(text, add_prefix=False)->int).
+
+    Production use: inject a real tokenizer from get_tokenizer().
+    Test use only: pass allow_approximate=True to enable the whitespace fallback;
+    this path sets tokenizer_label="approximate_whitespace" and is NOT eligible for
+    readiness decisions or benchmark reports.
     """
 
     strategy_name = "fixed_token_overlap"
@@ -156,6 +163,8 @@ class FixedTokenChunker(BaseChunker):
         self,
         target_tokens: int = 128,
         overlap_tokens: int = 20,
+        tokenizer: Any = None,
+        allow_approximate: bool = False,
     ) -> None:
         if target_tokens <= 0:
             raise ValueError("target_tokens must be positive")
@@ -165,22 +174,61 @@ class FixedTokenChunker(BaseChunker):
             raise ValueError("overlap_tokens must be less than target_tokens")
         self.target_tokens = target_tokens
         self.overlap_tokens = overlap_tokens
-        self._tokenizer_label = "real"
+        self._tokenizer = tokenizer
+        self._allow_approximate = allow_approximate
 
-    def _tokenize(self, text: str) -> list[str]:
-        # Whitespace approximation — no heavy model dependency
-        tokens = re.findall(r"\S+", text)
-        self._tokenizer_label = "approximate_whitespace"
-        return tokens
+    @property
+    def _effective_tokenizer_label(self) -> str:
+        if self._tokenizer is not None:
+            return "real"
+        return "approximate_whitespace"
 
-    def _detokenize(self, tokens: list[str]) -> str:
-        return " ".join(tokens)
+    def _encode(self, text: str) -> list[int]:
+        """Encode text to token ids. Uses real tokenizer if available."""
+        if self._tokenizer is not None:
+            tok = self._tokenizer
+            # Try duck-typed .encode() first (works for both _TokenizerWrapper via _tok and simple fakes)
+            if hasattr(tok, "encode"):
+                ids = tok.encode(text)
+                return list(ids) if not isinstance(ids, list) else ids
+            if hasattr(tok, "_tok") and callable(tok._tok):
+                # HF _TokenizerWrapper — use underlying callable tokenizer directly (no prefix)
+                result = tok._tok(
+                    text,
+                    add_special_tokens=False,
+                    return_attention_mask=False,
+                    return_token_type_ids=False,
+                )
+                return list(result["input_ids"])
+        if not self._allow_approximate:
+            raise RuntimeError(
+                "FixedTokenChunker: no real tokenizer injected and allow_approximate=False. "
+                "Inject a tokenizer from get_tokenizer() for production use."
+            )
+        # Whitespace approximation for isolated tests only.
+        return list(range(len(re.findall(r"\S+", text))))
+
+    def _decode(self, ids: list[int], text: str, all_ids: list[int]) -> str:
+        """Decode a token id window back to text.
+
+        For real tokenizer mode: use decode() method if available.
+        For approximate mode: ids are word indices, reconstruct from whitespace-split words.
+        """
+        if self._tokenizer is not None:
+            tok = self._tokenizer
+            if hasattr(tok, "decode"):
+                return tok.decode(ids)
+            if hasattr(tok, "_tok") and hasattr(tok._tok, "decode"):
+                return tok._tok.decode(ids, skip_special_tokens=True)
+        # Approximate: ids are word indices
+        words = re.findall(r"\S+", text)
+        return " ".join(words[i] for i in ids if i < len(words))
 
     def chunk(self, text: str, passage_id: str) -> list[Chunk]:
-        tokens = self._tokenize(text)
-        label = self._tokenizer_label
+        label = self._effective_tokenizer_label
+        all_ids = self._encode(text)
 
-        if len(tokens) <= self.target_tokens:
+        if len(all_ids) <= self.target_tokens:
             return [
                 Chunk(
                     text=text,
@@ -189,7 +237,7 @@ class FixedTokenChunker(BaseChunker):
                     chunk_ordinal=0,
                     chunk_total=1,
                     parent_passage_id=passage_id,
-                    token_length=len(tokens),
+                    token_length=len(all_ids),
                     char_length=len(text),
                     tokenizer_label=label,
                 )
@@ -199,11 +247,11 @@ class FixedTokenChunker(BaseChunker):
         chunks: list[Chunk] = []
         start = 0
 
-        while start < len(tokens):
-            window = tokens[start : start + self.target_tokens]
-            if not window:
+        while start < len(all_ids):
+            window_ids = all_ids[start : start + self.target_tokens]
+            if not window_ids:
                 break
-            chunk_text = self._detokenize(window)
+            chunk_text = self._decode(window_ids, text, all_ids)
             chunks.append(
                 Chunk(
                     text=chunk_text,
@@ -212,7 +260,7 @@ class FixedTokenChunker(BaseChunker):
                     chunk_ordinal=len(chunks),
                     chunk_total=-1,  # updated below
                     parent_passage_id=passage_id,
-                    token_length=len(window),
+                    token_length=len(window_ids),
                     char_length=len(chunk_text),
                     tokenizer_label=label,
                 )
@@ -292,16 +340,33 @@ class SemanticChunker(BaseChunker):
 
 
 # ── Registry ──────────────────────────────────────────────────────────────────
+# The registry FixedTokenChunker uses allow_approximate=True for backward-compat
+# test use. Production paths that require exact token windows must construct a
+# fresh FixedTokenChunker(tokenizer=get_tokenizer(...)) instead of using get_chunker().
 
 CHUNKERS: dict[str, BaseChunker] = {
     "passage_native": PassageNativeChunker(),
     "sentence_aware": SentenceAwareChunker(),
-    "fixed_token_overlap": FixedTokenChunker(),
+    "fixed_token_overlap": FixedTokenChunker(allow_approximate=True),
     # semantic_experimental is not in the default registry — it requires an injected provider
 }
 
 
-def get_chunker(strategy: str = "passage_native") -> BaseChunker:
+def get_chunker(strategy: str = "passage_native", tokenizer: Any = None) -> BaseChunker:
+    """Return a chunker for the given strategy.
+
+    If strategy is 'fixed_token_overlap' and tokenizer is provided, returns a fresh
+    FixedTokenChunker instance with the real tokenizer (for production use).
+    Otherwise returns the registry singleton.
+    """
     if strategy not in CHUNKERS:
         raise ValueError(f"Unknown chunking strategy: {strategy!r}. Available: {list(CHUNKERS)}")
+    if strategy == "fixed_token_overlap" and tokenizer is not None:
+        base = CHUNKERS[strategy]
+        return FixedTokenChunker(
+            target_tokens=base.target_tokens,  # type: ignore[attr-defined]
+            overlap_tokens=base.overlap_tokens,  # type: ignore[attr-defined]
+            tokenizer=tokenizer,
+            allow_approximate=False,
+        )
     return CHUNKERS[strategy]

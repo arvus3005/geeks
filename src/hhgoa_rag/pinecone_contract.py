@@ -12,9 +12,9 @@ Immutable fields:
     DIMENSION           : 1024
     METRIC              : "cosine"
     TEXT_FIELD          : "chunk_text"
-    FIELD_MAP           : {"text": "chunk_text"}
-    WRITE_PARAMETERS    : {"input_type": "passage", "truncate": "NONE"}
-    READ_PARAMETERS     : {"input_type": "query", "truncate": "NONE"}
+    FIELD_MAP           : {"text": "chunk_text"}  (MappingProxyType — immutable)
+    WRITE_PARAMETERS    : {"input_type": "passage", "truncate": "NONE"}  (immutable)
+    READ_PARAMETERS     : {"input_type": "query", "truncate": "NONE"}  (immutable)
     MAX_INPUT_TOKENS    : 507
     MAX_BATCH_SIZE      : 96
     DATASET_REPO        : "ai4bharat/MSMARCO-XI"
@@ -23,12 +23,15 @@ Immutable fields:
     TOKENIZER_REVISION  : "3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3"
 
     CONTRACT_VERSION    : "1"
+    MANIFEST_SCHEMA_VERSION : "3"
 """
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
+from types import MappingProxyType
 from typing import Final
 
 # ---------------------------------------------------------------------------
@@ -36,6 +39,7 @@ from typing import Final
 # ---------------------------------------------------------------------------
 
 CONTRACT_VERSION: Final[str] = "1"
+MANIFEST_SCHEMA_VERSION: Final[str] = "3"
 
 # ---------------------------------------------------------------------------
 # Immutable index identity
@@ -54,9 +58,16 @@ MODEL: Final[str] = "multilingual-e5-large"
 DIMENSION: Final[int] = 1024
 METRIC: Final[str] = "cosine"
 TEXT_FIELD: Final[str] = "chunk_text"
-FIELD_MAP: Final[dict[str, str]] = {"text": "chunk_text"}
-WRITE_PARAMETERS: Final[dict[str, str]] = {"input_type": "passage", "truncate": "NONE"}
-READ_PARAMETERS: Final[dict[str, str]] = {"input_type": "query", "truncate": "NONE"}
+
+# Structurally immutable mappings — callers must not mutate these.
+# At SDK/JSON boundaries, use dict(FIELD_MAP) or canonical_contract() to get plain dicts.
+FIELD_MAP: Final[MappingProxyType[str, str]] = MappingProxyType({"text": "chunk_text"})
+WRITE_PARAMETERS: Final[MappingProxyType[str, str]] = MappingProxyType(
+    {"input_type": "passage", "truncate": "NONE"}
+)
+READ_PARAMETERS: Final[MappingProxyType[str, str]] = MappingProxyType(
+    {"input_type": "query", "truncate": "NONE"}
+)
 
 # ---------------------------------------------------------------------------
 # Hard limits
@@ -81,32 +92,35 @@ TOKENIZER_REVISION: Final[str] = "3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3"
 
 
 def canonical_contract() -> dict:
-    """Return the canonical contract as a stable, sorted, JSON-serialisable dict.
+    """Return the canonical contract as a fresh, stable, sorted, JSON-serialisable dict.
 
+    Always returns a deep copy so callers cannot mutate canonical state.
     The structure is deterministic: keys are sorted before serialisation so
     that :func:`contract_fingerprint` produces the same SHA-256 regardless of
     insertion order.
     """
-    return {
-        "contract_version": CONTRACT_VERSION,
-        "cloud": CLOUD,
-        "dataset_repo": DATASET_REPO,
-        "dataset_revision": DATASET_REVISION,
-        "dimension": DIMENSION,
-        "field_map": FIELD_MAP,
-        "index_name": INDEX_NAME,
-        "max_batch_size": MAX_BATCH_SIZE,
-        "max_input_tokens": MAX_INPUT_TOKENS,
-        "metric": METRIC,
-        "model": MODEL,
-        "namespace": NAMESPACE,
-        "read_parameters": READ_PARAMETERS,
-        "region": REGION,
-        "text_field": TEXT_FIELD,
-        "tokenizer_repo": TOKENIZER_REPO,
-        "tokenizer_revision": TOKENIZER_REVISION,
-        "write_parameters": WRITE_PARAMETERS,
-    }
+    return copy.deepcopy(
+        {
+            "contract_version": CONTRACT_VERSION,
+            "cloud": CLOUD,
+            "dataset_repo": DATASET_REPO,
+            "dataset_revision": DATASET_REVISION,
+            "dimension": DIMENSION,
+            "field_map": dict(FIELD_MAP),
+            "index_name": INDEX_NAME,
+            "max_batch_size": MAX_BATCH_SIZE,
+            "max_input_tokens": MAX_INPUT_TOKENS,
+            "metric": METRIC,
+            "model": MODEL,
+            "namespace": NAMESPACE,
+            "read_parameters": dict(READ_PARAMETERS),
+            "region": REGION,
+            "text_field": TEXT_FIELD,
+            "tokenizer_repo": TOKENIZER_REPO,
+            "tokenizer_revision": TOKENIZER_REVISION,
+            "write_parameters": dict(WRITE_PARAMETERS),
+        }
+    )
 
 
 def canonical_contract_json() -> str:

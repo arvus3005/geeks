@@ -114,10 +114,24 @@ def _make_manifest(records: list[dict], tmpdir: Path) -> dict:
             h.update(block)
     jsonl_checksum = h.hexdigest()
 
+    from hhgoa_rag.pinecone_contract import (
+        CONTRACT_VERSION,
+        INDEX_NAME,
+        MANIFEST_SCHEMA_VERSION,
+        NAMESPACE,
+        canonical_contract,
+        contract_fingerprint,
+    )
+
     manifest: dict = {
-        "manifest_schema_version": "2",
+        "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "manifest_id": _MANIFEST_ID,
         "mode": "canary",
+        "contract_version": CONTRACT_VERSION,
+        "contract_fingerprint": contract_fingerprint(),
+        "index_contract": canonical_contract(),
+        "index_name": INDEX_NAME,
+        "index_namespace": NAMESPACE,
         "dataset_repo": "ai4bharat/MSMARCO-XI",
         "dataset_revision": _DATASET_REV,
         "dataset_revision_pinned": True,

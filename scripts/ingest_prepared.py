@@ -48,12 +48,16 @@ from hhgoa_rag.pinecone_contract import (
     CLOUD,
     DIMENSION,
     FIELD_MAP,
+    MANIFEST_SCHEMA_VERSION,
     METRIC,
     MODEL,
     READ_PARAMETERS,
     REGION,
     WRITE_PARAMETERS,
     canonical_contract,
+)
+from hhgoa_rag.pinecone_contract import (
+    INDEX_NAME as CANONICAL_INDEX_NAME,
 )
 from hhgoa_rag.pinecone_contract import (
     NAMESPACE as SAFE_NAMESPACE,
@@ -78,11 +82,17 @@ EXPECTED_LANGUAGES = {"en", "hi", "bn"}
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0  # seconds
 
-# Required manifest fields
+# Required manifest fields — all must be present; absent fields fail closed.
 REQUIRED_MANIFEST_FIELDS = {
     "manifest_schema_version",
     "manifest_id",
+    "manifest_checksum",
     "mode",
+    "contract_version",
+    "contract_fingerprint",
+    "index_contract",
+    "index_name",
+    "index_namespace",
     "dataset_repo",
     "dataset_revision",
     "total_records",
@@ -174,6 +184,14 @@ def _load_manifest(manifest_path: Path) -> dict:
     if missing:
         raise ValueError(f"Manifest missing required fields: {sorted(missing)}")
 
+    # Manifest schema version must be exactly the canonical version.
+    mschema = manifest.get("manifest_schema_version")
+    if mschema != MANIFEST_SCHEMA_VERSION:
+        raise ValueError(
+            f"Manifest schema version {mschema!r} is not the required "
+            f"{MANIFEST_SCHEMA_VERSION!r}. Legacy manifests are rejected."
+        )
+
     stored_checksum = manifest.get("manifest_checksum")
     if stored_checksum:
         manifest_for_checksum = {k: v for k, v in manifest.items() if k != "manifest_checksum"}
@@ -192,48 +210,69 @@ def _load_manifest(manifest_path: Path) -> dict:
             "Refusing to ingest."
         )
 
-    # Contract fingerprint validation: if present, must match canonical
-    manifest_contract_fp = manifest.get("contract_fingerprint")
-    if manifest_contract_fp is not None:
-        expected_fp = _canonical_fingerprint()
-        if manifest_contract_fp != expected_fp:
-            raise ValueError(
-                f"Manifest contract_fingerprint {manifest_contract_fp!r} does not match "
-                f"canonical fingerprint {expected_fp!r}. Manifest may bind a different "
-                "index contract. Refusing to ingest."
-            )
+    # Contract fingerprint validation: mandatory, must match canonical.
+    manifest_contract_fp = manifest["contract_fingerprint"]
+    expected_fp = _canonical_fingerprint()
+    if manifest_contract_fp != expected_fp:
+        raise ValueError(
+            f"Manifest contract_fingerprint {manifest_contract_fp!r} does not match "
+            f"canonical fingerprint {expected_fp!r}. Manifest may bind a different "
+            "index contract. Refusing to ingest."
+        )
 
-    # Contract version validation: if present, must be known
-    manifest_contract_version = manifest.get("contract_version")
-    if manifest_contract_version is not None and manifest_contract_version not in ("1",):
+    # Contract version validation: mandatory.
+    manifest_contract_version = manifest["contract_version"]
+    if manifest_contract_version not in ("1",):
         raise ValueError(
             f"Unknown contract_version {manifest_contract_version!r} in manifest. "
             "Refusing to ingest."
         )
 
-    # Namespace validation: if declared, must match canonical
-    manifest_namespace = manifest.get("index_namespace")
-    if manifest_namespace is not None and manifest_namespace != SAFE_NAMESPACE:
+    # Index name validation: mandatory, must match canonical.
+    manifest_index_name = manifest["index_name"]
+    if manifest_index_name != CANONICAL_INDEX_NAME:
+        raise ValueError(
+            f"Manifest declares index_name {manifest_index_name!r} but canonical "
+            f"index name is {CANONICAL_INDEX_NAME!r}. Refusing to ingest."
+        )
+
+    # Namespace validation: mandatory, must match canonical.
+    manifest_namespace = manifest["index_namespace"]
+    if manifest_namespace != SAFE_NAMESPACE:
         raise ValueError(
             f"Manifest declares namespace {manifest_namespace!r} but canonical "
             f"namespace is {SAFE_NAMESPACE!r}. Refusing to ingest."
         )
 
-    # Embedded index contract validation: if present, must match canonical
-    manifest_contract = manifest.get("index_contract")
-    if manifest_contract is not None:
-        expected_contract = canonical_contract()
-        mismatches = []
-        for key, expected_val in expected_contract.items():
-            actual_val = manifest_contract.get(key)
-            if actual_val != expected_val:
-                mismatches.append(f"  {key}: expected {expected_val!r}, got {actual_val!r}")
-        if mismatches:
-            raise ValueError(
-                "Manifest index_contract differs from canonical:\n"
-                + "\n".join(mismatches)
-                + "\nRefusing to ingest."
-            )
+    # Embedded index contract validation: mandatory, must exactly match canonical.
+    manifest_contract = manifest["index_contract"]
+    expected_contract = canonical_contract()
+    # Check for missing keys in manifest contract
+    missing_contract_keys = set(expected_contract.keys()) - set(manifest_contract.keys())
+    if missing_contract_keys:
+        raise ValueError(
+            f"Manifest index_contract is missing keys: {sorted(missing_contract_keys)}. "
+            "Refusing to ingest."
+        )
+    # Check for unexpected keys in manifest contract
+    extra_contract_keys = set(manifest_contract.keys()) - set(expected_contract.keys())
+    if extra_contract_keys:
+        raise ValueError(
+            f"Manifest index_contract has unexpected keys: {sorted(extra_contract_keys)}. "
+            "Refusing to ingest."
+        )
+    # Check for value mismatches
+    mismatches = []
+    for key, expected_val in expected_contract.items():
+        actual_val = manifest_contract.get(key)
+        if actual_val != expected_val:
+            mismatches.append(f"  {key}: expected {expected_val!r}, got {actual_val!r}")
+    if mismatches:
+        raise ValueError(
+            "Manifest index_contract differs from canonical:\n"
+            + "\n".join(mismatches)
+            + "\nRefusing to ingest."
+        )
 
     return manifest
 
@@ -574,7 +613,14 @@ def main() -> None:
         logger.error("PINECONE_API_KEY environment variable is not set. Cannot proceed.")
         sys.exit(1)
 
-    index_name = args.pinecone_index or os.environ.get("PINECONE_INDEX", "msmarco-xi")
+    index_name = args.pinecone_index or os.environ.get("PINECONE_INDEX", CANONICAL_INDEX_NAME)
+    if index_name != CANONICAL_INDEX_NAME:
+        logger.error(
+            "Index name %r does not match canonical index %r. Refusing to proceed.",
+            index_name,
+            CANONICAL_INDEX_NAME,
+        )
+        sys.exit(1)
 
     # Only import Pinecone after all validations pass
     from pinecone import Pinecone
@@ -591,6 +637,20 @@ def main() -> None:
 
     logger.info("Connecting to Pinecone index: %s", index_name)
     pc = Pinecone(api_key=api_key)
+
+    # Validate remote index BEFORE constructing data-plane client or attempting any upsert.
+    from hhgoa_rag.pinecone_lifecycle import validate_index
+
+    logger.info("Validating remote index '%s' against canonical contract …", index_name)
+    validation_errors = validate_index(pc, index_name)
+    if validation_errors:
+        logger.error(
+            "Remote index validation failed — refusing to write:\n%s",
+            "\n".join(f"  • {e}" for e in validation_errors),
+        )
+        sys.exit(1)
+    logger.info("Remote index validation PASSED.")
+
     index = pc.Index(index_name)
     store = PineconeStore(index, embed_model=args.embed_model)
 

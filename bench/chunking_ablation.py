@@ -128,9 +128,18 @@ def _evaluate_strategy(
 
     for row in rows:
         passages = row.get("passages", {})
-        passage_texts = passages.get("passage_text", []) if isinstance(passages, dict) else []
-        is_selected_list = passages.get("is_selected", []) if isinstance(passages, dict) else []
-        query_text = row.get("query", "")  # eval-only label
+        is_passages = isinstance(passages, dict)
+        # MSMARCO-XI schema: English_passages / Translated_passages / is_selected
+        if is_passages and "Translated_passages" in passages:
+            lang = row.get("_lang", config_lang)
+            if lang in ("hi", "bn"):
+                passage_texts = passages.get("Translated_passages", []) or []
+            else:
+                passage_texts = passages.get("English_passages", []) or []
+        else:
+            passage_texts = passages.get("passage_text", []) if is_passages else []
+        is_selected_list = passages.get("is_selected", []) if is_passages else []
+        query_text = row.get("Eng_Query", row.get("query", ""))  # eval-only label
         lang = row.get("_lang", config_lang)
         per_lang_counts[lang] = per_lang_counts.get(lang, 0) + 1
 
@@ -273,28 +282,55 @@ def _load_eval_sample(
     logger.info(
         "Loading eval sample: config_lang=%s split=%s max_rows=%d", config_lang, split, max_rows
     )
-    try:
-        from datasets import load_dataset
+    # Primary: load from cached Parquet file (same approach as prepare_canary.py)
+    # This avoids dependency on the HF datasets config name ('hi'/'bn'/'default').
+    _PARQUET_MAP = {
+        ("hi", "train"): "train/hintrain.parquet",
+        ("hi", "validation"): "validation/hinval.parquet",
+        ("bn", "train"): "train/bentrain.parquet",
+        ("bn", "validation"): "validation/benval.parquet",
+        ("en", "train"): "train/hintrain.parquet",  # English passages come from hi/bn shards
+        ("en", "validation"): "validation/hinval.parquet",
+    }
+    parquet_rel = _PARQUET_MAP.get((config_lang, split))
+    if parquet_rel is None:
+        logger.warning("No Parquet file configured for config_lang=%s split=%s", config_lang, split)
+        return []
 
-        ds = load_dataset(
-            "ai4bharat/MSMARCO-XI",
-            config_lang,
-            split=split,
-            revision=dataset_revision,
-            trust_remote_code=False,
-        )
-        # Stable sample using seed
+    try:
         import random
 
+        import pyarrow.parquet as pq
+        from huggingface_hub import hf_hub_download
+
+        local_path = hf_hub_download(
+            repo_id="ai4bharat/MSMARCO-XI",
+            filename=parquet_rel,
+            revision=dataset_revision,
+            repo_type="dataset",
+            cache_dir=".cache/huggingface",
+        )
+        pf = pq.ParquetFile(local_path)
+        raw_rows: list[dict] = []
+        for batch in pf.iter_batches(batch_size=500):
+            bd = batch.to_pydict()
+            for i in range(batch.num_rows):
+                if len(raw_rows) >= max_rows * 5:
+                    break
+                raw_rows.append({k: v[i] for k, v in bd.items()})
+            if len(raw_rows) >= max_rows * 5:
+                break
+
         rng = random.Random(seed)
-        indices = rng.sample(range(len(ds)), min(max_rows, len(ds)))
-        rows = [dict(ds[i]) for i in sorted(indices)]
-        for row in rows:
+        sampled = rng.sample(raw_rows, min(max_rows, len(raw_rows)))
+        rows = []
+        for row in sampled:
             row["_lang"] = config_lang
-        logger.info("Loaded %d rows", len(rows))
+            rows.append(row)
+        logger.info("Loaded %d rows from %s", len(rows), parquet_rel)
         return rows
     except Exception as e:
-        logger.warning("Could not load HF dataset: %s — using empty sample", e)
+        logger.warning("Could not load Parquet dataset: %s — using empty sample", e)
         return []
 
 

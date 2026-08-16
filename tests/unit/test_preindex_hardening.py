@@ -43,9 +43,9 @@ def test_selected_chunker_is_called(monkeypatch):
 
     real_get = pc._chunk_passage_texts
 
-    def spy(text, pid, strategy):
+    def spy(text, pid, strategy, tokenizer=None):
         called["strategy"] = strategy
-        return real_get(text, pid, strategy)
+        return real_get(text, pid, strategy, tokenizer=tokenizer)
 
     monkeypatch.setattr(pc, "_chunk_passage_texts", spy)
     rec = {
@@ -566,11 +566,24 @@ def test_manifest_wrong_contract_fingerprint_rejected(tmp_path):
     """Manifest with wrong contract_fingerprint must be rejected."""
     import json
 
-    # Build a minimal valid manifest with WRONG fingerprint
+    from hhgoa_rag.pinecone_contract import (
+        CONTRACT_VERSION,
+        INDEX_NAME,
+        MANIFEST_SCHEMA_VERSION,
+        NAMESPACE,
+        canonical_contract,
+    )
+
+    # Build a manifest with WRONG fingerprint but all other required fields present
     manifest = {
-        "manifest_schema_version": "3",
+        "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "manifest_id": "test-id",
         "mode": "canary",
+        "contract_version": CONTRACT_VERSION,
+        "contract_fingerprint": "wrong-fingerprint-value",
+        "index_contract": canonical_contract(),
+        "index_name": INDEX_NAME,
+        "index_namespace": NAMESPACE,
         "dataset_repo": "ai4bharat/MSMARCO-XI",
         "dataset_revision": "bf5cdc1f26e581e519018e434db14edd1b77602b",
         "total_records": 0,
@@ -582,7 +595,6 @@ def test_manifest_wrong_contract_fingerprint_rejected(tmp_path):
         "forbidden_field_audit": "PASS",
         "tokenizer_fingerprint": "fp",
         "actual_per_language_records": {},
-        "contract_fingerprint": "wrong-fingerprint-value",
     }
     # Compute its own checksum
     m_for_ck = {k: v for k, v in manifest.items() if k != "manifest_checksum"}

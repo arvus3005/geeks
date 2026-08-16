@@ -136,7 +136,7 @@ def test_sentence_aware_mixed_scripts():
 
 
 def test_fixed_token_short_passage():
-    chunker = FixedTokenChunker(target_tokens=128)
+    chunker = FixedTokenChunker(target_tokens=128, allow_approximate=True)
     text = "Short passage"
     chunks = chunker.chunk(text, "p001")
     assert len(chunks) == 1
@@ -144,7 +144,7 @@ def test_fixed_token_short_passage():
 
 
 def test_fixed_token_long_passage():
-    chunker = FixedTokenChunker(target_tokens=5, overlap_tokens=1)
+    chunker = FixedTokenChunker(target_tokens=5, overlap_tokens=1, allow_approximate=True)
     text = " ".join(["word"] * 20)
     chunks = chunker.chunk(text, "p001")
     assert len(chunks) > 1
@@ -152,7 +152,7 @@ def test_fixed_token_long_passage():
 
 
 def test_fixed_token_deterministic():
-    chunker = FixedTokenChunker(target_tokens=10, overlap_tokens=2)
+    chunker = FixedTokenChunker(target_tokens=10, overlap_tokens=2, allow_approximate=True)
     text = " ".join([f"word{i}" for i in range(50)])
     chunks_a = chunker.chunk(text, "p001")
     chunks_b = chunker.chunk(text, "p001")
@@ -160,7 +160,7 @@ def test_fixed_token_deterministic():
 
 
 def test_fixed_token_bounded_size():
-    chunker = FixedTokenChunker(target_tokens=10, overlap_tokens=2)
+    chunker = FixedTokenChunker(target_tokens=10, overlap_tokens=2, allow_approximate=True)
     text = " ".join([f"tok{i}" for i in range(100)])
     chunks = chunker.chunk(text, "p001")
     for c in chunks:
@@ -169,7 +169,7 @@ def test_fixed_token_bounded_size():
 
 def test_fixed_token_no_missing_content():
     """All tokens from original text appear in at least one chunk."""
-    chunker = FixedTokenChunker(target_tokens=5, overlap_tokens=1)
+    chunker = FixedTokenChunker(target_tokens=5, overlap_tokens=1, allow_approximate=True)
     words = [f"w{i}" for i in range(25)]
     text = " ".join(words)
     chunks = chunker.chunk(text, "p001")
@@ -179,7 +179,7 @@ def test_fixed_token_no_missing_content():
 
 
 def test_fixed_token_no_infinite_loop():
-    chunker = FixedTokenChunker(target_tokens=3, overlap_tokens=1)
+    chunker = FixedTokenChunker(target_tokens=3, overlap_tokens=1, allow_approximate=True)
     text = " ".join(["x"] * 30)
     chunks = chunker.chunk(text, "p001")
     assert len(chunks) > 0
@@ -188,19 +188,19 @@ def test_fixed_token_no_infinite_loop():
 
 def test_fixed_token_overlap_constraints():
     with pytest.raises(ValueError):
-        FixedTokenChunker(target_tokens=5, overlap_tokens=5)
+        FixedTokenChunker(target_tokens=5, overlap_tokens=5, allow_approximate=True)
 
 
 def test_fixed_token_labels_approximate():
     """Whitespace tokenizer must label chunks as approximate_whitespace."""
-    chunker = FixedTokenChunker(target_tokens=5, overlap_tokens=1)
+    chunker = FixedTokenChunker(target_tokens=5, overlap_tokens=1, allow_approximate=True)
     text = " ".join([f"tok{i}" for i in range(20)])
     chunks = chunker.chunk(text, "p001")
     assert all(c.tokenizer_label == "approximate_whitespace" for c in chunks)
 
 
 def test_fixed_token_unicode():
-    chunker = FixedTokenChunker(target_tokens=5, overlap_tokens=1)
+    chunker = FixedTokenChunker(target_tokens=5, overlap_tokens=1, allow_approximate=True)
     text = "नई दिल्ली भारत की राजधानी है और यह बहुत पुराना शहर है"
     chunks = chunker.chunk(text, "p001")
     assert len(chunks) >= 1
@@ -209,7 +209,7 @@ def test_fixed_token_unicode():
 
 
 def test_fixed_token_ordinals():
-    chunker = FixedTokenChunker(target_tokens=4, overlap_tokens=1)
+    chunker = FixedTokenChunker(target_tokens=4, overlap_tokens=1, allow_approximate=True)
     text = " ".join([f"w{i}" for i in range(20)])
     chunks = chunker.chunk(text, "p001")
     assert [c.chunk_ordinal for c in chunks] == list(range(len(chunks)))
@@ -322,7 +322,7 @@ def test_passage_native_always_one_chunk(text: str):
 )
 @settings(max_examples=50)
 def test_fixed_token_preserves_all_tokens(text: str):
-    chunker = FixedTokenChunker(target_tokens=8, overlap_tokens=2)
+    chunker = FixedTokenChunker(target_tokens=8, overlap_tokens=2, allow_approximate=True)
     chunks = chunker.chunk(text, "p")
     all_chunk_text = " ".join(c.text for c in chunks)
     original_tokens = text.split()

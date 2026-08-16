@@ -48,18 +48,32 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from hhgoa_rag.pinecone_contract import (
+    CONTRACT_VERSION,
+    DATASET_REPO,
+    MANIFEST_SCHEMA_VERSION,
+    TEXT_FIELD,
+    TOKENIZER_REPO,
+    canonical_contract,
+    contract_fingerprint,
+)
+from hhgoa_rag.pinecone_contract import (
+    MODEL as _CANONICAL_MODEL,
+)
+from hhgoa_rag.pinecone_contract import (
+    NAMESPACE as _CONTRACT_NAMESPACE,
+)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-DATASET_REPO = "ai4bharat/MSMARCO-XI"
 CHUNK_STRATEGY_VERSION = "v1"
 
-# Version tags that participate in manifest identity.
+# Version tag for normalization — participates in manifest identity.
 NORMALIZATION_VERSION = "v1"
-SCHEMA_VERSION = "2"
-
-# Text field / index contract.
-TEXT_FIELD = "chunk_text"
+# MANIFEST_SCHEMA_VERSION is imported from pinecone_contract (= "3")
+# RECORD_SCHEMA_VERSION labels the per-record field schema; not the manifest envelope.
+RECORD_SCHEMA_VERSION = "1"
 
 
 def _chunk_parameters(strategy: str) -> dict:
@@ -567,15 +581,18 @@ def _chunk_passage_texts(
     text: str,
     passage_id: str,
     chunk_strategy: str,
+    tokenizer: object = None,
 ) -> list[str]:
     """Route a passage through the chunker registry, returning ordered chunk texts.
 
+    For fixed_token_overlap, tokenizer must be provided for production use so that
+    real token boundaries are used rather than the whitespace approximation.
     The selected strategy from the registry is authoritatively used; every chunk
     it produces is retained in order (no text loss).
     """
     from hhgoa_rag.ingestion.chunkers import get_chunker
 
-    chunker = get_chunker(chunk_strategy)
+    chunker = get_chunker(chunk_strategy, tokenizer=tokenizer)
     chunks = chunker.chunk(text, passage_id)
     return [c.text for c in chunks if c.text.strip()]
 
@@ -607,9 +624,10 @@ def _build_prepared_records_for_passage(
     lang = rec["language"]
     parent_passage_id = rec["content_hash"]
 
-    # Step 1: chunk via the selected strategy.
+    # Step 1: chunk via the selected strategy. Pass tok_wrapper for fixed_token_overlap
+    # so the production path uses real token boundaries (not whitespace approximation).
     strategy_chunks = _chunk_passage_texts(
-        rec["normalized_text"], parent_passage_id, chunk_strategy
+        rec["normalized_text"], parent_passage_id, chunk_strategy, tokenizer=tok_wrapper
     )
 
     # Step 2: enforce token limit on each chunk, expanding oversized ones.
@@ -742,7 +760,8 @@ def main() -> None:
     is_pinned = args.dataset_revision is not None
 
     # Resolve tokenizer contract early so it feeds the manifest identity.
-    from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT, TOKENIZER_REPO
+    # TOKENIZER_REPO is imported from pinecone_contract at module level.
+    from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT
 
     resolved_tok_revision = _resolve_tokenizer_revision(args.tokenizer_revision, TOKENIZER_REPO)
     from hhgoa_rag.ingestion.tokenizer import get_tokenizer
@@ -759,7 +778,7 @@ def main() -> None:
             "tokenizer_repo": TOKENIZER_REPO,
             "tokenizer_revision": resolved_tok_revision,
             "tokenizer_fingerprint": tok.fingerprint,
-            "embedding_model": "multilingual-e5-large",
+            "embedding_model": _CANONICAL_MODEL,
             "model_input_limit": MODEL_INPUT_LIMIT,
             "split": args.split,
             "physical_sources": {
@@ -768,7 +787,7 @@ def main() -> None:
             "seed": args.seed,
             "quotas": quotas,
             "normalization_version": NORMALIZATION_VERSION,
-            "schema_version": SCHEMA_VERSION,
+            "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
             "chunk_strategy": chunk_strategy,
             "chunk_strategy_version": CHUNK_STRATEGY_VERSION,
             "chunk_parameters": _chunk_parameters(chunk_strategy),
@@ -1026,17 +1045,8 @@ def main() -> None:
 
     created_at = datetime.now(UTC).isoformat()
 
-    from hhgoa_rag.pinecone_contract import (
-        CONTRACT_VERSION,
-        canonical_contract,
-        contract_fingerprint,
-    )
-    from hhgoa_rag.pinecone_contract import (
-        NAMESPACE as _CONTRACT_NAMESPACE,
-    )
-
     manifest: dict = {
-        "manifest_schema_version": "3",
+        "manifest_schema_version": MANIFEST_SCHEMA_VERSION,
         "manifest_id": manifest_id,
         "mode": "canary",
         "contract_version": CONTRACT_VERSION,

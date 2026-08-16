@@ -47,6 +47,20 @@ validate-manifest:
 	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set" && exit 1)
 	uv run python scripts/ingest_prepared.py --manifest $(MANIFEST) --dry-run
 
+# Dry-run the canary indexer (no credentials needed)
+# Usage: make canary-dry-run MANIFEST=artifacts/prepared/<id>_manifest.json
+canary-dry-run:
+	@echo "Usage: make canary-dry-run MANIFEST=artifacts/prepared/<id>_manifest.json"
+	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set" && exit 1)
+	uv run python scripts/index_canary.py --manifest $(MANIFEST)
+
+# Live canary execution (requires PINECONE_API_KEY and CONFIRM_PINECONE_WRITE=1)
+# Usage: CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> make canary-execute MANIFEST=artifacts/prepared/<id>_manifest.json
+canary-execute:
+	@echo "Usage: CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> make canary-execute MANIFEST=..."
+	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set" && exit 1)
+	uv run python scripts/index_canary.py --manifest $(MANIFEST) --execute --resume --concurrency 4
+
 # Estimate indexing capacity for the current budget configuration
 estimate-capacity:
 	uv run python -c "\
