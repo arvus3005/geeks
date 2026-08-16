@@ -9,7 +9,9 @@ import sys
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Validate Pinecone config")
-    p.add_argument("--pinecone-api-key", default=None)
+    # NOTE: API key must come from PINECONE_API_KEY environment variable only.
+    # Passing credentials on the command line is a security risk (shell history,
+    # process list). The --pinecone-api-key flag has been intentionally removed.
     p.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", "msmarco-xi"))
     p.add_argument("--embed-model", default="multilingual-e5-large")
     p.add_argument("--cloud", default=os.environ.get("PINECONE_CLOUD", "aws"))
@@ -17,7 +19,7 @@ def main() -> None:
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
 
-    api_key = args.pinecone_api_key or os.environ.get("PINECONE_API_KEY")
+    api_key = os.environ.get("PINECONE_API_KEY")
     if not api_key:
         print("ERROR: PINECONE_API_KEY not set", file=sys.stderr)
         sys.exit(1)

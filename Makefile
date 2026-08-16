@@ -30,6 +30,11 @@ dry-run-index:
 dry-run-ingest:
 	uv run python scripts/ingest_all.py --mode pilot
 
+dry-run-ingest-prepared:
+	@echo "Usage: make dry-run-ingest-prepared MANIFEST=artifacts/prepared/<id>_manifest.json"
+	@test -n "$(MANIFEST)" || (echo "ERROR: MANIFEST variable not set" && exit 1)
+	uv run python scripts/ingest_prepared.py --manifest $(MANIFEST) --dry-run
+
 # Secret scan (filenames only — never prints secret values)
 scan-secrets:
 	@echo "Scanning for credential literals..."
