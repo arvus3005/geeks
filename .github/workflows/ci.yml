@@ -15,3 +15,6 @@ jobs:
         env:
           HHGOA_USE_FAKE_EMBEDDER: "1"
           CORPUS_MODE: smoke
+          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
+          SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
+
