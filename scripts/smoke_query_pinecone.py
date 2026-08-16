@@ -13,7 +13,9 @@ def main() -> None:
     p.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", "msmarco-xi"))
     p.add_argument("--query", default="What is the capital of India?")
     p.add_argument("--top-k", type=int, default=5)
-    p.add_argument("--language-filter", default=None, help="Comma-separated language codes, e.g. en,hi,bn")
+    p.add_argument(
+        "--language-filter", default=None, help="Comma-separated language codes, e.g. en,hi,bn"
+    )
     p.add_argument("--namespace", default="smoke")
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
@@ -46,7 +48,10 @@ def main() -> None:
         "query": args.query,
         "namespace": args.namespace,
         "top_k": args.top_k,
-        "hits": [{"id": h.id, "score": h.score, "language": h.language, "text": h.text[:150]} for h in hits],
+        "hits": [
+            {"id": h.id, "score": h.score, "language": h.language, "text": h.text[:150]}
+            for h in hits
+        ],
     }
     if args.output_json:
         print(json.dumps(result, indent=2))

@@ -55,7 +55,9 @@ def run_smoke_ingest(
 ) -> dict:
     """Ingest smoke fixtures into Pinecone. Idempotent (same point IDs)."""
     if namespace != SMOKE_NAMESPACE:
-        raise ValueError(f"Smoke ingest only targets namespace '{SMOKE_NAMESPACE}', got '{namespace}'")
+        raise ValueError(
+            f"Smoke ingest only targets namespace '{SMOKE_NAMESPACE}', got '{namespace}'"
+        )
 
     with open(fixtures_path) as f:
         passages = json.load(f)

@@ -60,7 +60,7 @@ def main() -> None:
         "manifest_expected": manifest_per_lang,
         "discrepancies": discrepancies,
         "note": "Pinecone does not expose per-language counts without filtering. "
-                "Use smoke_query_pinecone.py to spot-check per-language results.",
+        "Use smoke_query_pinecone.py to spot-check per-language results.",
     }
     if args.output_json:
         print(json.dumps(reconciliation, indent=2, default=str))

@@ -94,14 +94,10 @@ def validate_index(
     if embed_cfg is not None:
         actual_model = getattr(embed_cfg, "model", None)
         if actual_model and actual_model != embed_model:
-            errors.append(
-                f"embed model mismatch: expected '{embed_model}', got '{actual_model}'"
-            )
+            errors.append(f"embed model mismatch: expected '{embed_model}', got '{actual_model}'")
         actual_field_map = getattr(embed_cfg, "field_map", None)
         if actual_field_map and actual_field_map != FIELD_MAP:
-            errors.append(
-                f"field_map mismatch: expected {FIELD_MAP!r}, got {actual_field_map!r}"
-            )
+            errors.append(f"field_map mismatch: expected {FIELD_MAP!r}, got {actual_field_map!r}")
     else:
         errors.append(
             "Could not verify embed config — index may not be an integrated-embedding index"
@@ -136,7 +132,9 @@ def get_index_info(pc: Any, name: str) -> dict[str, Any]:
 
     return {
         "name": name,
-        "status": getattr(info, "status", {}).get("state") if hasattr(info, "status") else "unknown",
+        "status": getattr(info, "status", {}).get("state")
+        if hasattr(info, "status")
+        else "unknown",
         "embed_model": getattr(embed_cfg, "model", "unknown") if embed_cfg else "unknown",
         "field_map": getattr(embed_cfg, "field_map", {}) if embed_cfg else {},
         "text_record_field": TEXT_RECORD_FIELD,

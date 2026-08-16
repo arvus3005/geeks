@@ -20,7 +20,9 @@ def _build_timings(stages: dict[str, float], total: float) -> TimingsMs:
     return TimingsMs(**kwargs)
 
 
-def _error_response(req: QueryRequest, settings, timer, reason_code: str, detail: str) -> QueryResponse:
+def _error_response(
+    req: QueryRequest, settings, timer, reason_code: str, detail: str
+) -> QueryResponse:
     return QueryResponse(
         request_id=req.request_id,
         question=req.question,
@@ -91,7 +93,9 @@ async def query_endpoint(req: QueryRequest):
 
     # 3. Retrieve — Pinecone handles embedding server-side; no local vector computation
     if resources.pinecone_store is None:
-        return _error_response(req, settings, timer, "index_unavailable", "Pinecone store not ready")
+        return _error_response(
+            req, settings, timer, "index_unavailable", "Pinecone store not ready"
+        )
 
     pinecone_filter: dict | None = None
     if lang_filter:
@@ -106,7 +110,9 @@ async def query_endpoint(req: QueryRequest):
                 filter=pinecone_filter,
             )
     except Exception:
-        return _error_response(req, settings, timer, "index_unavailable", "Vector index unavailable")
+        return _error_response(
+            req, settings, timer, "index_unavailable", "Vector index unavailable"
+        )
 
     # Normalise hits to the passage dict format used downstream
     passages = [

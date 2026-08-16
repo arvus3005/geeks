@@ -23,10 +23,10 @@ class IngestCheckpoint:
     source_shard: int
     chunk_strategy: str
     chunk_strategy_version: str
-    embed_model: str          # Pinecone integrated embed model (e.g. multilingual-e5-large)
-    pinecone_index: str       # Pinecone index name
-    pinecone_namespace: str   # Namespace for this run (smoke / pilot_<lang> / full)
-    schema_fingerprint: str   # hash of index config
+    embed_model: str  # Pinecone integrated embed model (e.g. multilingual-e5-large)
+    pinecone_index: str  # Pinecone index name
+    pinecone_namespace: str  # Namespace for this run (smoke / pilot_<lang> / full)
+    schema_fingerprint: str  # hash of index config
     last_acknowledged_row: int  # last row safely upserted to Pinecone
     cumulative_source_rows: int
     cumulative_valid_occurrences: int
