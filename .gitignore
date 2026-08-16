@@ -90,3 +90,6 @@ logs/
 
 # Reference code & documentation (read-only; Git-excluded)
 reference/
+
+# Claude memory file
+CLAUDE.md
