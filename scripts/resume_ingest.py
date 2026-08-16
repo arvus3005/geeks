@@ -17,22 +17,21 @@ from pathlib import Path
 def main() -> None:
     p = argparse.ArgumentParser(description="Resume interrupted MSMARCO-XI ingestion")
     p.add_argument("--checkpoint", required=True, type=Path, help="Path to checkpoint JSON")
-    p.add_argument("--pinecone-api-key", default=None)
     p.add_argument("--dedup-db-dir", type=Path, default=Path("artifacts/dedup"))
     p.add_argument(
         "--confirm-full-ingest",
         action="store_true",
         help="Required to resume a full-mode ingestion",
     )
+    p.add_argument(
+        "--execute",
+        action="store_true",
+        help="Perform real Pinecone writes (also requires CONFIRM_PINECONE_WRITE=1)",
+    )
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
 
-    from pinecone import Pinecone
-
     from hhgoa_rag.ingestion.checkpoint import IngestCheckpoint
-    from hhgoa_rag.ingestion.dedup import ContentDeduplicator
-    from hhgoa_rag.ingestion.engine import IngestionConfig, ingest_shard
-    from hhgoa_rag.pinecone_store import PineconeStore
 
     ckpt = IngestCheckpoint.load(args.checkpoint)
 
@@ -44,6 +43,35 @@ def main() -> None:
         )
         sys.exit(1)
 
+    if ckpt.mode == "full":
+        full_env = os.environ.get("CONFIRM_FULL_INGEST", "").strip()
+        if full_env != "YES_I_APPROVE_FULL_CORPUS":
+            print(
+                "ERROR: CONFIRM_FULL_INGEST=YES_I_APPROVE_FULL_CORPUS required to resume full-mode.\n"
+                "DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    write_confirmed = os.environ.get("CONFIRM_PINECONE_WRITE", "").strip() == "1"
+    if not args.execute or not write_confirmed:
+        missing = []
+        if not args.execute:
+            missing.append("--execute flag")
+        if not write_confirmed:
+            missing.append("CONFIRM_PINECONE_WRITE=1 env var")
+        print(
+            f"DRY-RUN: no Pinecone writes. Missing: {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        sys.exit(0)
+
+    from pinecone import Pinecone
+
+    from hhgoa_rag.ingestion.dedup import ContentDeduplicator
+    from hhgoa_rag.ingestion.engine import IngestionConfig, ingest_shard
+    from hhgoa_rag.pinecone_store import PineconeStore
+
     if ckpt.status == "complete":
         result = {"status": "already_complete", "checkpoint": str(args.checkpoint)}
         if args.output_json:
@@ -52,7 +80,7 @@ def main() -> None:
             print(f"Checkpoint already complete: {args.checkpoint}")
         sys.exit(0)
 
-    api_key = args.pinecone_api_key or os.environ.get("PINECONE_API_KEY")
+    api_key = os.environ.get("PINECONE_API_KEY")
     if not api_key:
         print("ERROR: PINECONE_API_KEY must be set", file=sys.stderr)
         sys.exit(1)

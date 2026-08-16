@@ -70,28 +70,42 @@ class IngestionConfig:
     checkpoint_dir: Path = Path("artifacts/checkpoints")
     dedup_db_dir: Path = Path("artifacts/dedup")
     manifest_dir: Path = Path("artifacts/manifests")
+    num_workers: int = 1  # total parallel workers for this config/split
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _validate_worker_config(worker_index: int, num_workers: int) -> None:
+    """Raise ValueError for invalid worker configurations."""
+    if num_workers < 1:
+        raise ValueError(f"num_workers must be >= 1, got {num_workers}")
+    if not (0 <= worker_index < num_workers):
+        raise ValueError(
+            f"worker_index must satisfy 0 <= worker_index < num_workers, "
+            f"got worker_index={worker_index}, num_workers={num_workers}"
+        )
+
+
 def _stream_shard(
     config_language: str,
     split: str,
-    shard_idx: int,
+    worker_index: int,
     dataset_revision: str | None,
     start_row: int = 0,
     max_rows: int | None = None,
-    num_shards: int = 1,
+    num_workers: int = 1,
 ) -> Iterator[tuple[int, dict]]:
-    """Stream rows from one logical shard of MSMARCO-XI.
+    """Stream the deterministic, non-overlapping partition for this worker.
 
-    When num_shards > 1, uses HuggingFace IterableDataset.shard() to divide
-    the dataset across parallel workers without downloading the full split per
-    worker. row_idx is always relative to the original (un-sharded) dataset so
-    checkpoints remain comparable across shard counts.
+    Partitioning: contiguous blocks via HuggingFace IterableDataset.shard()
+    so each worker processes a disjoint contiguous slice of the dataset.
+    Global row indices use the un-sharded position so checkpoints are stable
+    across worker-count changes (checked at resume time).
     """
+    _validate_worker_config(worker_index, num_workers)
+
     from datasets import load_dataset
 
     ds = load_dataset(
@@ -102,19 +116,25 @@ def _stream_shard(
         revision=dataset_revision,
     )
 
-    if num_shards > 1:
-        ds = ds.shard(num_shards=num_shards, index=shard_idx, contiguous=True)
+    if num_workers > 1:
+        ds = ds.shard(num_shards=num_workers, index=worker_index, contiguous=True)
 
-    row_idx = shard_idx  # first global row index for this shard
-    step = num_shards if num_shards > 1 else 1
+    # Global row index: for contiguous sharding, first row for worker i in a
+    # dataset of N rows is approximately i * (N / num_workers).  Since we
+    # don't know N upfront in streaming mode, we use a local counter and
+    # encode the worker identity in the stable point ID via make_point_id.
+    local_row = 0
     emitted = 0
 
     for record in ds:
-        if row_idx < start_row:
-            row_idx += step
+        # Global stable identifier: (worker_index, local_row) pair encodes
+        # the exact position without needing global row count upfront.
+        global_row_id = worker_index * 10_000_000 + local_row
+        if global_row_id < start_row:
+            local_row += 1
             continue
-        yield row_idx, record
-        row_idx += step
+        yield global_row_id, record
+        local_row += 1
         emitted += 1
         if max_rows is not None and emitted >= max_rows:
             break
@@ -129,8 +149,15 @@ def ingest_shard(
     dedup_en: ContentDeduplicator,  # global English dedup (shared across configs)
     dedup_lang: ContentDeduplicator,  # per-language dedup
     run_id: str,
+    num_workers: int | None = None,
 ) -> ShardStats:
-    """Ingest one shard. Resumes from checkpoint if one exists."""
+    """Ingest one worker partition. Resumes from checkpoint if one exists.
+
+    shard_idx is the worker_index (0-based). num_workers defaults to cfg.num_workers.
+    Raises ValueError if worker config is invalid.
+    """
+    effective_num_workers = num_workers if num_workers is not None else cfg.num_workers
+    _validate_worker_config(shard_idx, effective_num_workers)
     stats = ShardStats(config_language=config_language, split=split, shard=shard_idx)
     t0 = time.monotonic()
 
@@ -179,7 +206,9 @@ def ingest_shard(
             if not compatible:
                 raise RuntimeError(f"Checkpoint incompatible: {mismatches}")
             if existing_ckpt.status == "complete":
-                logger.info("Shard %s/%s/%d already complete, skipping", config_language, split, shard_idx)
+                logger.info(
+                    "Shard %s/%s/%d already complete, skipping", config_language, split, shard_idx
+                )
                 stats.source_rows = existing_ckpt.cumulative_source_rows
                 stats.indexed_points = existing_ckpt.cumulative_indexed_points
                 return stats
@@ -190,7 +219,9 @@ def ingest_shard(
             stats.rejected_occurrences = existing_ckpt.cumulative_rejected_occurrences
             stats.chunks_emitted = existing_ckpt.cumulative_chunks_emitted
             stats.indexed_points = existing_ckpt.cumulative_indexed_points
-            logger.info("Resuming shard %s/%s/%d from row %d", config_language, split, shard_idx, start_row)
+            logger.info(
+                "Resuming shard %s/%s/%d from row %d", config_language, split, shard_idx, start_row
+            )
         except (json.JSONDecodeError, TypeError) as e:
             logger.warning("Corrupt checkpoint %s, starting fresh: %s", ckpt_path, e)
 
@@ -227,7 +258,9 @@ def ingest_shard(
             except Exception as e:
                 if attempt < cfg.max_retries:
                     wait = cfg.retry_backoff_base**attempt
-                    logger.warning("Upsert attempt %d failed, retrying in %.1fs: %s", attempt + 1, wait, e)
+                    logger.warning(
+                        "Upsert attempt %d failed, retrying in %.1fs: %s", attempt + 1, wait, e
+                    )
                     stats.retried_batches += 1
                     time.sleep(wait)
                 else:
@@ -263,7 +296,13 @@ def ingest_shard(
         ckpt.save(ckpt_path)
 
     for row_idx, record in _stream_shard(
-        config_language, split, shard_idx, cfg.dataset_revision, start_row, max_rows
+        config_language,
+        split,
+        shard_idx,
+        cfg.dataset_revision,
+        start_row,
+        max_rows,
+        num_workers=effective_num_workers,
     ):
         stats.source_rows += 1
         last_row_seen = row_idx

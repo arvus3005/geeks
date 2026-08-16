@@ -24,7 +24,6 @@ def main() -> None:
     p.add_argument("--split", required=True, choices=["train", "validation"])
     p.add_argument("--shard", type=int, default=0)
     p.add_argument("--mode", choices=["pilot", "full"], required=True)
-    p.add_argument("--pinecone-api-key", default=None)
     p.add_argument("--pinecone-index", required=True, help="Pinecone index name")
     p.add_argument("--pinecone-namespace", required=True, help="Target namespace")
     p.add_argument("--chunk-strategy", default="passage_native")
@@ -35,6 +34,11 @@ def main() -> None:
     p.add_argument("--dedup-db-dir", type=Path, default=Path("artifacts/dedup"))
     p.add_argument("--run-id", default=None, help="Use existing run ID to resume")
     p.add_argument("--confirm-full-ingest", action="store_true")
+    p.add_argument(
+        "--execute",
+        action="store_true",
+        help="Perform real Pinecone writes (also requires CONFIRM_PINECONE_WRITE=1)",
+    )
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
 
@@ -46,7 +50,30 @@ def main() -> None:
         )
         sys.exit(1)
 
-    api_key = args.pinecone_api_key or os.environ.get("PINECONE_API_KEY")
+    if args.mode == "full":
+        full_env = os.environ.get("CONFIRM_FULL_INGEST", "").strip()
+        if full_env != "YES_I_APPROVE_FULL_CORPUS":
+            print(
+                "ERROR: CONFIRM_FULL_INGEST=YES_I_APPROVE_FULL_CORPUS required for full mode.\n"
+                "DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    write_confirmed = os.environ.get("CONFIRM_PINECONE_WRITE", "").strip() == "1"
+    if not args.execute or not write_confirmed:
+        missing = []
+        if not args.execute:
+            missing.append("--execute flag")
+        if not write_confirmed:
+            missing.append("CONFIRM_PINECONE_WRITE=1 env var")
+        print(
+            f"DRY-RUN: no Pinecone writes. Missing: {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        sys.exit(0)
+
+    api_key = os.environ.get("PINECONE_API_KEY")
     if not api_key:
         print("ERROR: PINECONE_API_KEY must be set", file=sys.stderr)
         sys.exit(1)
@@ -107,12 +134,16 @@ def main() -> None:
             "indexed_points": stats.indexed_points,
             "chunks_emitted": stats.chunks_emitted,
             "elapsed_s": round(stats.elapsed_seconds, 1),
-            "note": "EXPERIMENT SUBSET — NOT FULL CORPUS" if args.mode == "pilot" else "FULL CORPUS",
+            "note": "EXPERIMENT SUBSET — NOT FULL CORPUS"
+            if args.mode == "pilot"
+            else "FULL CORPUS",
         }
         if args.output_json:
             print(json.dumps(result, indent=2))
         else:
-            print(f"Shard {args.config_lang}/{args.split}/{args.shard}: {stats.indexed_points} points")
+            print(
+                f"Shard {args.config_lang}/{args.split}/{args.shard}: {stats.indexed_points} points"
+            )
         sys.exit(0)
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)

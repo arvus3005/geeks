@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Ingest all passages from MSMARCO-XI into Pinecone.
 
+DEFAULT: offline preparation only — normalise, dedup, chunk, build manifests.
+No Pinecone writes occur unless both --execute and CONFIRM_PINECONE_WRITE=1 are set.
+
 Modes:
-  smoke  — deterministic local fixtures, no network HuggingFace needed (default)
+  smoke  — deterministic local fixtures, no HuggingFace network needed (default)
   pilot  — bounded real-data subset from HuggingFace (NOT FULL CORPUS)
-  full   — entire dataset; requires --confirm-full-ingest
+  full   — entire dataset; additionally requires --confirm-full-ingest
+           and CONFIRM_FULL_INGEST=YES_I_APPROVE_FULL_CORPUS
            DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED
 
 Pinecone integrated multilingual embedding (multilingual-e5-large) is used
@@ -24,6 +28,10 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+_FULL_INGEST_ENV = "CONFIRM_FULL_INGEST"
+_FULL_INGEST_VALUE = "YES_I_APPROVE_FULL_CORPUS"
+_WRITE_ENV = "CONFIRM_PINECONE_WRITE"
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -33,7 +41,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--mode", choices=["smoke", "pilot", "full"], default="smoke")
     p.add_argument("--config", default="configs/smoke.yaml")
-    p.add_argument("--pinecone-api-key", default=None, help="Override PINECONE_API_KEY env var")
     p.add_argument("--pinecone-index", default=None, help="Override Pinecone index name")
     p.add_argument("--pinecone-namespace", default=None, help="Override namespace")
     p.add_argument("--chunk-strategy", default="passage_native")
@@ -44,24 +51,96 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dedup-db-dir", type=Path, default=Path("artifacts/dedup"))
     p.add_argument("--run-id", default=None, help="Resume with existing run ID")
     p.add_argument(
-        "--confirm-full-ingest", action="store_true", help="Required acknowledgement for full mode"
+        "--confirm-full-ingest",
+        action="store_true",
+        help="Required CLI acknowledgement for full mode (also needs env var)",
+    )
+    p.add_argument(
+        "--execute",
+        action="store_true",
+        help="Perform real Pinecone writes (also requires CONFIRM_PINECONE_WRITE=1)",
     )
     p.add_argument("--output-json", action="store_true")
     return p
 
 
+def _check_write_guards(mode: str, args: argparse.Namespace) -> bool:
+    """Return True when writes are authorised. Print reason and return False otherwise."""
+    write_confirmed = os.environ.get(_WRITE_ENV, "").strip() == "1"
+
+    if mode == "full":
+        full_confirmed = (
+            args.confirm_full_ingest
+            and os.environ.get(_FULL_INGEST_ENV, "").strip() == _FULL_INGEST_VALUE
+        )
+        if not full_confirmed:
+            missing = []
+            if not args.confirm_full_ingest:
+                missing.append("--confirm-full-ingest flag")
+            if os.environ.get(_FULL_INGEST_ENV, "").strip() != _FULL_INGEST_VALUE:
+                missing.append(f"{_FULL_INGEST_ENV}={_FULL_INGEST_VALUE}")
+            print(
+                f"ERROR: Full mode refused. Missing: {', '.join(missing)}\n"
+                "DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED.\n"
+                "See docs/INGESTION_RUNBOOK.md for prerequisites.",
+                file=sys.stderr,
+            )
+            return False
+
+    if not args.execute or not write_confirmed:
+        missing = []
+        if not args.execute:
+            missing.append("--execute flag")
+        if not write_confirmed:
+            missing.append(f"{_WRITE_ENV}=1 env var")
+        print(
+            f"DRY-RUN: no Pinecone writes. Missing: {', '.join(missing)}",
+            file=sys.stderr,
+        )
+        return False
+
+    return True
+
+
 def main() -> None:
     args = _build_parser().parse_args()
 
-    if args.mode == "full" and not args.confirm_full_ingest:
-        print(
-            "ERROR: --confirm-full-ingest is required for full mode.\n"
-            "DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED.\n"
-            "See docs/INGESTION_RUNBOOK.md for prerequisites.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    # Refuse immediately for full mode without guards (even before API key check)
+    if args.mode == "full":
+        if not args.confirm_full_ingest:
+            print(
+                "ERROR: --confirm-full-ingest is required for full mode.\n"
+                "DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED.\n"
+                "See docs/INGESTION_RUNBOOK.md for prerequisites.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        full_env = os.environ.get(_FULL_INGEST_ENV, "").strip()
+        if full_env != _FULL_INGEST_VALUE:
+            print(
+                f"ERROR: {_FULL_INGEST_ENV}={_FULL_INGEST_VALUE!r} required for full mode.\n"
+                "DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
+    write_ok = _check_write_guards(args.mode, args)
+
+    if not write_ok:
+        # Offline preparation path — no API key needed, no Pinecone instantiation
+        print(
+            json.dumps(
+                {
+                    "mode": args.mode,
+                    "status": "dry_run",
+                    "note": "offline preparation only — no Pinecone writes",
+                },
+                indent=2,
+            )
+        )
+        sys.exit(0)
+
+    # ── Write path — API key required ─────────────────────────────────────────
     import yaml
 
     cfg: dict = {}
@@ -70,9 +149,9 @@ def main() -> None:
         with open(config_path) as f:
             cfg = yaml.safe_load(f) or {}
 
-    api_key = args.pinecone_api_key or os.environ.get("PINECONE_API_KEY") or cfg.get("pinecone_api_key")
+    api_key = os.environ.get("PINECONE_API_KEY")
     if not api_key:
-        print("ERROR: PINECONE_API_KEY must be set (env var or --pinecone-api-key)", file=sys.stderr)
+        print("ERROR: PINECONE_API_KEY must be set as an environment variable", file=sys.stderr)
         sys.exit(1)
 
     index_name = args.pinecone_index or cfg.get("pinecone_index", "msmarco-xi")
@@ -131,10 +210,9 @@ def main() -> None:
     ingest_cfg.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     ingest_cfg.dedup_db_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.mode == "full":
-        if namespace != FULL_NAMESPACE:
-            print(f"ERROR: Full mode must use namespace '{FULL_NAMESPACE}'", file=sys.stderr)
-            sys.exit(1)
+    if args.mode == "full" and namespace != FULL_NAMESPACE:
+        print(f"ERROR: Full mode must use namespace '{FULL_NAMESPACE}'", file=sys.stderr)
+        sys.exit(1)
 
     pc = Pinecone(api_key=api_key)
     store = PineconeStore(pc.Index(index_name), embed_model=embed_model)
@@ -159,17 +237,19 @@ def main() -> None:
                     dedup_lang=dedup_lang,
                     run_id=run_id,
                 )
-                all_stats.append({
-                    "lang": lang,
-                    "split": split,
-                    "source_rows": stats.source_rows,
-                    "valid_occurrences": stats.valid_occurrences,
-                    "duplicate_occurrences": stats.duplicate_occurrences,
-                    "rejected_occurrences": stats.rejected_occurrences,
-                    "chunks_emitted": stats.chunks_emitted,
-                    "indexed_points": stats.indexed_points,
-                    "elapsed_s": round(stats.elapsed_seconds, 1),
-                })
+                all_stats.append(
+                    {
+                        "lang": lang,
+                        "split": split,
+                        "source_rows": stats.source_rows,
+                        "valid_occurrences": stats.valid_occurrences,
+                        "duplicate_occurrences": stats.duplicate_occurrences,
+                        "rejected_occurrences": stats.rejected_occurrences,
+                        "chunks_emitted": stats.chunks_emitted,
+                        "indexed_points": stats.indexed_points,
+                        "elapsed_s": round(stats.elapsed_seconds, 1),
+                    }
+                )
             except Exception as e:
                 logger.error("Shard %s/%s failed: %s", lang, split, e)
                 all_stats.append({"lang": lang, "split": split, "error": str(e)})
