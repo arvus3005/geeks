@@ -47,7 +47,9 @@ def test_fake_embedder_deterministic():
 
 
 def test_search_hit_text_extraction():
-    hit = SearchHit(id="x", score=0.9, fields={TEXT_RECORD_FIELD: "New Delhi is the capital", "language": "en"})
+    hit = SearchHit(
+        id="x", score=0.9, fields={TEXT_RECORD_FIELD: "New Delhi is the capital", "language": "en"}
+    )
     assert "New Delhi" in hit.text
     assert hit.language == "en"
 

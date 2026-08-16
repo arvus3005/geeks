@@ -21,19 +21,25 @@ def _store() -> PineconeStore:
 def test_smoke_context_refuses_full_namespace():
     store = _store()
     with pytest.raises(ValueError, match="full"):
-        store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=FULL_NAMESPACE, context="smoke")
+        store.upsert_records(
+            [{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=FULL_NAMESPACE, context="smoke"
+        )
 
 
 def test_pilot_context_refuses_full_namespace():
     store = _store()
     with pytest.raises(ValueError, match="full"):
-        store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=FULL_NAMESPACE, context="pilot")
+        store.upsert_records(
+            [{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=FULL_NAMESPACE, context="pilot"
+        )
 
 
 def test_smoke_context_allows_smoke_namespace():
     index = MagicMock()
     store = PineconeStore(index, embed_model="multilingual-e5-large")
-    store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=SMOKE_NAMESPACE, context="smoke")
+    store.upsert_records(
+        [{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=SMOKE_NAMESPACE, context="smoke"
+    )
     index.upsert_records.assert_called_once()
 
 
@@ -51,7 +57,9 @@ def test_pilot_context_allows_pilot_namespace():
 def test_full_context_allows_full_namespace():
     index = MagicMock()
     store = PineconeStore(index, embed_model="multilingual-e5-large")
-    store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=FULL_NAMESPACE, context="full")
+    store.upsert_records(
+        [{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=FULL_NAMESPACE, context="full"
+    )
     index.upsert_records.assert_called_once()
 
 

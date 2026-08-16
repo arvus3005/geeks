@@ -40,6 +40,7 @@ def _make_store(index: MagicMock | None = None) -> PineconeStore:
 
 # ── Namespace safety ──────────────────────────────────────────────────────────
 
+
 def test_smoke_is_safe():
     assert is_safe_namespace(SMOKE_NAMESPACE)
 
@@ -59,7 +60,9 @@ def test_arbitrary_is_not_safe():
 def test_namespace_guard_blocks_full_in_smoke_context():
     store = _make_store()
     with pytest.raises(ValueError, match="full"):
-        store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=FULL_NAMESPACE, context="smoke")
+        store.upsert_records(
+            [{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=FULL_NAMESPACE, context="smoke"
+        )
 
 
 def test_namespace_guard_allows_full_in_full_context():
@@ -67,16 +70,21 @@ def test_namespace_guard_allows_full_in_full_context():
     index.upsert_records.return_value = MagicMock()
     store = _make_store(index)
     # Should not raise
-    count = store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=FULL_NAMESPACE, context="full")
+    count = store.upsert_records(
+        [{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=FULL_NAMESPACE, context="full"
+    )
     assert count == 1
 
 
 # ── Upsert records ────────────────────────────────────────────────────────────
 
+
 def test_upsert_returns_record_count():
     index = MagicMock()
     store = _make_store(index)
-    records = [{"id": f"id-{i}", TEXT_RECORD_FIELD: f"text {i}", "language": "en"} for i in range(5)]
+    records = [
+        {"id": f"id-{i}", TEXT_RECORD_FIELD: f"text {i}", "language": "en"} for i in range(5)
+    ]
     count = store.upsert_records(records, namespace=SMOKE_NAMESPACE)
     assert count == 5
     index.upsert_records.assert_called_once()
@@ -100,7 +108,9 @@ def test_upsert_retries_on_failure():
 def test_upsert_raises_provider_error_after_max_retries():
     index = MagicMock()
     index.upsert_records.side_effect = RuntimeError("persistent failure")
-    store = PineconeStore(index, embed_model="multilingual-e5-large", max_retries=2, retry_backoff=0.0)
+    store = PineconeStore(
+        index, embed_model="multilingual-e5-large", max_retries=2, retry_backoff=0.0
+    )
     with pytest.raises(PineconeProviderError):
         store.upsert_records([{"id": "x", TEXT_RECORD_FIELD: "t"}], namespace=SMOKE_NAMESPACE)
     assert index.upsert_records.call_count == 3  # initial + 2 retries
@@ -108,9 +118,13 @@ def test_upsert_raises_provider_error_after_max_retries():
 
 # ── Search ────────────────────────────────────────────────────────────────────
 
+
 def test_search_returns_hits():
     index = MagicMock()
-    raw_hits = [_make_hit("id1", 0.9, "New Delhi is the capital"), _make_hit("id2", 0.7, "India geography")]
+    raw_hits = [
+        _make_hit("id1", 0.9, "New Delhi is the capital"),
+        _make_hit("id2", 0.7, "India geography"),
+    ]
     index.search_records.return_value = _make_search_response(raw_hits)
     store = _make_store(index)
 
@@ -152,6 +166,7 @@ def test_search_raises_provider_error_on_failure():
 
 # ── SearchHit helpers ─────────────────────────────────────────────────────────
 
+
 def test_search_hit_text_and_language():
     hit = SearchHit(id="x", score=0.8, fields={TEXT_RECORD_FIELD: "Hello world", "language": "en"})
     assert hit.text == "Hello world"
@@ -165,6 +180,7 @@ def test_search_hit_missing_fields():
 
 
 # ── Metadata correctness ──────────────────────────────────────────────────────
+
 
 def test_record_has_no_forbidden_fields():
     """Ensure records built in tests never include eval-time fields."""
@@ -184,6 +200,7 @@ def test_record_has_no_forbidden_fields():
 
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
+
 
 def test_count_namespace_returns_zero_when_missing():
     index = MagicMock()

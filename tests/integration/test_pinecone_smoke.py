@@ -75,11 +75,13 @@ def _poll_count(store, namespace: str, min_count: int, timeout: float = 60.0) ->
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
+
 def test_smoke_ingest_inserts_records(pinecone_store, smoke_namespace):
     """Insert smoke fixtures and verify count reaches expected value."""
     import json
 
     from hhgoa_rag.ingestion.smoke_ingest import SMOKE_FIXTURES_PATH, _build_record
+
     with open(SMOKE_FIXTURES_PATH) as f:
         passages = json.load(f)
 
@@ -96,6 +98,7 @@ def test_smoke_ingest_is_idempotent(pinecone_store, smoke_namespace):
     import json
 
     from hhgoa_rag.ingestion.smoke_ingest import SMOKE_FIXTURES_PATH, _build_record
+
     with open(SMOKE_FIXTURES_PATH) as f:
         passages = json.load(f)
 
