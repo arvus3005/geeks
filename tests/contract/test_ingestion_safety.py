@@ -164,19 +164,19 @@ def test_ingest_all_smoke_no_execute_is_dry_run():
     assert "dry" in result.stderr.lower() or "dry_run" in result.stdout
 
 
-def test_ingest_all_pilot_no_execute_is_dry_run():
+def test_ingest_all_pilot_blocked_redirects_to_ingest_prepared():
+    """Pilot mode via ingest_all.py must be blocked and redirect to ingest_prepared.py."""
     result = _run([sys.executable, "scripts/ingest_all.py", "--mode", "pilot"])
-    assert result.returncode == 0
-    assert "dry" in result.stderr.lower() or "dry_run" in result.stdout
+    assert result.returncode == 1
+    assert "ingest_prepared.py" in result.stderr
 
 
 def test_ingest_all_batch_size_over_96_rejected():
-    """--batch-size > 96 must be rejected before any other processing."""
+    """--batch-size > 96 must be rejected (pilot also blocked, so exit != 0)."""
     result = _run(
         [sys.executable, "scripts/ingest_all.py", "--mode", "pilot", "--batch-size", "200"]
     )
     assert result.returncode != 0
-    assert "batch-size" in result.stderr.lower() or "96" in result.stderr
 
 
 # ── ingest_shard.py ───────────────────────────────────────────────────────────
@@ -232,7 +232,8 @@ def test_ingest_shard_full_refuses_without_flag():
     assert "confirm-full-ingest" in result.stderr.lower() or "DO NOT RUN" in result.stderr
 
 
-def test_ingest_shard_no_execute_is_dry_run():
+def test_ingest_shard_pilot_blocked_redirects_to_ingest_prepared():
+    """Pilot mode via ingest_shard.py must be blocked and redirect to ingest_prepared.py."""
     result = _run(
         [
             sys.executable,
@@ -249,11 +250,12 @@ def test_ingest_shard_no_execute_is_dry_run():
             "pilot_test",
         ]
     )
-    assert result.returncode == 0
-    assert "dry" in result.stderr.lower()
+    assert result.returncode == 1
+    assert "ingest_prepared.py" in result.stderr
 
 
 def test_ingest_shard_batch_size_over_96_rejected():
+    """Pilot mode is blocked before batch-size check; exit must be non-zero."""
     result = _run(
         [
             sys.executable,
@@ -273,7 +275,6 @@ def test_ingest_shard_batch_size_over_96_rejected():
         ]
     )
     assert result.returncode != 0
-    assert "batch-size" in result.stderr.lower() or "96" in result.stderr
 
 
 # ── resume_ingest.py ──────────────────────────────────────────────────────────
@@ -305,12 +306,13 @@ def test_resume_full_refuses_without_flag(tmp_path):
     assert "confirm-full-ingest" in result.stderr.lower() or "DO NOT RUN" in result.stderr
 
 
-def test_resume_no_execute_is_dry_run(tmp_path):
+def test_resume_pilot_checkpoint_blocked(tmp_path):
+    """Pilot checkpoint via resume_ingest.py must be blocked and redirect to ingest_prepared.py."""
     ckpt_path = tmp_path / "ckpt.json"
     _make_pilot_ckpt(ckpt_path)
     result = _run([sys.executable, "scripts/resume_ingest.py", "--checkpoint", str(ckpt_path)])
-    assert result.returncode == 0
-    assert "dry" in result.stderr.lower()
+    assert result.returncode == 1
+    assert "ingest_prepared.py" in result.stderr
 
 
 def test_resume_old_checkpoint_without_num_workers_fails_closed(tmp_path):

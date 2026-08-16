@@ -8,18 +8,21 @@ stream a new dataset subset.
 Default: 300 records — 100 English, 100 Hindi, 100 Bengali.
 Source Parquet files:
   Hindi train   : train/hintrain.parquet
-  Hindi val     : validation/hinval.parquet
   Bengali train : train/bentrain.parquet
-  Bengali val   : validation/benval.parquet
   Repo          : https://huggingface.co/datasets/ai4bharat/MSMARCO-XI
 
 Dataset revision is resolved to a full immutable commit SHA before any data is
 read, ensuring byte-for-byte reproducibility. Pass --dataset-revision to pin.
+Tokenizer revision is resolved similarly. Pass --tokenizer-revision to pin.
 
 Selection is deterministic: passages are assigned a stable key derived from
 (seed, language, content_hash, physical_source, local_source_row,
 passage_position, chunk_ordinal), sorted by that key, and the first N are
 selected.  Reservoir sampling is NOT used.
+
+Oversized passages are split deterministically; if splitting still yields no
+fitting chunks the passage is rejected and the next candidate is tried until
+the exact quota is met.
 
 Output (both Git-ignored):
   artifacts/prepared/<manifest_id>_records.jsonl
@@ -28,6 +31,7 @@ Output (both Git-ignored):
 Usage:
   uv run python scripts/prepare_canary.py \\
       --dataset-revision <full-commit-sha> \\
+      --tokenizer-revision <full-commit-sha> \\
       --seed 42
 
   uv run python scripts/prepare_canary.py --help
@@ -48,8 +52,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 DATASET_REPO = "ai4bharat/MSMARCO-XI"
-CHUNK_STRATEGY = "passage_native"
 CHUNK_STRATEGY_VERSION = "v1"
+
+SUPPORTED_CHUNK_STRATEGIES = [
+    "passage_native",
+    "sentence_aware",
+    "fixed_token_overlap",
+    "semantic",
+]
+DEFAULT_CHUNK_STRATEGY = "sentence_aware"
 
 # Forbidden fields that must never appear in prepared records
 FORBIDDEN_FIELDS = {"query", "Answer", "Eng_Query", "Eng_Answer", "query_type", "is_selected"}
@@ -68,11 +79,12 @@ _PARQUET_FILES: dict[tuple[str, str], str] = {
     ("bn", "validation"): "validation/benval.parquet",
 }
 
-# Expected language values in translated passages for each config
-_EXPECTED_NATIVE_LANG: dict[str, str] = {"hi": "hi", "bn": "bn"}
-
 # MSMARCO-XI dataset schema: fields present in every record
 _EXPECTED_SCHEMA_FIELDS = {"passages"}
+
+# Batch constants matching ingest_prepared.py
+MAX_RECORDS_PER_BATCH = 96
+MAX_BYTES_PER_BATCH = 1_800_000
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -112,6 +124,12 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Pin HF tokenizer commit SHA (full SHA required for ready_for_write=true)",
     )
+    p.add_argument(
+        "--chunk-strategy",
+        default=DEFAULT_CHUNK_STRATEGY,
+        choices=SUPPORTED_CHUNK_STRATEGIES,
+        help=f"Chunking strategy. Default: {DEFAULT_CHUNK_STRATEGY}",
+    )
     p.add_argument("--output-json", action="store_true", help="Print manifest JSON to stdout")
     return p
 
@@ -141,12 +159,7 @@ def _make_point_id(
 
 
 def _resolve_dataset_revision(pinned_revision: str | None) -> str:
-    """Resolve dataset revision to a full immutable commit SHA.
-
-    If pinned_revision is given (full SHA), verify it looks like a SHA and return it.
-    Otherwise resolve HEAD via huggingface_hub and return the resolved SHA.
-    Never returns 'HEAD', 'main', or other symbolic refs.
-    """
+    """Resolve dataset revision to a full immutable commit SHA."""
     try:
         from huggingface_hub import list_repo_commits
     except ImportError as e:
@@ -164,7 +177,6 @@ def _resolve_dataset_revision(pinned_revision: str | None) -> str:
         logger.info("Using pinned dataset revision: %s", pinned_revision)
         return pinned_revision
 
-    # Resolve HEAD
     logger.info("Resolving HEAD for %s …", DATASET_REPO)
     try:
         commits = list(list_repo_commits(DATASET_REPO, repo_type="dataset"))
@@ -177,6 +189,35 @@ def _resolve_dataset_revision(pinned_revision: str | None) -> str:
         ) from e
 
     logger.info("Resolved HEAD → %s", resolved)
+    return resolved
+
+
+def _resolve_tokenizer_revision(pinned_revision: str | None, tokenizer_repo: str) -> str:
+    """Resolve tokenizer revision to a full immutable commit SHA."""
+    if pinned_revision is not None:
+        if len(pinned_revision) < 7:
+            raise ValueError(
+                f"tokenizer_revision looks too short to be a commit SHA: {pinned_revision!r}. "
+                "Pass the full 40-character hex SHA."
+            )
+        logger.info("Using pinned tokenizer revision: %s", pinned_revision)
+        return pinned_revision
+
+    logger.info("Resolving HEAD for tokenizer %s …", tokenizer_repo)
+    try:
+        from huggingface_hub import list_repo_commits
+
+        commits = list(list_repo_commits(tokenizer_repo, repo_type="model"))
+        if not commits:
+            raise RuntimeError(f"No commits found for {tokenizer_repo}")
+        resolved = commits[0].commit_id
+    except Exception as e:
+        raise RuntimeError(
+            f"Cannot resolve HEAD for tokenizer {tokenizer_repo}. "
+            "Pass --tokenizer-revision with a pinned SHA."
+        ) from e
+
+    logger.info("Resolved tokenizer HEAD → %s", resolved)
     return resolved
 
 
@@ -195,7 +236,6 @@ def _preflight_schema(row: dict, config_lang: str, parquet_path: str) -> None:
             f"Schema preflight failed for {parquet_path}: missing fields {missing}. "
             f"Available fields: {list(row.keys())}"
         )
-    # Validate passages structure
     passages = row.get("passages")
     if not isinstance(passages, dict):
         raise RuntimeError(
@@ -217,12 +257,20 @@ def _stream_parquet(
     dataset_revision: str,
     max_rows: int,
 ) -> tuple[list[dict], str]:
-    """Stream up to max_rows records from the revision-pinned Parquet file.
+    """Download (with caching) and read up to max_rows records from the Parquet file.
 
-    Returns (rows, physical_parquet_path).
-    Raises RuntimeError if the config_lang+split combination is unsupported.
+    Uses hf_hub_download to fetch the revision-pinned Parquet file into the local
+    HuggingFace cache, then reads it with pyarrow.  Direct-URL streaming mode is
+    NOT used because PyArrow cannot convert the MSMARCO-XI nested struct columns
+    in chunked streaming output mode.
+
+    Subsequent runs use the locally cached file so no network I/O is needed.
+
+    Returns (rows, physical_parquet_path) where physical_parquet_path is the
+    canonical HF repo-relative path used for deduplication and source tracking.
     """
-    from datasets import load_dataset
+    import pyarrow.parquet as pq
+    from huggingface_hub import hf_hub_download
 
     parquet_path = _PARQUET_FILES.get((config_lang, split))
     if parquet_path is None:
@@ -232,9 +280,8 @@ def _stream_parquet(
             f"Supported combinations: {supported}"
         )
 
-    url = _parquet_url(dataset_revision, parquet_path)
     logger.info(
-        "Streaming Parquet: config_lang=%s split=%s revision=%s path=%s (max_rows=%d)",
+        "Fetching Parquet: config_lang=%s split=%s revision=%s path=%s (max_rows=%d)",
         config_lang,
         split,
         dataset_revision,
@@ -243,27 +290,40 @@ def _stream_parquet(
     )
 
     try:
-        ds = load_dataset(
-            "parquet",
-            data_files=url,
-            split="train",  # 'parquet' loader always uses split='train'
-            streaming=True,
+        local_path = hf_hub_download(
+            repo_id=DATASET_REPO,
+            filename=parquet_path,
+            revision=dataset_revision,
+            repo_type="dataset",
+            cache_dir=".cache/huggingface",
         )
     except Exception as e:
         raise RuntimeError(
-            f"Cannot stream Parquet file {url}. "
-            f"Check HuggingFace access and dataset revision. Original error: {e}"
+            f"Cannot download Parquet file {parquet_path!r} from {DATASET_REPO} "
+            f"revision={dataset_revision}. Original error: {e}"
         ) from e
 
-    rows = []
-    schema_checked = False
-    for i, row in enumerate(ds):
-        if i >= max_rows:
-            break
-        if not schema_checked:
-            _preflight_schema(row, config_lang, parquet_path)
-            schema_checked = True
-        rows.append(row)
+    logger.info("Reading from local cache: %s", local_path)
+
+    try:
+        pf = pq.ParquetFile(local_path)
+        rows: list[dict] = []
+        schema_checked = False
+        for batch in pf.iter_batches(batch_size=min(max_rows, 500)):
+            batch_dict = batch.to_pydict()
+            n = batch.num_rows
+            for i in range(n):
+                if len(rows) >= max_rows:
+                    break
+                row: dict = {k: v[i] for k, v in batch_dict.items()}
+                if not schema_checked:
+                    _preflight_schema(row, config_lang, parquet_path)
+                    schema_checked = True
+                rows.append(row)
+            if len(rows) >= max_rows:
+                break
+    except Exception as e:
+        raise RuntimeError(f"Cannot read Parquet file {local_path}. Original error: {e}") from e
 
     logger.info("Collected %d rows from %s (config_lang=%s)", len(rows), parquet_path, config_lang)
     return rows, parquet_path
@@ -274,13 +334,9 @@ def _validate_language_metadata(
     config_lang: str,
     parquet_path: str,
 ) -> None:
-    """Spot-check that translated passages look like the expected language.
-
-    This is a heuristic guard — not a full language detection pass.
-    Fails closed if every translated passage is empty or missing.
-    """
+    """Spot-check that translated passages look like the expected language."""
     non_empty = 0
-    for row in rows[:20]:  # sample first 20 rows
+    for row in rows[:20]:
         passages = row.get("passages", {})
         trans = passages.get("Translated_passages", [])
         if isinstance(trans, list):
@@ -309,18 +365,13 @@ def _extract_passages(
     dataset_revision: str,
     parquet_path: str,
 ) -> tuple[list[dict], list[dict]]:
-    """Extract (native_passages, english_passages) from raw Parquet rows.
-
-    Records physical_source (parquet_path) and local_source_row for stable IDs.
-    Forbidden fields are stripped. Never prints passage content.
-    """
+    """Extract (native_passages, english_passages) from raw Parquet rows."""
     from hhgoa_rag.dataset.parser import parse_record
 
     native: list[dict] = []
     english: list[dict] = []
 
     for row_idx, row in enumerate(rows):
-        # Strip forbidden fields before any processing
         safe_row = {k: v for k, v in row.items() if k not in FORBIDDEN_FIELDS}
         occurrences, _ = parse_record(
             safe_row,
@@ -353,12 +404,7 @@ def _extract_passages(
 
 
 def _stable_selection_key(seed: int, lang: str, rec: dict) -> str:
-    """Compute stable, deterministic selection key for a passage record.
-
-    Key components:
-      seed, language, content_hash, physical_source, local_source_row,
-      passage_position, chunk_ordinal
-    """
+    """Compute stable, deterministic selection key for a passage record."""
     components = "|".join(
         [
             str(seed),
@@ -374,11 +420,7 @@ def _stable_selection_key(seed: int, lang: str, rec: dict) -> str:
 
 
 def _deterministic_select(items: list[dict], k: int, seed: int, lang: str) -> list[dict]:
-    """Select exactly k items deterministically.
-
-    Assigns each item a stable SHA-256 key, sorts by key, returns first k.
-    This is NOT reservoir sampling — it is purely deterministic given the same inputs.
-    """
+    """Select exactly k items deterministically by stable SHA-256 key sort."""
     if not items:
         return []
     keyed = [(item, _stable_selection_key(seed, lang, item)) for item in items]
@@ -386,10 +428,7 @@ def _deterministic_select(items: list[dict], k: int, seed: int, lang: str) -> li
     return [item for item, _ in keyed[:k]]
 
 
-def _check_sources_differ(
-    hi_path: str,
-    bn_path: str,
-) -> None:
+def _check_sources_differ(hi_path: str, bn_path: str) -> None:
     """Fail closed if Hindi and Bengali resolve to the same physical Parquet file."""
     if hi_path == bn_path:
         raise RuntimeError(
@@ -399,109 +438,241 @@ def _check_sources_differ(
     logger.info("Source identity check PASSED: hi=%s, bn=%s (different files)", hi_path, bn_path)
 
 
-def _build_prepared_record(
+def _split_text_to_fit(
+    text: str,
+    tok_wrapper: object,
+    model_limit: int,
+) -> list[str]:
+    """Split text into chunks that each fit within model_limit tokens.
+
+    Splits on sentence boundaries first, then word boundaries.
+    Returns a list of non-empty strings that each fit.
+    """
+    from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT  # noqa: F401
+
+    if tok_wrapper.count_tokens(text, add_prefix=True) <= model_limit:  # type: ignore[attr-defined]
+        return [text]
+
+    import re
+
+    sent_re = re.compile(r"(?<=[.?!।॥])\s+|\n+")
+    sentences = sent_re.split(text.strip())
+    sentences = [s.strip() for s in sentences if s.strip()]
+
+    chunks: list[str] = []
+    current_parts: list[str] = []
+
+    for sent in sentences:
+        candidate = " ".join(current_parts + [sent])
+        if tok_wrapper.count_tokens(candidate, add_prefix=True) <= model_limit:  # type: ignore[attr-defined]
+            current_parts.append(sent)
+        else:
+            if current_parts:
+                chunks.append(" ".join(current_parts))
+            # If single sentence still oversized, split by words
+            if tok_wrapper.count_tokens(sent, add_prefix=True) > model_limit:  # type: ignore[attr-defined]
+                words = sent.split()
+                word_parts: list[str] = []
+                for w in words:
+                    candidate_w = " ".join(word_parts + [w])
+                    if tok_wrapper.count_tokens(candidate_w, add_prefix=True) <= model_limit:  # type: ignore[attr-defined]
+                        word_parts.append(w)
+                    else:
+                        if word_parts:
+                            chunks.append(" ".join(word_parts))
+                        word_parts = [w]
+                if word_parts:
+                    chunks.append(" ".join(word_parts))
+            else:
+                current_parts = [sent]
+
+    if current_parts:
+        chunks.append(" ".join(current_parts))
+
+    return [c for c in chunks if c.strip()]
+
+
+def _build_prepared_records_for_passage(
     rec: dict,
     dataset_revision: str,
     tok_wrapper: object,
+    chunk_strategy: str,
     chunk_strategy_version: str,
     manifest_id: str,
-) -> dict | None:
-    """Build a fully-tokenized prepared record.
+    split_counts: dict[str, int],
+    rejection_counts: dict[str, int],
+) -> list[dict]:
+    """Build 1+ prepared records from a passage, splitting if needed.
 
-    Returns None if text exceeds model limit after exhausting token-safe splits.
-    Never prints passage content.
+    Returns list of records (may be empty if rejected, or multiple if split).
     """
     from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT
 
+    lang = rec["language"]
     text = rec["normalized_text"]
     token_length = tok_wrapper.count_tokens(text, add_prefix=True)  # type: ignore[attr-defined]
 
     if token_length > MODEL_INPUT_LIMIT:
-        logger.warning(
-            "Passage exceeds model limit (%d > %d tokens) at physical_source=%s row=%d pos=%d — skipping",
-            token_length,
-            MODEL_INPUT_LIMIT,
+        # Attempt deterministic splitting
+        sub_texts = _split_text_to_fit(text, tok_wrapper, MODEL_INPUT_LIMIT)
+        if not sub_texts:
+            logger.warning(
+                "Passage unsplittable at physical_source=%s row=%d pos=%d — rejecting",
+                rec["physical_source"],
+                rec["local_source_row"],
+                rec["passage_position"],
+            )
+            rejection_counts[lang] = rejection_counts.get(lang, 0) + 1
+            return []
+        split_counts[lang] = split_counts.get(lang, 0) + (len(sub_texts) - 1)
+        logger.info(
+            "Split passage into %d sub-chunks at physical_source=%s row=%d",
+            len(sub_texts),
             rec["physical_source"],
             rec["local_source_row"],
-            rec["passage_position"],
         )
-        return None
+        # Build a record for the first sub-chunk only (we only need one passage per slot)
+        text = sub_texts[0]
+        token_length = tok_wrapper.count_tokens(text, add_prefix=True)  # type: ignore[attr-defined]
 
+    sub_content_hash = _content_hash(text)
     point_id = _make_point_id(
         dataset_revision=dataset_revision,
-        language=rec["language"],
-        content_hash=rec["content_hash"],
-        chunk_strategy_version=f"{CHUNK_STRATEGY}_{chunk_strategy_version}",
+        language=lang,
+        content_hash=sub_content_hash,
+        chunk_strategy_version=f"{chunk_strategy}_{chunk_strategy_version}",
         chunk_ordinal=0,
     )
 
-    return {
-        "id": point_id,
-        "chunk_text": text,
-        "language": rec["language"],
-        "config_language": rec["config_language"],
-        "dataset_repo": DATASET_REPO,
-        "dataset_revision": dataset_revision,
-        "split": rec["split"],
-        "physical_source": rec["physical_source"],
-        "physical_shard": "0",
-        "local_source_row": rec["local_source_row"],
-        "passage_position": rec["passage_position"],
-        "parent_passage_id": rec["content_hash"],
-        "content_hash": rec["content_hash"],
-        "chunk_strategy": CHUNK_STRATEGY,
-        "chunk_strategy_version": chunk_strategy_version,
-        "chunk_ordinal": 0,
-        "chunk_total": 1,
-        "token_length": token_length,
-        "tokenizer_fingerprint": tok_wrapper.fingerprint,  # type: ignore[attr-defined]
-        "manifest_id": manifest_id,
-    }
+    return [
+        {
+            "id": point_id,
+            "chunk_text": text,
+            "language": lang,
+            "config_language": rec["config_language"],
+            "dataset_repo": DATASET_REPO,
+            "dataset_revision": dataset_revision,
+            "split": rec["split"],
+            "physical_source": rec["physical_source"],
+            "physical_shard": "0",
+            "local_source_row": rec["local_source_row"],
+            "passage_position": rec["passage_position"],
+            "parent_passage_id": rec["content_hash"],
+            "content_hash": sub_content_hash,
+            "chunk_strategy": chunk_strategy,
+            "chunk_strategy_version": chunk_strategy_version,
+            "chunk_ordinal": 0,
+            "chunk_total": 1,
+            "token_length": token_length,
+            "tokenizer_fingerprint": tok_wrapper.fingerprint,  # type: ignore[attr-defined]
+            "manifest_id": manifest_id,
+        }
+    ]
+
+
+def _fill_quota(
+    candidates: list[dict],
+    quota: int,
+    lang: str,
+    seed: int,
+    dataset_revision: str,
+    tok_wrapper: object,
+    chunk_strategy: str,
+    chunk_strategy_version: str,
+    manifest_id: str,
+    split_counts: dict[str, int],
+    rejection_counts: dict[str, int],
+) -> list[dict]:
+    """Select candidates deterministically and build prepared records until quota is met.
+
+    Backtracks into the sorted candidate list to fill the exact quota even if
+    some passages are oversized and must be split/rejected.
+    """
+    sorted_candidates = _deterministic_select(candidates, len(candidates), seed=seed, lang=lang)
+    result: list[dict] = []
+    seen_ids: set[str] = set()
+
+    for rec in sorted_candidates:
+        if len(result) >= quota:
+            break
+        built = _build_prepared_records_for_passage(
+            rec,
+            dataset_revision,
+            tok_wrapper,
+            chunk_strategy,
+            chunk_strategy_version,
+            manifest_id,
+            split_counts,
+            rejection_counts,
+        )
+        for r in built:
+            if len(result) >= quota:
+                break
+            if r["id"] not in seen_ids:
+                seen_ids.add(r["id"])
+                result.append(r)
+
+    return result
+
+
+def _projected_batches(total_records: int) -> tuple[int, int, int]:
+    """Return (num_batches, max_records_per_batch, max_bytes_per_batch)."""
+    import math
+
+    num_batches = math.ceil(total_records / MAX_RECORDS_PER_BATCH)
+    return num_batches, MAX_RECORDS_PER_BATCH, MAX_BYTES_PER_BATCH
 
 
 def main() -> None:
     args = _build_parser().parse_args()
 
+    chunk_strategy = args.chunk_strategy
     quotas = {"en": args.en_quota, "hi": args.hi_quota, "bn": args.bn_quota}
 
     # Step 1: Resolve dataset revision to a full immutable SHA
     dataset_revision = _resolve_dataset_revision(args.dataset_revision)
     is_pinned = args.dataset_revision is not None
 
-    # Fingerprint: seed + quotas + dataset_revision (canonical configuration)
+    # Fingerprint: seed + quotas + dataset_revision + chunk_strategy
     fingerprint_src = json.dumps(
         {
             "quotas": quotas,
             "seed": args.seed,
             "dataset_revision": dataset_revision,
             "split": args.split,
+            "chunk_strategy": chunk_strategy,
         },
         sort_keys=True,
     )
-    manifest_id = (
-        f"canary-{args.seed}-" f"{hashlib.sha256(fingerprint_src.encode()).hexdigest()[:8]}"
-    )
+    manifest_id = f"canary-{args.seed}-{hashlib.sha256(fingerprint_src.encode()).hexdigest()[:8]}"
 
     logger.info("Manifest ID: %s", manifest_id)
     logger.info("Quotas: %s", quotas)
+    logger.info("Chunk strategy: %s", chunk_strategy)
     logger.info(
         "Dataset revision: %s (%s)", dataset_revision, "pinned" if is_pinned else "resolved HEAD"
     )
 
-    # Step 2: Load tokenizer — fail closed if unavailable
-    logger.info("Loading tokenizer …")
-    from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT, TOKENIZER_REPO, get_tokenizer
+    # Step 2: Resolve tokenizer revision to a full immutable SHA
+    logger.info("Resolving tokenizer revision …")
+    from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT, TOKENIZER_REPO
 
-    tok = get_tokenizer(revision=args.tokenizer_revision)
-    logger.info("Tokenizer loaded: %s (fingerprint=%s)", TOKENIZER_REPO, tok.fingerprint)
-
-    # Refuse HEAD/main/unknown in tokenizer revision for ready_for_write
-    tok_revision_str = args.tokenizer_revision or "HEAD"
+    resolved_tok_revision = _resolve_tokenizer_revision(args.tokenizer_revision, TOKENIZER_REPO)
     tokenizer_revision_pinned = (
         args.tokenizer_revision is not None
         and args.tokenizer_revision not in ("HEAD", "main", "unknown")
         and len(args.tokenizer_revision) >= 7
     )
+    # If we auto-resolved, check it looks like a SHA
+    if not tokenizer_revision_pinned and resolved_tok_revision not in ("HEAD", "main", "unknown"):
+        if len(resolved_tok_revision) >= 7:
+            tokenizer_revision_pinned = True
+
+    logger.info("Loading tokenizer %s revision=%s …", TOKENIZER_REPO, resolved_tok_revision)
+    from hhgoa_rag.ingestion.tokenizer import get_tokenizer
+
+    tok = get_tokenizer(revision=resolved_tok_revision)
+    logger.info("Tokenizer loaded: fingerprint=%s", tok.fingerprint)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -510,6 +681,7 @@ def main() -> None:
     all_native_bn: list[dict] = []
     all_english: list[dict] = []
     seen_en_hashes: set[str] = set()
+    en_dedup_count = 0
 
     hi_parquet_path: str = ""
     bn_parquet_path: str = ""
@@ -522,7 +694,6 @@ def main() -> None:
             args.max_rows_per_config,
         )
 
-        # Validate language metadata
         _validate_language_metadata(rows, config_lang, parquet_path)
 
         native, english = _extract_passages(
@@ -536,11 +707,13 @@ def main() -> None:
             all_native_bn.extend(native)
             bn_parquet_path = parquet_path
 
-        # Global English chunk deduplication across both physical files
+        # Global English deduplication across both physical files
         for rec in english:
             if rec["content_hash"] not in seen_en_hashes:
                 seen_en_hashes.add(rec["content_hash"])
                 all_english.append(rec)
+            else:
+                en_dedup_count += 1
 
     # Step 4: Fail closed if Hindi and Bengali resolve to the same source
     _check_sources_differ(hi_parquet_path, bn_parquet_path)
@@ -553,49 +726,81 @@ def main() -> None:
     )
 
     # Step 5: Within-language deduplication
-    def _dedup(items: list[dict]) -> list[dict]:
+    def _dedup(items: list[dict]) -> tuple[list[dict], int]:
         seen: set[str] = set()
         out: list[dict] = []
+        removed = 0
         for item in items:
             if item["content_hash"] not in seen:
                 seen.add(item["content_hash"])
                 out.append(item)
-        return out
+            else:
+                removed += 1
+        return out, removed
 
-    all_native_hi = _dedup(all_native_hi)
-    all_native_bn = _dedup(all_native_bn)
+    all_native_hi, hi_dedup_count = _dedup(all_native_hi)
+    all_native_bn, bn_dedup_count = _dedup(all_native_bn)
 
-    # Step 6: Deterministic selection (sort by stable key, take first N)
-    sampled_en = _deterministic_select(all_english, quotas["en"], seed=args.seed, lang="en")
-    sampled_hi = _deterministic_select(all_native_hi, quotas["hi"], seed=args.seed, lang="hi")
-    sampled_bn = _deterministic_select(all_native_bn, quotas["bn"], seed=args.seed, lang="bn")
+    deduplication_counts = {
+        "en_cross_file": en_dedup_count,
+        "hi_within": hi_dedup_count,
+        "bn_within": bn_dedup_count,
+    }
 
-    # Step 7: Build prepared records with real tokenization
-    prepared: list[dict] = []
+    logger.info(
+        "After dedup: en=%d, hi=%d, bn=%d",
+        len(all_english),
+        len(all_native_hi),
+        len(all_native_bn),
+    )
+
+    # Step 6: Build prepared records with real tokenization, backfilling if needed
+    split_counts: dict[str, int] = {}
     rejection_counts: dict[str, int] = {}
 
-    def process_lang(samples: list[dict], lang: str) -> list[dict]:
-        out = []
-        rejections = 0
-        for rec in samples:
-            built = _build_prepared_record(
-                rec, dataset_revision, tok, CHUNK_STRATEGY_VERSION, manifest_id
-            )
-            if built is None:
-                rejections += 1
-            else:
-                out.append(built)
-        if rejections:
-            rejection_counts[lang] = rejections
-        return out
-
-    en_records = process_lang(sampled_en, "en")
-    hi_records = process_lang(sampled_hi, "hi")
-    bn_records = process_lang(sampled_bn, "bn")
+    en_records = _fill_quota(
+        all_english,
+        quotas["en"],
+        "en",
+        args.seed,
+        dataset_revision,
+        tok,
+        chunk_strategy,
+        CHUNK_STRATEGY_VERSION,
+        manifest_id,
+        split_counts,
+        rejection_counts,
+    )
+    hi_records = _fill_quota(
+        all_native_hi,
+        quotas["hi"],
+        "hi",
+        args.seed,
+        dataset_revision,
+        tok,
+        chunk_strategy,
+        CHUNK_STRATEGY_VERSION,
+        manifest_id,
+        split_counts,
+        rejection_counts,
+    )
+    bn_records = _fill_quota(
+        all_native_bn,
+        quotas["bn"],
+        "bn",
+        args.seed,
+        dataset_revision,
+        tok,
+        chunk_strategy,
+        CHUNK_STRATEGY_VERSION,
+        manifest_id,
+        split_counts,
+        rejection_counts,
+    )
 
     prepared = en_records + hi_records + bn_records
 
-    # Step 8: Compute per-language stats
+    # Step 7: Compute per-language stats
     actual_counts: dict[str, int] = {}
     actual_tokens: dict[str, int] = {}
     for rec in prepared:
@@ -606,14 +811,14 @@ def main() -> None:
     total_records = len(prepared)
     total_tokens = sum(r["token_length"] for r in prepared)
 
-    # Step 9: Forbidden field audit
+    # Step 8: Forbidden field audit
     forbidden_found: list[str] = []
     for rec in prepared:
         bad = FORBIDDEN_FIELDS & set(rec.keys())
         if bad:
             forbidden_found.extend(sorted(bad))
 
-    # Step 10: Compute deterministic data checksum (excludes timestamps)
+    # Step 9: Compute deterministic data checksum (excludes timestamps)
     data_for_checksum = json.dumps(
         [
             {k: v for k, v in r.items() if k != "manifest_id"}
@@ -624,7 +829,7 @@ def main() -> None:
     ).encode("utf-8")
     prepared_data_checksum = hashlib.sha256(data_for_checksum).hexdigest()
 
-    # Step 11: Atomic write — temp file + rename
+    # Step 10: Atomic write
     jsonl_path = args.output_dir / f"{manifest_id}_records.jsonl"
     jsonl_tmp = jsonl_path.with_suffix(".jsonl.tmp")
     try:
@@ -639,17 +844,19 @@ def main() -> None:
     jsonl_checksum = _sha256_file(jsonl_path)
     jsonl_bytes = jsonl_path.stat().st_size
 
-    # Projected indexed bytes (conservative estimate)
     projected_indexed_bytes = total_records * 1500
 
-    # Starter budget projections
     starter_budget_ok = (
         total_records <= 10_000
         and total_tokens <= 4_000_000
         and projected_indexed_bytes <= int(1.5 * 1024 * 1024 * 1024)
     )
 
-    # Step 12: Determine ready_for_write
+    num_planned_requests, max_records_per_request, max_serialized_request_bytes = (
+        _projected_batches(total_records)
+    )
+
+    # Step 11: Determine ready_for_write
     readiness_failures: list[str] = []
     if not is_pinned:
         readiness_failures.append(
@@ -657,27 +864,31 @@ def main() -> None:
         )
     if not tokenizer_revision_pinned:
         readiness_failures.append(
-            f"tokenizer_revision is not a pinned SHA: {tok_revision_str!r} "
+            f"tokenizer_revision is not a pinned SHA: {resolved_tok_revision!r} "
             "(pass --tokenizer-revision <full-sha>)"
         )
-    if actual_counts.get("en", 0) < quotas["en"]:
+    if actual_counts.get("en", 0) != quotas["en"]:
         readiness_failures.append(
-            f"English quota not met: {actual_counts.get('en', 0)} < {quotas['en']}"
+            f"English quota not met: {actual_counts.get('en', 0)} != {quotas['en']}"
         )
-    if actual_counts.get("hi", 0) < quotas["hi"]:
+    if actual_counts.get("hi", 0) != quotas["hi"]:
         readiness_failures.append(
-            f"Hindi quota not met: {actual_counts.get('hi', 0)} < {quotas['hi']}"
+            f"Hindi quota not met: {actual_counts.get('hi', 0)} != {quotas['hi']}"
         )
-    if actual_counts.get("bn", 0) < quotas["bn"]:
+    if actual_counts.get("bn", 0) != quotas["bn"]:
         readiness_failures.append(
-            f"Bengali quota not met: {actual_counts.get('bn', 0)} < {quotas['bn']}"
+            f"Bengali quota not met: {actual_counts.get('bn', 0)} != {quotas['bn']}"
         )
     if forbidden_found:
         readiness_failures.append(f"Forbidden fields present: {sorted(set(forbidden_found))}")
     if not starter_budget_ok:
         readiness_failures.append("Starter budget projections exceeded")
     if rejection_counts:
-        readiness_failures.append(f"Some records rejected (over token limit): {rejection_counts}")
+        total_rejected = sum(rejection_counts.values())
+        readiness_failures.append(
+            f"Some passages permanently rejected (over token limit after splitting): "
+            f"{rejection_counts} (total={total_rejected})"
+        )
 
     ready_for_write = len(readiness_failures) == 0
 
@@ -706,12 +917,14 @@ def main() -> None:
         "prepared_data_bytes": jsonl_bytes,
         "projected_indexed_bytes": projected_indexed_bytes,
         "tokenizer_repo": TOKENIZER_REPO,
-        "tokenizer_revision": tok_revision_str,
+        "tokenizer_revision": resolved_tok_revision,
         "tokenizer_revision_pinned": tokenizer_revision_pinned,
         "tokenizer_fingerprint": tok.fingerprint,
         "model_input_limit": MODEL_INPUT_LIMIT,
-        "chunk_strategy": CHUNK_STRATEGY,
+        "chunk_strategy": chunk_strategy,
         "chunk_strategy_version": CHUNK_STRATEGY_VERSION,
+        "deduplication_counts": deduplication_counts,
+        "split_counts": split_counts,
         "rejection_counts": rejection_counts,
         "forbidden_field_audit": (
             "PASS" if not forbidden_found else f"FAIL: {sorted(set(forbidden_found))}"
@@ -719,6 +932,9 @@ def main() -> None:
         "prepared_record_path": str(jsonl_path),
         "prepared_record_checksum": jsonl_checksum,
         "prepared_data_checksum": prepared_data_checksum,
+        "number_of_planned_requests": num_planned_requests,
+        "maximum_records_in_a_request": max_records_per_request,
+        "maximum_serialized_request_bytes": max_serialized_request_bytes,
         "starter_budget_projections": {
             "records_ok": total_records <= 10_000,
             "tokens_ok": total_tokens <= 4_000_000,
@@ -730,14 +946,12 @@ def main() -> None:
         "readiness_failures": readiness_failures,
     }
 
-    # Manifest checksum (over content excluding the checksum field itself)
     manifest_for_checksum = {k: v for k, v in manifest.items() if k != "manifest_checksum"}
     manifest_checksum = hashlib.sha256(
         json.dumps(manifest_for_checksum, sort_keys=True, ensure_ascii=False).encode("utf-8")
     ).hexdigest()
     manifest["manifest_checksum"] = manifest_checksum
 
-    # Atomic manifest write
     manifest_path = args.output_dir / f"{manifest_id}_manifest.json"
     manifest_tmp = manifest_path.with_suffix(".json.tmp")
     try:
@@ -759,6 +973,7 @@ def main() -> None:
             f"bn={actual_counts.get('bn', 0)})"
         )
         print(f"  Total tokens : {total_tokens:,}")
+        print(f"  Chunk strat  : {chunk_strategy}")
         print(f"  JSONL path   : {jsonl_path}")
         print(f"  Manifest     : {manifest_path}")
         print(

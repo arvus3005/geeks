@@ -529,6 +529,7 @@ def _make_minimal_manifest(tmp_path: Path) -> dict:
         "readiness_failures": [],
         "forbidden_field_audit": "PASS",
         "tokenizer_fingerprint": "abcdef1234567890",
+        "actual_per_language_records": {"en": 2, "hi": 2, "bn": 1},
     }
 
 
@@ -614,6 +615,8 @@ def test_dry_run_does_not_import_pinecone(tmp_path):
     manifest = _make_minimal_manifest(tmp_path)
     manifest["prepared_record_path"] = str(records_path)
     manifest["total_records"] = 0
+    manifest["total_tokens"] = 0
+    manifest["actual_per_language_records"] = {}
     manifest["prepared_record_checksum"] = empty_checksum
     _write_manifest_with_checksum(manifest, tmp_path)
 

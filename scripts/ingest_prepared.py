@@ -3,26 +3,34 @@
 
 Reads the JSONL produced by prepare_canary.py and ingests it into Pinecone.
 
-Dry-run mode (--dry-run):
+Dry-run mode (default — without --execute and CONFIRM_PINECONE_WRITE=1):
   - Validates manifest and data file
   - Builds batches and calculates budget
   - Prints a full plan
   - NEVER imports or instantiates Pinecone
   - NEVER reads PINECONE_API_KEY
 
-Live mode (no --dry-run):
+Live mode (--execute AND CONFIRM_PINECONE_WRITE=1 AND PINECONE_API_KEY set):
   - Requires all manifest/data validations to pass before constructing Pinecone client
   - Credentials must come from PINECONE_API_KEY environment variable only
   - Refuses unsafe collection names (smoke/pilot safety guards apply)
 
 Usage:
   # Dry run (no credentials needed):
-  uv run python scripts/ingest_prepared.py --manifest artifacts/prepared/<id>_manifest.json --dry-run
+  uv run python scripts/ingest_prepared.py \\
+      --manifest artifacts/prepared/<id>_manifest.json \\
+      --dry-run
+
+  # Dry run (also works without --dry-run if CONFIRM_PINECONE_WRITE not set):
+  uv run python scripts/ingest_prepared.py \\
+      --manifest artifacts/prepared/<id>_manifest.json
 
   # Live ingest:
-  PINECONE_API_KEY=... uv run python scripts/ingest_prepared.py \\
+  PINECONE_API_KEY=... CONFIRM_PINECONE_WRITE=1 \\
+      uv run python scripts/ingest_prepared.py \\
       --manifest artifacts/prepared/<id>_manifest.json \\
-      --namespace pilot_canary_001
+      --execute \\
+      --namespace pilot_canary_v1
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ import hashlib
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -40,6 +49,15 @@ logger = logging.getLogger(__name__)
 # Batch limits for Pinecone Starter
 MAX_RECORDS_PER_BATCH = 96
 MAX_BYTES_PER_BATCH = 1_800_000  # 1.8 MB serialized
+
+# Expected per-language counts for this pilot
+EXPECTED_PER_LANG = 100
+EXPECTED_TOTAL = 300
+EXPECTED_LANGUAGES = {"en", "hi", "bn"}
+
+# Bounded retry parameters
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 2.0  # seconds
 
 # Required manifest fields
 REQUIRED_MANIFEST_FIELDS = {
@@ -56,6 +74,7 @@ REQUIRED_MANIFEST_FIELDS = {
     "readiness_failures",
     "forbidden_field_audit",
     "tokenizer_fingerprint",
+    "actual_per_language_records",
 }
 
 FORBIDDEN_FIELDS = {"query", "Answer", "Eng_Query", "Eng_Answer", "query_type", "is_selected"}
@@ -87,6 +106,14 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--execute",
+        action="store_true",
+        help=(
+            "Perform real Pinecone writes. "
+            "Also requires CONFIRM_PINECONE_WRITE=1 and PINECONE_API_KEY."
+        ),
+    )
+    p.add_argument(
         "--pinecone-index",
         default=None,
         help="Pinecone index name (overrides PINECONE_INDEX env var)",
@@ -99,6 +126,13 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _is_live_mode(args: argparse.Namespace) -> bool:
+    """True only if --execute AND CONFIRM_PINECONE_WRITE=1 are both set."""
+    import os
+
+    return args.execute and os.environ.get("CONFIRM_PINECONE_WRITE") == "1"
+
+
 def _load_manifest(manifest_path: Path) -> dict:
     """Load and validate the manifest file. Raises on any validation failure."""
     if not manifest_path.exists():
@@ -106,12 +140,10 @@ def _load_manifest(manifest_path: Path) -> dict:
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
-    # Check required fields
     missing = REQUIRED_MANIFEST_FIELDS - set(manifest.keys())
     if missing:
         raise ValueError(f"Manifest missing required fields: {sorted(missing)}")
 
-    # Verify manifest checksum
     stored_checksum = manifest.get("manifest_checksum")
     if stored_checksum:
         manifest_for_checksum = {k: v for k, v in manifest.items() if k != "manifest_checksum"}
@@ -124,7 +156,6 @@ def _load_manifest(manifest_path: Path) -> dict:
                 "Manifest may have been tampered with."
             )
 
-    # Check forbidden field audit
     if manifest.get("forbidden_field_audit", "").startswith("FAIL"):
         raise ValueError(
             f"Manifest forbidden field audit failed: {manifest['forbidden_field_audit']}. "
@@ -158,8 +189,11 @@ def _verify_data_file(manifest: dict) -> Path:
     return record_path
 
 
-def _load_records(record_path: Path) -> list[dict]:
-    """Load and validate all records from the JSONL file."""
+def _load_and_validate_records(record_path: Path, manifest: dict) -> list[dict]:
+    """Load, validate, and return all records from the JSONL file."""
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, validate_record
+    from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT
+
     records = []
     with open(record_path, encoding="utf-8") as f:
         for lineno, line in enumerate(f, 1):
@@ -171,7 +205,109 @@ def _load_records(record_path: Path) -> list[dict]:
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON on line {lineno} of {record_path}: {e}") from e
 
-            # Check for forbidden fields
+            # Forbidden field check
+            bad = FORBIDDEN_FIELDS & set(rec.keys())
+            if bad:
+                raise ValueError(
+                    f"Forbidden fields found in record on line {lineno}: {sorted(bad)}. "
+                    "Refusing to ingest."
+                )
+
+            if not rec.get("id"):
+                raise ValueError(f"Record on line {lineno} has empty or missing 'id'.")
+
+            if not rec.get("chunk_text"):
+                raise ValueError(f"Record on line {lineno} has empty or missing 'chunk_text'.")
+
+            # Token limit check
+            token_length = rec.get("token_length", 0)
+            if not isinstance(token_length, int) or token_length <= 0:
+                raise ValueError(
+                    f"Record on line {lineno} has invalid token_length: {token_length!r}"
+                )
+            if token_length > MODEL_INPUT_LIMIT:
+                raise ValueError(
+                    f"Record on line {lineno} id={rec['id']!r} exceeds model token limit: "
+                    f"{token_length} > {MODEL_INPUT_LIMIT}"
+                )
+
+            # Individual record byte size check
+            rec_bytes = len(json.dumps(rec, ensure_ascii=False).encode("utf-8"))
+            if rec_bytes > MAX_BYTES_PER_BATCH:
+                raise ValueError(
+                    f"Record on line {lineno} id={rec['id']!r} serialized size {rec_bytes} "
+                    f"exceeds individual limit {MAX_BYTES_PER_BATCH}. Refusing to ingest."
+                )
+
+            # Authoritative schema validation
+            try:
+                validate_record(rec)
+            except SchemaViolationError as e:
+                raise ValueError(f"Schema violation on line {lineno}: {e}") from e
+
+            records.append(rec)
+
+    # Total record count validation against manifest
+    manifest_total = manifest["total_records"]
+    if len(records) != manifest_total:
+        raise ValueError(
+            f"Record count mismatch: manifest says {manifest_total}, " f"file has {len(records)}."
+        )
+
+    # Per-language count validation against manifest's declared counts
+    lang_counts: dict[str, int] = {}
+    for rec in records:
+        lang = rec.get("language", "unknown")
+        lang_counts[lang] = lang_counts.get(lang, 0) + 1
+
+    manifest_lang_counts = manifest.get("actual_per_language_records", {})
+    for lang, expected_count in manifest_lang_counts.items():
+        actual = lang_counts.get(lang, 0)
+        if actual != expected_count:
+            raise ValueError(
+                f"Per-language count mismatch for '{lang}': "
+                f"manifest says {expected_count}, file has {actual}."
+            )
+
+    # When this is a full pilot (300 records), enforce exact 100/100/100
+    if manifest_total == EXPECTED_TOTAL:
+        for lang in EXPECTED_LANGUAGES:
+            actual = lang_counts.get(lang, 0)
+            if actual != EXPECTED_PER_LANG:
+                raise ValueError(
+                    f"Per-language count mismatch for '{lang}': expected {EXPECTED_PER_LANG}, "
+                    f"got {actual}."
+                )
+
+    # Total token validation
+    file_total_tokens = sum(r.get("token_length", 0) for r in records)
+    manifest_total_tokens = manifest.get("total_tokens", 0)
+    if manifest_total_tokens > 0 and file_total_tokens != manifest_total_tokens:
+        raise ValueError(
+            f"Total token count mismatch: manifest={manifest_total_tokens}, "
+            f"file={file_total_tokens}."
+        )
+
+    return records
+
+
+def _load_records(record_path: Path) -> list[dict]:
+    """Basic record loader without manifest cross-validation.
+
+    Kept for backward compatibility with tests that call this standalone.
+    For the live/dry-run path use _load_and_validate_records.
+    """
+    records = []
+    with open(record_path, encoding="utf-8") as f:
+        for lineno, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON on line {lineno} of {record_path}: {e}") from e
+
             bad = FORBIDDEN_FIELDS & set(rec.keys())
             if bad:
                 raise ValueError(
@@ -183,7 +319,6 @@ def _load_records(record_path: Path) -> list[dict]:
                 raise ValueError(f"Record on line {lineno} has empty or missing 'id'.")
 
             records.append(rec)
-
     return records
 
 
@@ -195,7 +330,6 @@ def _build_batches(records: list[dict]) -> list[list[dict]]:
 
     for rec in records:
         rec_bytes = len(json.dumps(rec, ensure_ascii=False).encode("utf-8"))
-        # Check if adding this record would exceed limits
         if current_batch and (
             len(current_batch) >= MAX_RECORDS_PER_BATCH
             or current_bytes + rec_bytes > MAX_BYTES_PER_BATCH
@@ -222,18 +356,17 @@ def _print_plan(
     print(f"  Manifest ID       : {manifest['manifest_id']}")
     print(f"  Dataset revision  : {manifest['dataset_revision']}")
     print(f"  Total records     : {len(records)}")
-    print(
-        f"  Total tokens      : {manifest.get('total_tokens', 'N/A'):,}"
-        if isinstance(manifest.get("total_tokens"), int)
-        else f"  Total tokens      : {manifest.get('total_tokens', 'N/A')}"
-    )
+    total_tokens = manifest.get("total_tokens", "N/A")
+    if isinstance(total_tokens, int):
+        print(f"  Total tokens      : {total_tokens:,}")
+    else:
+        print(f"  Total tokens      : {total_tokens}")
     print(f"  Target namespace  : {namespace}")
     print(f"  Batches           : {len(batches)}")
     print(f"  Max batch records : {MAX_RECORDS_PER_BATCH}")
     print(f"  Max batch bytes   : {MAX_BYTES_PER_BATCH:,}")
     print()
 
-    # Per-language breakdown
     lang_counts: dict[str, int] = {}
     for rec in records:
         lang = rec.get("language", "unknown")
@@ -243,19 +376,21 @@ def _print_plan(
         print(f"    {lang}: {count}")
     print()
 
-    # Batch sizes
     print("  Batch sizes (records / bytes):")
+    max_batch_bytes = 0
     for i, batch in enumerate(batches):
         batch_bytes = sum(len(json.dumps(r, ensure_ascii=False).encode()) for r in batch)
+        max_batch_bytes = max(max_batch_bytes, batch_bytes)
         print(f"    Batch {i+1:03d}: {len(batch)} records, {batch_bytes:,} bytes")
 
     print()
+    print(f"  Max actual batch bytes : {max_batch_bytes:,}")
     print("  Ready for write   :", manifest.get("ready_for_write", False))
     failures = manifest.get("readiness_failures", [])
     if failures:
         print("  Readiness failures:")
-        for f in failures:
-            print(f"    - {f}")
+        for f_msg in failures:
+            print(f"    - {f_msg}")
     print("=" * 60)
     print()
 
@@ -264,6 +399,13 @@ def main() -> None:
     args = _build_parser().parse_args()
 
     manifest_path: Path = args.manifest
+
+    # Determine mode BEFORE touching any Pinecone-related code
+    live_mode = _is_live_mode(args)
+    dry_mode = not live_mode
+
+    if dry_mode and args.execute:
+        logger.info("--execute was set but CONFIRM_PINECONE_WRITE=1 is not set — running dry-run.")
 
     # Step 1: Load and validate manifest (always, including dry-run)
     logger.info("Loading manifest: %s", manifest_path)
@@ -279,14 +421,8 @@ def main() -> None:
     record_path = _verify_data_file(manifest)
     logger.info("Data file verified: %s", record_path)
 
-    records = _load_records(record_path)
-    logger.info("Loaded %d records from data file", len(records))
-
-    if len(records) != manifest["total_records"]:
-        raise ValueError(
-            f"Record count mismatch: manifest says {manifest['total_records']}, "
-            f"file has {len(records)}."
-        )
+    records = _load_and_validate_records(record_path, manifest)
+    logger.info("Loaded and validated %d records from data file", len(records))
 
     # Step 3: Determine target namespace
     namespace = args.namespace or f"pilot_{manifest['manifest_id']}"
@@ -295,8 +431,7 @@ def main() -> None:
     batches = _build_batches(records)
     logger.info("Built %d batches from %d records", len(batches), len(records))
 
-    if args.dry_run:
-        # Dry-run: print plan and exit. Never touch Pinecone.
+    if dry_mode:
         _print_plan(manifest, records, batches, namespace)
         print("DRY RUN complete — no records were written.")
         sys.exit(0)
@@ -314,9 +449,7 @@ def main() -> None:
         logger.error("PINECONE_API_KEY environment variable is not set. Cannot proceed.")
         sys.exit(1)
 
-    import os as _os
-
-    index_name = args.pinecone_index or _os.environ.get("PINECONE_INDEX", "msmarco-xi")
+    index_name = args.pinecone_index or os.environ.get("PINECONE_INDEX", "msmarco-xi")
 
     # Only import Pinecone after all validations pass
     from pinecone import Pinecone
@@ -326,8 +459,7 @@ def main() -> None:
     if not is_safe_namespace(namespace):
         logger.error(
             "Namespace '%s' is not a safe namespace for prepared ingestion. "
-            "Only smoke/* and pilot_* namespaces are permitted. "
-            "Use the full ingestion pipeline for the full namespace.",
+            "Only smoke/* and pilot_* namespaces are permitted.",
             namespace,
         )
         sys.exit(1)
@@ -339,16 +471,52 @@ def main() -> None:
 
     total_submitted = 0
     for i, batch in enumerate(batches):
-        logger.info(
-            "Upserting batch %d/%d (%d records) into namespace '%s' …",
-            i + 1,
-            len(batches),
-            len(batch),
-            namespace,
-        )
-        submitted = store.upsert_records(batch, namespace=namespace, context="pilot")
-        total_submitted += submitted
-        logger.info("Batch %d/%d complete: %d records submitted", i + 1, len(batches), submitted)
+        last_exc: Exception | None = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                logger.info(
+                    "Upserting batch %d/%d (%d records) into namespace '%s' (attempt %d/%d) …",
+                    i + 1,
+                    len(batches),
+                    len(batch),
+                    namespace,
+                    attempt,
+                    MAX_RETRIES,
+                )
+                submitted = store.upsert_records(batch, namespace=namespace, context="pilot")
+                total_submitted += submitted
+                logger.info(
+                    "Batch %d/%d complete: %d records submitted",
+                    i + 1,
+                    len(batches),
+                    submitted,
+                )
+                last_exc = None
+                break
+            except Exception as exc:
+                last_exc = exc
+                if attempt < MAX_RETRIES:
+                    delay = RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    logger.warning(
+                        "Batch %d/%d attempt %d/%d failed: %s — retrying in %.1fs",
+                        i + 1,
+                        len(batches),
+                        attempt,
+                        MAX_RETRIES,
+                        exc,
+                        delay,
+                    )
+                    time.sleep(delay)
+
+        if last_exc is not None:
+            logger.error(
+                "Batch %d/%d failed after %d attempts: %s",
+                i + 1,
+                len(batches),
+                MAX_RETRIES,
+                last_exc,
+            )
+            sys.exit(1)
 
     logger.info(
         "Ingestion complete: %d/%d records submitted to namespace '%s'",

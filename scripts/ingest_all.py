@@ -111,6 +111,22 @@ def _check_write_guards(mode: str, args: argparse.Namespace) -> bool:
 def main() -> None:
     args = _build_parser().parse_args()
 
+    # ── Block raw-HF pilot/canary ingestion — redirect to ingest_prepared.py ──
+    if args.mode in ("pilot", "canary"):
+        print(
+            f"ERROR: Raw HuggingFace pilot/canary ingestion via {__file__} is blocked.\n"
+            "Use the prepared-data path instead:\n"
+            "  uv run python scripts/prepare_canary.py --dataset-revision <sha> "
+            "--tokenizer-revision <sha>\n"
+            "  uv run python scripts/ingest_prepared.py "
+            "--manifest artifacts/prepared/<id>_manifest.json --dry-run\n"
+            "  PINECONE_API_KEY=... CONFIRM_PINECONE_WRITE=1 \\\n"
+            "    uv run python scripts/ingest_prepared.py "
+            "--manifest artifacts/prepared/<id>_manifest.json --execute",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # ── Validate batch size before any other processing ───────────────────────
     if not (1 <= args.batch_size <= 96):
         print(

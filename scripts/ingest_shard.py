@@ -48,6 +48,19 @@ def main() -> None:
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
 
+    # ── Block raw-HF pilot ingestion — redirect to ingest_prepared.py ──────
+    if args.mode == "pilot":
+        print(
+            f"ERROR: Raw HuggingFace pilot ingestion via {__file__} is blocked.\n"
+            "Use the prepared-data path instead:\n"
+            "  uv run python scripts/prepare_canary.py --dataset-revision <sha> "
+            "--tokenizer-revision <sha>\n"
+            "  uv run python scripts/ingest_prepared.py "
+            "--manifest artifacts/prepared/<id>_manifest.json --execute",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     if not (1 <= args.batch_size <= 96):
         print(
             f"ERROR: --batch-size must be between 1 and 96, got {args.batch_size}",

@@ -35,6 +35,17 @@ def main() -> None:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # ── Block raw-HF pilot/canary checkpoint resumption ──────────────────────
+    if getattr(ckpt, "mode", None) in ("pilot", "canary"):
+        print(
+            f"ERROR: Resuming raw-HF pilot/canary checkpoints via {__file__} is blocked.\n"
+            "Use the prepared-data path for pilot ingestion:\n"
+            "  uv run python scripts/ingest_prepared.py "
+            "--manifest artifacts/prepared/<id>_manifest.json --execute",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # Starter full-mode block — BEFORE any other checks
     from hhgoa_rag.ingestion.budget import get_plan
 
