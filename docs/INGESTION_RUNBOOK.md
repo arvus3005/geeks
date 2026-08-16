@@ -61,22 +61,21 @@ uv run python scripts/audit_ids.py \
 
 ## Step 3: Offline dry-run
 
+**Preferred path** (uses the approved canary indexer with full record validation):
 ```bash
-# From repo root
+uv run python scripts/index_canary.py \
+    --manifest artifacts/prepared/<manifest_id>_manifest.json
+```
+
+**Legacy-compatible path** (lower-level, still supported):
+```bash
 uv run python scripts/ingest_prepared.py \
     --manifest artifacts/prepared/<manifest_id>_manifest.json \
     --dry-run
-
-# From a different working directory (must work portably)
-cd /tmp
-uv run python --project /path/to/geeks \
-    /path/to/geeks/scripts/ingest_prepared.py \
-    --manifest /path/to/geeks/artifacts/prepared/<manifest_id>_manifest.json \
-    --dry-run
 ```
 
-No credentials are needed. No Pinecone import occurs. Exit 0 means all
-manifest/data validations passed.
+No credentials are needed. No Pinecone import occurs in either dry-run path.
+Exit 0 means all manifest/data validations (including `validate_record()` on every record) passed.
 
 ---
 
@@ -131,7 +130,42 @@ These tests are opt-in and never run in normal CI.
 
 ## Step 7: Ingest 300-record canary into pilot_v1
 
-**Both guards required.**
+**Both guards required. `PINECONE_API_KEY` must already be exported in the environment.**
+
+### Approved canary path (scripts/index_canary.py)
+
+Foreground (recommended for first run):
+```bash
+export PINECONE_API_KEY=<your-key>
+CONFIRM_PINECONE_WRITE=1 \
+    uv run python scripts/index_canary.py \
+    --manifest artifacts/prepared/<manifest_id>_manifest.json \
+    --execute --resume --concurrency 4
+```
+
+Background execution (nohup + checkpoint resume as primary recovery):
+```bash
+export PINECONE_API_KEY=<your-key>
+nohup env CONFIRM_PINECONE_WRITE=1 \
+    uv run python scripts/index_canary.py \
+    --manifest artifacts/prepared/<manifest_id>_manifest.json \
+    --execute --resume > logs/index_canary.log 2>&1 &
+```
+
+> **Important**: Use `nohup env VAR=val ...` syntax so environment variables are
+> correctly passed when `nohup` detaches from the shell. `PINECONE_API_KEY` must
+> already be exported (via `export`) before running the background command.
+
+`index_canary.py` will:
+1. Validate manifest (checksum, contract fingerprint, all provenance fields)
+2. Verify data file (checksum)
+3. Validate all records via `validate_record()` — before any Pinecone client is constructed
+4. Validate remote index contract against canonical values
+5. Only then submit batches (max 96 records, 225,000 tokens/min ceiling)
+6. Save checkpoint after each acknowledged batch (resumable)
+7. Perform freshness reconciliation — must reach exactly 300 vectors
+
+### Legacy-compatible alternative (scripts/ingest_prepared.py)
 
 ```bash
 PINECONE_API_KEY=<your-key> CONFIRM_PINECONE_WRITE=1 \
@@ -141,15 +175,8 @@ PINECONE_API_KEY=<your-key> CONFIRM_PINECONE_WRITE=1 \
     --execute
 ```
 
-The script will:
-1. Validate manifest (checksum, forbidden fields, contract fingerprint, namespace)
-2. Verify data file (checksum)
-3. Validate all records via `validate_record()`
-4. Describe and validate actual remote index against canonical contract
-5. Abort if any field missing/unverifiable/incompatible
-6. Only then submit batches (max 96 records, max 1.8 MB each)
-
 ---
+
 
 ## Step 8: Reconcile counts
 

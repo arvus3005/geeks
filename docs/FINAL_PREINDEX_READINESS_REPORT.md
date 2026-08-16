@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-16
 **Verdict:** `CODE READY FOR GEMINI CANARY EXECUTION`
-**Tested code commit:** 148e2537b54749597aa2022de08ed2b2555c72de
+**Tested code commit:** 51365299dc38ab676d1db903acc7617bc566ea06
+**Prior commit:** 148e2537b54749597aa2022de08ed2b2555c72de
 **Working-tree status:** Clean — all changes committed and pushed
 
 ---
@@ -94,6 +95,20 @@ Legacy v2 manifests are unconditionally rejected by all production ingestion pat
 | 7. `SCHEMA_VERSION = "2"` while emitting `"3"` | FIXED — removed ambiguous variable; imports `MANIFEST_SCHEMA_VERSION` from contract |
 | 8. Canonical constants duplicated across scripts | FIXED — `prepare_canary.py` and `ingest_prepared.py` import from `pinecone_contract` |
 | 9. `FIELD_MAP`, `WRITE_PARAMETERS`, `READ_PARAMETERS` mutable | FIXED — `MappingProxyType`; `canonical_contract()` returns deep copy |
+| 10. `validate_record()` not called before provider construction | FIXED — called on every JSONL record in `_verify_and_load_records()` before any Pinecone import |
+| 11. Duplicate record IDs not detected | FIXED — `seen_ids` set check per record |
+| 12. Token total not verified against manifest | FIXED — `sum(token_length)` compared to `manifest.total_tokens` |
+| 13. Actual language counts not verified against manifest | FIXED — per-language count compared after loading |
+| 14. Provenance fields not required in manifest | FIXED — `tokenizer_repo/revision/fingerprint`, `model_input_limit`, `dataset_repo` now in `REQUIRED_MANIFEST_FIELDS`; each validated against canonical contract |
+| 15. Checkpoint recovery fails open on corrupt files | FIXED — `_CorruptCheckpointError` raised; never returns None |
+| 16. Token rate limiter not thread-safe | FIXED — `_rate_lock = threading.Lock()` protects `_window_start`/`_window_tokens` |
+| 17. CLI accepts zero/negative values | FIXED — exit 2 on `--batch-size/--concurrency/--token-rate-limit <= 0` |
+| 18. Failure status never written to report when `sys.exit()` called inside `_run()` | FIXED — `CanaryError` exception class; `SystemExit` catch sets `status:failed` in `report_data` |
+| 19. Freshness reconciliation uses `>= 300` (over-count passes) | FIXED — exact `== 300`; over-300 → contamination error |
+| 20. Reconciliation timeout yields `partial_success` | FIXED — yields `failed` |
+| 21. `_MAX_TOKENS = 507` duplicated in `schema.py` | FIXED — imports `MAX_INPUT_TOKENS` from `pinecone_contract` |
+| 22. Literal `96` in `pinecone_store.py` | FIXED — imports `MAX_BATCH_SIZE` from `pinecone_contract` |
+| 23. Duplicated contract literals in `budget.py` | FIXED — imports `MODEL/TEXT_FIELD/FIELD_MAP/REGION/CLOUD` from `pinecone_contract` |
 
 ---
 
@@ -129,18 +144,41 @@ Previous artifact (`canary-42-02c06c8a0809`) fails the strict v3 loader and must
 
 ## Offline chunking benchmark results
 
-Run: `uv run python bench/chunking_ablation.py --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 --config-lang hi --max-rows 100 --seed 42`
+### Hindi (hi) — validation split, 200 rows
+
+Run: `uv run python bench/chunking_ablation.py --config-lang hi`
 
 | Strategy | Passages | Chunks | Expansion | Token P95 | MRR@10 (proxy) | R@10 (proxy) |
 |---|---|---|---|---|---|---|
-| passage_native | 1000 | 999 | 1.00 | 176 | 0.950 | 1.000 |
-| **sentence_aware** | **1000** | **1039** | **1.04** | **161** | **0.950** | **1.000** |
-| fixed_token_overlap | 1000 | 1032 | 1.03 | 179 | 0.950 | 1.000 |
-| parent_child | 1000 | 2038 | 2.04 | 168 | 0.933 | 1.000 |
+| passage_native | 2000 | 1994 | 1.00 | 182 | 1.000 | 1.000 |
+| **sentence_aware** | **2000** | **2120** | **1.06** | **177** | **1.000** | **1.000** |
+| fixed_token_overlap | 2000 | 2090 | 1.05 | 184 | 1.000 | 1.000 |
+| parent_child | 2000 | 4114 | 2.06 | 180 | 1.000 | 1.000 |
 
-**Selected canary strategy: `sentence_aware`** — lowest expansion (1.04x), lowest P95 token count (161),
-equal retrieval proxy to passage_native, without the 2x overhead of parent_child.
-Token P95 is well within the 507-token limit. No strategy change required; no canary regeneration needed.
+### English (en) — validation split, 200 rows
+
+Run: `uv run python bench/chunking_ablation.py --config-lang en`
+
+| Strategy | Passages | Chunks | Expansion | Token P95 | MRR@10 (proxy) | R@10 (proxy) |
+|---|---|---|---|---|---|---|
+| passage_native | 2000 | 2000 | 1.00 | 148 | 0.309 | 1.000 |
+| **sentence_aware** | **2000** | **2083** | **1.04** | **140** | **0.305** | **1.000** |
+| fixed_token_overlap | 2000 | 2015 | 1.01 | 148 | 0.309 | 1.000 |
+| parent_child | 2000 | 4083 | 2.04 | 143 | 0.238 | 0.784 |
+
+### Bengali (bn) — validation split, 200 rows
+
+Run: `uv run python bench/chunking_ablation.py --config-lang bn`
+
+| Strategy | Passages | Chunks | Expansion | Token P95 | MRR@10 (proxy) | R@10 (proxy) |
+|---|---|---|---|---|---|---|
+| passage_native | 2000 | 1996 | 1.00 | 197 | 1.000 | 1.000 |
+| **sentence_aware** | **2000** | **2083** | **1.04** | **189** | **1.000** | **1.000** |
+| fixed_token_overlap | 2000 | 2021 | 1.01 | 201 | 1.000 | 1.000 |
+| parent_child | 2000 | 4079 | 2.04 | 192 | 1.000 | 1.000 |
+
+**Selected canary strategy: `sentence_aware`** — consistent 1.04–1.06x expansion across all three
+languages; P95 token counts 140–189, all well within the 507-token model limit.
 
 *Metrics are OFFLINE PROXY only — BM25-style token-overlap ranking, NOT live Pinecone vector search.*
 
@@ -150,26 +188,40 @@ Token P95 is well within the 507-token limit. No strategy change required; no ca
 
 ```
 uv run pytest tests/unit/ tests/behavioural/ tests/contract/ -q
-429 passed in ~5s  (exit 0)
+476 passed in ~5s  (exit 0)
 
-uv run ruff format --check src/ tests/ bench/ scripts/   → 102 files already formatted (exit 0)
+uv run ruff format --check src/ tests/ bench/ scripts/   → 103 files already formatted (exit 0)
 uv run ruff check src/ tests/ bench/ scripts/             → All checks passed! (exit 0)
 uv run mypy src                                           → Success: no issues found (exit 0)
-uv run python scripts/scan_secrets.py                    → .env only (expected; not committed) (exit 0)
+uv run python scripts/scan_secrets.py                    → .env only (expected; not committed) (exit 1 expected — .env gitignored)
 uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi  → dry-run OK (exit 0)
 uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi --execute  → exit 2 (fail-closed) ✓
 uv run python scripts/index_canary.py --manifest artifacts/prepared/canary-42-ee540c17772a_manifest.json  → DRY-RUN complete (exit 0)
 ```
 
-### New regression tests added (62 tests in `tests/unit/test_sdk_validation.py`)
+### Regression tests added (this hardening pass)
 
-- Pinecone 9.1.0 SDK-shaped validator: 11 tests
-- Strict manifest validation (each required field): 12 tests
-- Immutable contract mappings: 8 tests
-- FixedTokenChunker real-tokenizer mode: 8 tests
-- index_canary dry-run: 5 tests
-- index_canary checkpoint/resume: 7 tests
-- index_canary transient retry: 3 tests
+**47 tests in `tests/unit/test_preindex_hardening_v2.py`:**
+
+- `validate_record()` called before provider construction: 2 tests
+- Forbidden fields and canonical MAX_INPUT_TOKENS: 3 tests
+- Duplicate record ID detection: 1 test
+- Incorrect actual language counts: 1 test
+- Manifest vs JSONL token-total mismatch: 1 test
+- Provenance field validation (6 parametrized + missing field): 7 tests
+- Corrupt checkpoint fail-closed: 5 tests
+- Incompatible checkpoint rejection: 1 test
+- Concurrent rate-limit reservations: 2 tests
+- Zero/negative CLI values (8 cases + execute-without-confirm): 9 tests
+- Failure reports never remaining "started": 3 tests
+- SDK object and dict stats shapes: 4 tests
+- Namespace counts 299/300/301: 3 tests
+- Dry-run zero provider calls: 2 tests
+- Resume skipping compatible batches: 1 test
+- Idempotent re-run: 1 test
+- PineconeStore MAX_BATCH_SIZE canonical: 1 test
+
+**Prior regression tests (from test_sdk_validation.py): 62 tests** — all still pass.
 
 ---
 
@@ -194,7 +246,8 @@ uv run python scripts/index_canary.py --manifest artifacts/prepared/canary-42-ee
 ## Gemini canary command
 
 ```bash
-CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> \
+export PINECONE_API_KEY=<key>
+CONFIRM_PINECONE_WRITE=1 \
   uv run python scripts/index_canary.py \
     --manifest artifacts/prepared/canary-42-ee540c17772a_manifest.json \
     --execute --resume --concurrency 4
@@ -210,8 +263,13 @@ uv run python scripts/prepare_canary.py \
 
 Background execution (nohup, checkpoint/resume as primary recovery):
 ```bash
-nohup CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> \
+export PINECONE_API_KEY=<key>
+nohup env CONFIRM_PINECONE_WRITE=1 \
   uv run python scripts/index_canary.py \
     --manifest artifacts/prepared/canary-42-ee540c17772a_manifest.json \
     --execute --resume > logs/index_canary.log 2>&1 &
 ```
+
+> **Important**: Use `nohup env VAR=val ...` syntax. `PINECONE_API_KEY` must be exported
+> (via `export`) before running the background command; nohup does not preserve unexported
+> shell variables.

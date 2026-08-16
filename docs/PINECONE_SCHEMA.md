@@ -95,7 +95,16 @@ Manifests produced by `prepare_canary.py` now include:
 
 ## Validation gates
 
-`validate_index()` in `pinecone_lifecycle.py` checks ALL canonical fields:
+`validate_record()` in `ingestion/schema.py` checks ALL canonical fields:
+- forbidden fields (recursive)
+- required fields
+- language constraint
+- token_length <= MAX_INPUT_TOKENS (canonical from pinecone_contract)
+- chunk_ordinal / chunk_total consistency
+- dataset_revision format (40-char hex SHA)
+- metadata byte limit
+
+`validate_index()` in `pinecone_lifecycle.py` checks ALL canonical index fields:
 - embed model
 - field_map
 - metric
@@ -107,3 +116,30 @@ Manifests produced by `prepare_canary.py` now include:
 
 Any field that cannot be verified produces an explicit "unverifiable contract field" error.
 There are no silent passes.
+
+---
+
+## Control-plane vs data-plane client distinction
+
+**Control-plane** (`Pinecone()` client):
+- Constructed in **live mode only** — requires `PINECONE_API_KEY` and `CONFIRM_PINECONE_WRITE=1`
+- Used for: `describe_index()`, `list_indexes()`, `create_index_for_model()`
+- In `index_canary.py`: constructed **after** all offline validation completes
+- In dry-run mode: the control-plane client is **never imported or constructed**
+
+**Data-plane** (`index` object, returned by `pc.Index()`):
+- Used for: `upsert_records()`, `describe_index_stats()`
+- Constructed only after control-plane validation passes and the remote index is verified
+
+**Validation order** enforced by `index_canary.py`:
+1. Load and validate manifest (offline — no network calls)
+2. Verify JSONL checksum (offline)
+3. Run `validate_record()` on every record (offline — **before any provider import**)
+4. Validate provenance fields against canonical contract (offline)
+5. *(dry-run exits here — zero Pinecone calls)*
+6. Construct control-plane client (`Pinecone()`)
+7. `validate_index()` — verify remote index matches canonical contract
+8. Construct data-plane client (`index = pc.Index()`)
+9. `upsert_records()` — data-plane writes
+10. `describe_index_stats()` — freshness reconciliation (must reach exactly 300 vectors)
+
