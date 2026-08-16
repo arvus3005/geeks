@@ -911,7 +911,8 @@ class TestIndexCanaryDryRun:
     def test_dry_run_exits_0_no_credentials_needed(self, tmp_path):
         """Dry run must succeed without any credentials."""
         manifest_path = _make_canary_manifest_file(tmp_path)
-        r = _run_canary(["--manifest", str(manifest_path)])
+        report_dir = tmp_path / "reports"
+        r = _run_canary(["--manifest", str(manifest_path), "--report-dir", str(report_dir)])
         assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
         assert "DRY-RUN" in r.stdout.upper() or "dry" in r.stdout.lower()
 
@@ -940,10 +941,18 @@ class TestIndexCanaryDryRun:
         manifest_path = _make_canary_manifest_file(tmp_path)
         other_dir = tmp_path / "other"
         other_dir.mkdir()
+        report_dir = tmp_path / "reports"
         env = {k: v for k, v in __import__("os").environ.items()}
         env.pop("PINECONE_API_KEY", None)
         r = subprocess.run(
-            [sys.executable, _INDEX_CANARY, "--manifest", str(manifest_path)],
+            [
+                sys.executable,
+                _INDEX_CANARY,
+                "--manifest",
+                str(manifest_path),
+                "--report-dir",
+                str(report_dir),
+            ],
             capture_output=True,
             text=True,
             env=env,

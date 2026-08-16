@@ -45,6 +45,8 @@ artifacts/benchmarks/*.json
 artifacts/benchmarks/*.csv
 artifacts/manifests/*.json
 artifacts/reports/*.html
+artifacts/reports/canary_index_execution_*.json
+artifacts/reports/canary_index_execution_*.md
 
 # Prepared canary/pilot datasets and manifests (generated offline)
 artifacts/prepared/

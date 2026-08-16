@@ -6,11 +6,13 @@ import json
 import os
 import sys
 
+from hhgoa_rag.pinecone_contract import INDEX_NAME, MODEL
+
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Query Pinecone smoke namespace")
     p.add_argument("--pinecone-api-key", default=None)
-    p.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", "msmarco-xi"))
+    p.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", INDEX_NAME))
     p.add_argument("--query", default="What is the capital of India?")
     p.add_argument("--top-k", type=int, default=5)
     p.add_argument(
@@ -30,7 +32,7 @@ def main() -> None:
     from hhgoa_rag.pinecone_store import PineconeStore
 
     pc = Pinecone(api_key=api_key)
-    store = PineconeStore(pc.Index(args.pinecone_index), embed_model="multilingual-e5-large")
+    store = PineconeStore(pc.Index(args.pinecone_index), embed_model=MODEL)
 
     filter_dict = None
     if args.language_filter:

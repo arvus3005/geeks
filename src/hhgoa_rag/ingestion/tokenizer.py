@@ -29,15 +29,17 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
+from hhgoa_rag.pinecone_contract import (
+    MAX_INPUT_TOKENS,  # canonical single source of truth
+    TOKENIZER_REPO,
+)
+
 logger = logging.getLogger(__name__)
 
-TOKENIZER_REPO = "intfloat/multilingual-e5-large"
-
-# Official provider contract for the integrated multilingual-e5-large embedding:
-# the maximum token sequence length accepted per record is 507 tokens (including
-# special tokens).  We enforce this ourselves (truncate=NONE) rather than relying
-# on Pinecone to truncate.  Inputs above this limit are split before indexing.
-MODEL_INPUT_LIMIT = 507
+# Compatibility alias: MODEL_INPUT_LIMIT derives from the canonical contract.
+# Do not set this to an independent value; change MAX_INPUT_TOKENS in
+# pinecone_contract.py if the limit changes.
+MODEL_INPUT_LIMIT: int = MAX_INPUT_TOKENS
 
 # e5 models use a query/passage prefix; the prefix itself consumes tokens.
 # "query: " → 3 tokens; "passage: " → 3 tokens.

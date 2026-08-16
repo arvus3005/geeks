@@ -49,10 +49,12 @@ from hhgoa_rag.pinecone_contract import (
     DIMENSION,
     FIELD_MAP,
     MANIFEST_SCHEMA_VERSION,
+    MAX_BATCH_SIZE,
     METRIC,
     MODEL,
     READ_PARAMETERS,
     REGION,
+    TEXT_FIELD,
     WRITE_PARAMETERS,
     canonical_contract,
 )
@@ -70,7 +72,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 # Batch limits for Pinecone Starter
-MAX_RECORDS_PER_BATCH = 96
+MAX_RECORDS_PER_BATCH = MAX_BATCH_SIZE
 MAX_BYTES_PER_BATCH = 1_800_000  # 1.8 MB serialized
 
 # Expected per-language counts for this pilot
@@ -160,7 +162,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--embed-model",
-        default="multilingual-e5-large",
+        default=MODEL,
         help="Pinecone integrated embed model name",
     )
     return p
@@ -350,8 +352,8 @@ def _load_and_validate_records(record_path: Path, manifest: dict) -> list[dict]:
             if not rec.get("id"):
                 raise ValueError(f"Record on line {lineno} has empty or missing 'id'.")
 
-            if not rec.get("chunk_text"):
-                raise ValueError(f"Record on line {lineno} has empty or missing 'chunk_text'.")
+            if not rec.get(TEXT_FIELD):
+                raise ValueError(f"Record on line {lineno} has empty or missing {TEXT_FIELD!r}.")
 
             # Token limit check
             token_length = rec.get("token_length", 0)

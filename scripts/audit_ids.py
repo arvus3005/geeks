@@ -26,6 +26,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+from hhgoa_rag.pinecone_contract import TEXT_FIELD
+
 
 def _recompute_id(rec: dict) -> str | None:
     """Recompute the deterministic ID for a record. Returns None if cannot."""
@@ -64,7 +66,7 @@ def audit_records(records: list[dict]) -> dict:
     for rec in records:
         rid = rec.get("id", "")
         lang = rec.get("language", "unknown")
-        chunk_text = rec.get("chunk_text", "")
+        chunk_text = rec.get(TEXT_FIELD, "")
         token_len = rec.get("token_length", 0)
 
         lang_counts[lang] += 1
@@ -75,12 +77,12 @@ def audit_records(records: list[dict]) -> dict:
             first = seen_ids[rid]
             entry = {"id": rid, "first_lang": first["language"], "second_lang": lang}
             duplicate_ids.append(entry)
-            if first["chunk_text"] != chunk_text:
+            if first[TEXT_FIELD] != chunk_text:
                 id_text_conflicts.append({"id": rid, "lang_a": first["language"], "lang_b": lang})
             if first["language"] != lang:
                 id_lang_conflicts.append(entry)
         else:
-            seen_ids[rid] = {"language": lang, "chunk_text": chunk_text}
+            seen_ids[rid] = {"language": lang, TEXT_FIELD: chunk_text}
 
         text_to_ids[chunk_text].append(rid)
 
@@ -263,7 +265,7 @@ def _load_legacy_fixtures(path: Path) -> list[dict]:
         records.append(
             {
                 "id": pid,
-                "chunk_text": p["text"],
+                TEXT_FIELD: p["text"],
                 "language": p["language"],
                 "content_hash": chash,
                 "dataset_revision": DATASET_REVISION,

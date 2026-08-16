@@ -7,6 +7,7 @@ from hhgoa_rag.config.settings import get_settings
 from hhgoa_rag.guardrails.input_guards import check_input
 from hhgoa_rag.guardrails.output_guards import verify_grounding
 from hhgoa_rag.observability.timing import RequestTimer
+from hhgoa_rag.pinecone_contract import TEXT_FIELD
 from hhgoa_rag.retrieval.language_routing import get_language_filter
 from hhgoa_rag.schemas.query import Citation, QueryRequest, QueryResponse, TimingsMs
 
@@ -149,7 +150,7 @@ async def query_endpoint(req: QueryRequest):
         )
 
     # 5. Grounding
-    passage_texts = [p.get("payload", {}).get("chunk_text", "") for p in evidence]
+    passage_texts = [p.get("payload", {}).get(TEXT_FIELD, "") for p in evidence]
     with timer.stage("grounding_verify"):
         grounded, confidence = verify_grounding(answer, passage_texts, settings.min_retrieval_score)
 
@@ -177,7 +178,7 @@ async def query_endpoint(req: QueryRequest):
             passage_id=p.get("id", ""),
             language=p.get("payload", {}).get("language", "en"),
             chunk_ordinal=p.get("payload", {}).get("chunk_ordinal", 0),
-            text=p.get("payload", {}).get("chunk_text", "")[:200],
+            text=p.get("payload", {}).get(TEXT_FIELD, "")[:200],
             score=p.get("score", 0.0),
         )
         for p in evidence

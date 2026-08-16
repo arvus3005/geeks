@@ -387,6 +387,7 @@ class TestCorruptCheckpoint:
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
         ckpt_dir = tmp_path / "checkpoints"
         ckpt_dir.mkdir()
+        report_dir = tmp_path / "reports"
         (ckpt_dir / "canary_canary-42-test_BAD.json").write_text("NOT_JSON")
         r = _run_canary(
             [
@@ -395,6 +396,8 @@ class TestCorruptCheckpoint:
                 "--resume",
                 "--checkpoint-dir",
                 str(ckpt_dir),
+                "--report-dir",
+                str(report_dir),
             ]
         )
         assert r.returncode != 0, f"Expected non-zero exit; stdout={r.stdout}\nstderr={r.stderr}"
@@ -424,41 +427,267 @@ class TestIncompatibleCheckpoint:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 9. Concurrent rate-limit reservations
+# 9. _TokenRateLimiter Behavioural & Concurrency Tests
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-class TestConcurrentRateLimiting:
-    def test_concurrent_reservations_do_not_exceed_ceiling(self):
-        lock = threading.Lock()
-        window_tokens = [0]
-        batch_tokens = 100
+class FakeClock:
+    def __init__(self, initial_time: float = 1000.0) -> None:
+        self.time = initial_time
+
+    def __call__(self) -> float:
+        return self.time
+
+    def advance(self, seconds: float) -> None:
+        self.time += seconds
+
+
+class FakeSleeper:
+    def __init__(self, clock: FakeClock) -> None:
+        self.clock = clock
+        self.waits: list[float] = []
+
+    def __call__(self, seconds: float) -> None:
+        self.waits.append(seconds)
+        self.clock.advance(seconds)
+
+
+class TestTokenRateLimiterBehavioural:
+    def test_single_reservation_below_limit_succeeds_without_sleeping(self):
+        import index_canary as ic
+
+        clock = FakeClock()
+        sleeper = FakeSleeper(clock)
+        limiter = ic._TokenRateLimiter(
+            tokens_per_window=1000,
+            window_seconds=60.0,
+            clock=clock,
+            sleeper=sleeper,
+        )
+        waited = limiter.acquire(500)
+        assert waited == 0.0
+        assert sleeper.waits == []
+        assert limiter._window_tokens == 500
+
+    def test_multiple_reservations_summing_to_limit_succeed_without_sleeping(self):
+        import index_canary as ic
+
+        clock = FakeClock()
+        sleeper = FakeSleeper(clock)
+        limiter = ic._TokenRateLimiter(
+            tokens_per_window=1000,
+            window_seconds=60.0,
+            clock=clock,
+            sleeper=sleeper,
+        )
+        w1 = limiter.acquire(400)
+        w2 = limiter.acquire(600)
+        assert w1 == 0.0
+        assert w2 == 0.0
+        assert sleeper.waits == []
+        assert limiter._window_tokens == 1000
+
+    def test_next_reservation_waits_for_next_window(self):
+        import index_canary as ic
+
+        clock = FakeClock(100.0)
+        sleeper = FakeSleeper(clock)
+        limiter = ic._TokenRateLimiter(
+            tokens_per_window=1000,
+            window_seconds=60.0,
+            clock=clock,
+            sleeper=sleeper,
+        )
+        limiter.acquire(1000)
+        clock.advance(10.0)  # 10s elapsed in window
+
+        # Next reservation requires 200 tokens — must wait remaining 50s
+        waited = limiter.acquire(200)
+        assert waited == 50.0
+        assert sleeper.waits == [50.0]
+        assert clock() == 160.0
+        assert limiter._window_tokens == 200
+
+    def test_oversized_reservation_rejected_immediately(self):
+        import index_canary as ic
+
+        clock = FakeClock()
+        sleeper = FakeSleeper(clock)
+        limiter = ic._TokenRateLimiter(
+            tokens_per_window=1000,
+            window_seconds=60.0,
+            clock=clock,
+            sleeper=sleeper,
+        )
+        with pytest.raises(ValueError, match="exceeds tokens_per_window"):
+            limiter.acquire(1001)
+        assert sleeper.waits == []
+
+    def test_zero_and_negative_reservations_rejected(self):
+        import index_canary as ic
+
+        limiter = ic._TokenRateLimiter(tokens_per_window=1000)
+        with pytest.raises(ValueError, match="positive"):
+            limiter.acquire(0)
+        with pytest.raises(ValueError, match="positive"):
+            limiter.acquire(-10)
+
+    def test_invalid_constructor_arguments_rejected(self):
+        import index_canary as ic
+
+        with pytest.raises(ValueError, match="tokens_per_window"):
+            ic._TokenRateLimiter(tokens_per_window=0)
+        with pytest.raises(ValueError, match="tokens_per_window"):
+            ic._TokenRateLimiter(tokens_per_window=-100)
+        with pytest.raises(ValueError, match="window_seconds"):
+            ic._TokenRateLimiter(tokens_per_window=1000, window_seconds=0)
+        with pytest.raises(ValueError, match="window_seconds"):
+            ic._TokenRateLimiter(tokens_per_window=1000, window_seconds=-5.0)
+
+    def test_window_rollover_resets_usage_exactly_once(self):
+        import index_canary as ic
+
+        clock = FakeClock(10.0)
+        sleeper = FakeSleeper(clock)
+        limiter = ic._TokenRateLimiter(
+            tokens_per_window=1000,
+            window_seconds=60.0,
+            clock=clock,
+            sleeper=sleeper,
+        )
+        limiter.acquire(800)
+        assert limiter._window_tokens == 800
+
+        # Advance clock beyond 60s
+        clock.advance(65.0)
+        waited = limiter.acquire(500)
+        assert waited == 0.0
+        assert sleeper.waits == []
+        assert limiter._window_tokens == 500  # Reset and took 500
+
+    def test_concurrent_workers_cannot_overwrite_each_others_reservations(self):
+        import index_canary as ic
+
+        # Real lock with concurrent threads reserving within limits
+        limiter = ic._TokenRateLimiter(tokens_per_window=100_000, window_seconds=60.0)
         n_threads = 10
-        results: list[int] = []
+        tokens_per_thread = 500
+        barrier = threading.Barrier(n_threads)
+        errors: list[Exception] = []
 
-        def reserve():
-            with lock:
-                current = window_tokens[0]
-                window_tokens[0] += batch_tokens
-                results.append(current)
+        def worker():
+            try:
+                barrier.wait()
+                limiter.acquire(tokens_per_thread)
+            except Exception as e:
+                errors.append(e)
 
-        threads = [threading.Thread(target=reserve) for _ in range(n_threads)]
+        threads = [threading.Thread(target=worker) for _ in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        assert limiter._window_tokens == n_threads * tokens_per_thread
+
+    def test_concurrent_workers_waiting_do_not_exceed_ceiling(self):
+        import index_canary as ic
+
+        # Monotonic time with thread synchronization
+        class ThreadSafeFakeClock:
+            def __init__(self, start: float = 0.0) -> None:
+                self._t = start
+                self._lock = threading.Lock()
+
+            def __call__(self) -> float:
+                with self._lock:
+                    return self._t
+
+            def advance(self, s: float) -> None:
+                with self._lock:
+                    self._t += s
+
+        clock = ThreadSafeFakeClock(0.0)
+
+        # Sleeper advances time to trigger window rollover
+        def sleeper(s: float) -> None:
+            clock.advance(s)
+
+        limiter = ic._TokenRateLimiter(
+            tokens_per_window=1000,
+            window_seconds=1.0,
+            clock=clock,
+            sleeper=sleeper,
+        )
+        # Fill window
+        limiter.acquire(1000)
+
+        # 4 threads compete for capacity
+        results: list[float] = []
+        n_threads = 4
+        barrier = threading.Barrier(n_threads)
+
+        def worker():
+            barrier.wait()
+            w = limiter.acquire(250)
+            results.append(w)
+
+        threads = [threading.Thread(target=worker) for _ in range(n_threads)]
         for t in threads:
             t.start()
         for t in threads:
             t.join()
 
         assert len(results) == n_threads
-        assert len(set(results)) == n_threads, "Two threads saw the same window_tokens — race!"
-        assert window_tokens[0] == n_threads * batch_tokens
+        assert limiter._window_tokens == 1000  # 4 * 250 in new window
 
-    def test_rate_limiter_uses_lock_in_source(self):
+    def test_run_source_uses_rate_limiter_class(self):
         import inspect
 
         import index_canary as ic
 
         source = inspect.getsource(ic._run)
-        assert "_rate_lock" in source, "Expected _rate_lock in _run() source"
+        assert "_TokenRateLimiter" in source
+        assert "_rate_limiter.acquire" in source
+
+
+class TestCanonicalContractResolution:
+    def test_tokenizer_model_input_limit_is_max_input_tokens(self):
+        from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT
+        from hhgoa_rag.pinecone_contract import MAX_INPUT_TOKENS
+
+        assert MODEL_INPUT_LIMIT == MAX_INPUT_TOKENS == 507
+
+    def test_pinecone_store_text_record_field_is_canonical_text_field(self):
+        from hhgoa_rag.pinecone_contract import TEXT_FIELD
+        from hhgoa_rag.pinecone_store import TEXT_RECORD_FIELD
+
+        assert TEXT_RECORD_FIELD == TEXT_FIELD == "chunk_text"
+
+    def test_pinecone_store_field_map_matches_canonical(self):
+        from hhgoa_rag.pinecone_contract import FIELD_MAP as CANONICAL_FIELD_MAP
+        from hhgoa_rag.pinecone_store import FIELD_MAP
+
+        assert FIELD_MAP == dict(CANONICAL_FIELD_MAP) == {"text": "chunk_text"}
+
+    def test_settings_defaults_match_canonical_contract(self):
+        from hhgoa_rag.config.settings import Settings
+        from hhgoa_rag.pinecone_contract import CLOUD, INDEX_NAME, MODEL, REGION
+
+        s = Settings()
+        assert s.pinecone_index == INDEX_NAME
+        assert s.pinecone_cloud == CLOUD
+        assert s.pinecone_region == REGION
+        assert s.pinecone_embed_model == MODEL
+
+    def test_engine_ingestion_config_defaults_match_canonical(self):
+        from hhgoa_rag.ingestion.engine import IngestionConfig
+        from hhgoa_rag.pinecone_contract import MAX_BATCH_SIZE, MODEL
+
+        cfg = IngestionConfig(mode="smoke", pinecone_index="idx", pinecone_namespace="ns")
+        assert cfg.batch_size == MAX_BATCH_SIZE == 96
+        assert cfg.embed_model == MODEL == "multilingual-e5-large"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -469,48 +698,122 @@ class TestConcurrentRateLimiting:
 class TestCLIValidation:
     def test_zero_batch_size_exits_2(self, tmp_path):
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
-        r = _run_canary(["--manifest", str(manifest_path), "--batch-size", "0"])
+        report_dir = tmp_path / "reports"
+        r = _run_canary(
+            ["--manifest", str(manifest_path), "--batch-size", "0", "--report-dir", str(report_dir)]
+        )
         assert r.returncode == 2
 
     def test_negative_batch_size_exits_2(self, tmp_path):
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
-        r = _run_canary(["--manifest", str(manifest_path), "--batch-size", "-5"])
+        report_dir = tmp_path / "reports"
+        r = _run_canary(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--batch-size",
+                "-5",
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
         assert r.returncode == 2
 
     def test_zero_concurrency_exits_2(self, tmp_path):
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
-        r = _run_canary(["--manifest", str(manifest_path), "--concurrency", "0"])
+        report_dir = tmp_path / "reports"
+        r = _run_canary(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--concurrency",
+                "0",
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
         assert r.returncode == 2
 
     def test_negative_concurrency_exits_2(self, tmp_path):
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
-        r = _run_canary(["--manifest", str(manifest_path), "--concurrency", "-1"])
+        report_dir = tmp_path / "reports"
+        r = _run_canary(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--concurrency",
+                "-1",
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
         assert r.returncode == 2
 
     def test_zero_token_rate_limit_exits_2(self, tmp_path):
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
-        r = _run_canary(["--manifest", str(manifest_path), "--token-rate-limit", "0"])
+        report_dir = tmp_path / "reports"
+        r = _run_canary(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--token-rate-limit",
+                "0",
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
         assert r.returncode == 2
 
     def test_negative_token_rate_limit_exits_2(self, tmp_path):
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
-        r = _run_canary(["--manifest", str(manifest_path), "--token-rate-limit", "-100"])
+        report_dir = tmp_path / "reports"
+        r = _run_canary(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--token-rate-limit",
+                "-100",
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
         assert r.returncode == 2
 
     def test_over_max_batch_size_exits_2(self, tmp_path):
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
-        r = _run_canary(["--manifest", str(manifest_path), "--batch-size", str(MAX_BATCH_SIZE + 1)])
+        report_dir = tmp_path / "reports"
+        r = _run_canary(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--batch-size",
+                str(MAX_BATCH_SIZE + 1),
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
         assert r.returncode == 2
 
     def test_over_max_concurrency_exits_2(self, tmp_path):
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
-        r = _run_canary(["--manifest", str(manifest_path), "--concurrency", "100"])
+        report_dir = tmp_path / "reports"
+        r = _run_canary(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--concurrency",
+                "100",
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
         assert r.returncode == 2
 
     def test_execute_without_confirm_exits_2(self, tmp_path):
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
+        report_dir = tmp_path / "reports"
         r = _run_canary(
-            ["--manifest", str(manifest_path), "--execute"],
+            ["--manifest", str(manifest_path), "--execute", "--report-dir", str(report_dir)],
             env_extra={"PINECONE_API_KEY": "key"},
         )
         assert r.returncode == 2
@@ -664,9 +967,7 @@ class TestDryRunZeroProviderCalls:
     def test_dry_run_exits_0_no_upserts(self, tmp_path):
         manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
         report_dir = tmp_path / "reports"
-        r = _run_canary(
-            ["--manifest", str(manifest_path), "--report-dir", str(report_dir)]
-        )
+        r = _run_canary(["--manifest", str(manifest_path), "--report-dir", str(report_dir)])
         assert r.returncode == 0, f"stdout={r.stdout}\nstderr={r.stderr}"
         combined = r.stdout + r.stderr
         # Log-level upsert message only appears during live upsert operations

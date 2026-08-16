@@ -6,16 +6,18 @@ import json
 import os
 import sys
 
+from hhgoa_rag.pinecone_contract import CLOUD, INDEX_NAME, MODEL, REGION
+
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Validate Pinecone config")
     # NOTE: API key must come from PINECONE_API_KEY environment variable only.
     # Passing credentials on the command line is a security risk (shell history,
     # process list). The --pinecone-api-key flag has been intentionally removed.
-    p.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", "msmarco-xi"))
-    p.add_argument("--embed-model", default="multilingual-e5-large")
-    p.add_argument("--cloud", default=os.environ.get("PINECONE_CLOUD", "aws"))
-    p.add_argument("--region", default=os.environ.get("PINECONE_REGION", "us-east-1"))
+    p.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", INDEX_NAME))
+    p.add_argument("--embed-model", default=MODEL)
+    p.add_argument("--cloud", default=os.environ.get("PINECONE_CLOUD", CLOUD))
+    p.add_argument("--region", default=os.environ.get("PINECONE_REGION", REGION))
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
 

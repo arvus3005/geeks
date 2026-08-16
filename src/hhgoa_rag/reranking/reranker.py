@@ -14,8 +14,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..pinecone_contract import TEXT_FIELD
+
 DEFAULT_RERANK_MODEL = "bge-reranker-v2-m3"
-RANK_FIELDS = ["chunk_text"]
+RANK_FIELDS = [TEXT_FIELD]
 
 
 class PineconeRerankError(Exception):
@@ -58,8 +60,8 @@ def _validate_config(candidate_k: int, top_n: int) -> None:
 
 def _ensure_chunk_text(hits: list[dict]) -> None:
     for hit in hits:
-        if "chunk_text" not in hit:
-            raise ValueError(f"chunk_text missing from hit: {hit.get('id', '<no-id>')}")
+        if TEXT_FIELD not in hit:
+            raise ValueError(f"{TEXT_FIELD} missing from hit: {hit.get('id', '<no-id>')}")
 
 
 class PineconeReranker:
@@ -81,8 +83,8 @@ class PineconeReranker:
         self.top_n = top_n
         self._rerank_timeout = rerank_timeout
         self.rank_fields = rank_fields or RANK_FIELDS
-        if "chunk_text" not in self.rank_fields:
-            raise ValueError("rank_fields must include 'chunk_text'")
+        if TEXT_FIELD not in self.rank_fields:
+            raise ValueError(f"rank_fields must include '{TEXT_FIELD}'")
 
     def rerank(
         self,
@@ -92,7 +94,7 @@ class PineconeReranker:
     ) -> tuple[list[RankedResult], RerankUsage]:
         """Rerank hits and return top-N ranked results with usage info.
 
-        hits: list of dicts with at least 'id', 'chunk_text', and optional metadata.
+        hits: list of dicts with at least 'id', TEXT_FIELD, and optional metadata.
         Raises PineconeRerankError on failure (fail-closed).
         """
         effective_top_n = top_n if top_n is not None else self.top_n
@@ -124,15 +126,13 @@ class PineconeReranker:
             else:
                 doc_dict = dict(doc) if doc else {}
 
-            chunk_text = doc_dict.get("chunk_text", "")
+            chunk_text = doc_dict.get(TEXT_FIELD, "")
             record_id = doc_dict.get("id", str(rank))
             rerank_score = float(getattr(item, "score", 0.0))
             retrieval_score = doc_dict.get("_retrieval_score")
 
             metadata = {
-                k: v
-                for k, v in doc_dict.items()
-                if k not in ("id", "chunk_text", "_retrieval_score")
+                k: v for k, v in doc_dict.items() if k not in ("id", TEXT_FIELD, "_retrieval_score")
             }
 
             results.append(
@@ -175,8 +175,8 @@ class RetrievalOnlyPassthrough:
         results = [
             RankedResult(
                 record_id=h.get("id", str(i)),
-                chunk_text=h.get("chunk_text", ""),
-                metadata={k: v for k, v in h.items() if k not in ("id", "chunk_text")},
+                chunk_text=h.get(TEXT_FIELD, ""),
+                metadata={k: v for k, v in h.items() if k not in ("id", TEXT_FIELD)},
                 retrieval_score=h.get("_retrieval_score"),
                 rerank_score=None,
                 score_type="retrieval",

@@ -169,6 +169,99 @@ _REGENERATION_COMMAND = (
 )
 
 
+# ── Token-rate limiter ────────────────────────────────────────────────────────
+
+
+class _TokenRateLimiter:
+    """Thread-safe sliding-window token-rate limiter.
+
+    Every call to ``acquire(token_count)`` blocks until the requested tokens
+    can be reserved without exceeding ``tokens_per_window`` within the current
+    rolling window. Only atomic check-and-reserve decisions are performed
+    under the lock, preventing concurrent workers from double-booking capacity.
+
+    Parameters
+    ----------
+    tokens_per_window:
+        Maximum tokens that may be reserved within one window (must be > 0).
+    window_seconds:
+        Duration of each rolling window in seconds. Defaults to 60.0.
+    clock:
+        Injectable monotonic clock callable (default: ``time.monotonic``).
+        Tests may pass a deterministic fake clock.
+    sleeper:
+        Injectable sleep callable that accepts a ``float`` number of seconds
+        (default: ``time.sleep``). Tests may pass a recording fake sleeper.
+    """
+
+    def __init__(
+        self,
+        tokens_per_window: int,
+        window_seconds: float = 60.0,
+        clock: object = None,
+        sleeper: object = None,
+    ) -> None:
+        if tokens_per_window <= 0:
+            raise ValueError(f"tokens_per_window must be positive, got {tokens_per_window}")
+        if window_seconds <= 0:
+            raise ValueError(f"window_seconds must be positive, got {window_seconds}")
+        self._tokens_per_window = tokens_per_window
+        self._window_seconds = window_seconds
+        self._clock = clock if clock is not None else time.monotonic
+        self._sleeper = sleeper if sleeper is not None else time.sleep
+        self._lock = threading.Lock()
+        self._window_start: float = self._clock()
+        self._window_tokens: int = 0
+
+    def acquire(self, token_count: int) -> float:
+        """Block until ``token_count`` tokens can be reserved in the current window.
+
+        Parameters
+        ----------
+        token_count:
+            Number of tokens to reserve. Must be > 0 and <= tokens_per_window.
+
+        Returns
+        -------
+        float
+            Cumulative seconds spent waiting by this call (0.0 when no wait was needed).
+
+        Raises
+        ------
+        ValueError
+            If ``token_count`` is <= 0 or exceeds ``tokens_per_window``.
+        """
+        if token_count <= 0:
+            raise ValueError(f"token_count must be positive, got {token_count}")
+        if token_count > self._tokens_per_window:
+            raise ValueError(
+                f"token_count {token_count} exceeds tokens_per_window {self._tokens_per_window}"
+            )
+
+        total_waited = 0.0
+        while True:
+            wait = 0.0
+            with self._lock:
+                now = self._clock()
+                elapsed = now - self._window_start
+                if elapsed >= self._window_seconds:
+                    # Roll window forward while holding the lock
+                    self._window_start = now
+                    self._window_tokens = 0
+                    elapsed = 0.0
+
+                if self._window_tokens + token_count <= self._tokens_per_window:
+                    self._window_tokens += token_count
+                    return total_waited
+
+                # Compute remaining wait until window resets
+                wait = max(self._window_seconds - elapsed, 0.001)
+
+            # Sleep outside the lock so other threads can proceed
+            self._sleeper(wait)
+            total_waited += wait
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -1002,16 +1095,13 @@ def _run(
     total_throttle_wait = 0.0
     tokens_submitted = 0
 
-    # Thread-safe token rate limiter
-    _rate_lock = threading.Lock()
-    _window_start = time.monotonic()
-    _window_tokens = 0
+    # Thread-safe token rate limiter — uses the tested _TokenRateLimiter class.
+    _rate_limiter = _TokenRateLimiter(tokens_per_window=token_rate_limit)
 
     def _upsert_batch(
         batch_idx: int, batch: list[dict], digest: str
     ) -> tuple[int, int, int, float]:
         """Submit one batch with retry. Returns (submitted, attempts, retries, throttle_wait)."""
-        nonlocal _window_start, _window_tokens
         attempts = 0
         retries = 0
         throttle_wait = 0.0
@@ -1020,33 +1110,19 @@ def _run(
         batch_tokens = sum(r.get("token_length", 0) for r in batch)
 
         for attempt in range(1, MAX_RETRIES + 1):
-            # Thread-safe token-rate pacing.
-            with _rate_lock:
-                elapsed = time.monotonic() - _window_start
-                if elapsed >= 60.0:
-                    _window_start = time.monotonic()
-                    _window_tokens = 0
-                    elapsed = 0.0
-                projected = _window_tokens + batch_tokens
-                if projected > token_rate_limit and elapsed < 60.0:
-                    wait = 60.0 - elapsed + 0.5
-                    logger.info(
-                        "Token rate limit: projected %d > %d tokens/min; waiting %.1fs",
-                        projected,
-                        token_rate_limit,
-                        wait,
-                    )
-                    # Release lock while sleeping so other threads can check.
-                    _rate_lock.release()
-                    try:
-                        time.sleep(wait)
-                        throttle_wait += wait
-                    finally:
-                        _rate_lock.acquire()
-                    _window_start = time.monotonic()
-                    _window_tokens = 0
-                # Reserve tokens inside the lock so concurrent workers cannot double-book.
-                _window_tokens += batch_tokens
+            # Thread-safe token-rate pacing via _TokenRateLimiter.
+            # Retried attempts conservatively re-reserve their tokens.
+            waited = _rate_limiter.acquire(max(batch_tokens, 1))
+            if waited > 0:
+                logger.info(
+                    "Token rate limit: batch %d waited %.1fs for capacity "
+                    "(%d tokens/window limit: %d)",
+                    batch_idx + 1,
+                    waited,
+                    batch_tokens,
+                    token_rate_limit,
+                )
+            throttle_wait += waited
 
             try:
                 attempts += 1

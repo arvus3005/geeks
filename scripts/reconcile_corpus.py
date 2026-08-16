@@ -11,11 +11,13 @@ import os
 import sys
 from pathlib import Path
 
+from hhgoa_rag.pinecone_contract import INDEX_NAME, MODEL
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Reconcile corpus manifest with Pinecone")
     parser.add_argument("--pinecone-api-key", default=None)
-    parser.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", "msmarco-xi"))
+    parser.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", INDEX_NAME))
     parser.add_argument("--namespace", default="smoke", help="Namespace to inspect")
     parser.add_argument("--manifest", default=None, help="Path to ingest summary JSON")
     parser.add_argument("--output-json", action="store_true")
@@ -31,7 +33,7 @@ def main() -> None:
     from hhgoa_rag.pinecone_store import PineconeStore
 
     pc = Pinecone(api_key=api_key)
-    store = PineconeStore(pc.Index(args.pinecone_index), embed_model="multilingual-e5-large")
+    store = PineconeStore(pc.Index(args.pinecone_index), embed_model=MODEL)
 
     total = store.count_namespace(args.namespace)
     stats = store.describe_index_stats()

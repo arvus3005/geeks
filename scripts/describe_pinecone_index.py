@@ -6,11 +6,13 @@ import json
 import os
 import sys
 
+from hhgoa_rag.pinecone_contract import INDEX_NAME, MODEL
+
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Describe Pinecone index stats")
     p.add_argument("--pinecone-api-key", default=None)
-    p.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", "msmarco-xi"))
+    p.add_argument("--pinecone-index", default=os.environ.get("PINECONE_INDEX", INDEX_NAME))
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
 
@@ -26,7 +28,7 @@ def main() -> None:
 
     pc = Pinecone(api_key=api_key)
     index = pc.Index(args.pinecone_index)
-    store = PineconeStore(index, embed_model="multilingual-e5-large")
+    store = PineconeStore(index, embed_model=MODEL)
 
     info = get_index_info(pc, args.pinecone_index)
     stats = store.describe_index_stats()

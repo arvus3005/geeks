@@ -74,6 +74,7 @@ _SKIP_PREFIXES = {
     "artifacts",
     "node_modules",
     "uv.lock",
+    ".env",
 }
 
 

@@ -51,7 +51,9 @@ from pathlib import Path
 from hhgoa_rag.pinecone_contract import (
     CONTRACT_VERSION,
     DATASET_REPO,
+    INDEX_NAME,
     MANIFEST_SCHEMA_VERSION,
+    MAX_BATCH_SIZE,
     TEXT_FIELD,
     TOKENIZER_REPO,
     canonical_contract,
@@ -123,7 +125,7 @@ _PARQUET_FILES: dict[tuple[str, str], str] = {
 _EXPECTED_SCHEMA_FIELDS = {"passages"}
 
 # Batch constants matching ingest_prepared.py
-MAX_RECORDS_PER_BATCH = 96
+MAX_RECORDS_PER_BATCH = MAX_BATCH_SIZE
 MAX_BYTES_PER_BATCH = 1_800_000
 
 
@@ -1052,7 +1054,7 @@ def main() -> None:
         "contract_version": CONTRACT_VERSION,
         "contract_fingerprint": contract_fingerprint(),
         "index_contract": canonical_contract(),
-        "index_name": "msmarco-xi",
+        "index_name": INDEX_NAME,
         "index_namespace": _CONTRACT_NAMESPACE,
         "dataset_repo": DATASET_REPO,
         "dataset_revision": dataset_revision,

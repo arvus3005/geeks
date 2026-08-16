@@ -1,5 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from hhgoa_rag.pinecone_contract import CLOUD, INDEX_NAME, MODEL, REGION
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -7,13 +9,14 @@ class Settings(BaseSettings):
     # Corpus mode
     corpus_mode: str = "smoke"  # "smoke" | "pilot" | "full"
 
-    # Pinecone
+    # Pinecone — defaults come from the canonical contract (pinecone_contract.py).
+    # Environment variable overrides remain supported: PINECONE_INDEX, etc.
     pinecone_api_key: str | None = None
-    pinecone_index: str = "msmarco-xi"
+    pinecone_index: str = INDEX_NAME
     pinecone_namespace: str = "smoke"
-    pinecone_cloud: str = "aws"
-    pinecone_region: str = "us-east-1"
-    pinecone_embed_model: str = "multilingual-e5-large"
+    pinecone_cloud: str = CLOUD
+    pinecone_region: str = REGION
+    pinecone_embed_model: str = MODEL
 
     # Retrieval
     retrieval_top_k: int = 20

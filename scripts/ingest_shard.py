@@ -16,6 +16,8 @@ import sys
 import uuid
 from pathlib import Path
 
+from hhgoa_rag.pinecone_contract import MAX_BATCH_SIZE
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
@@ -33,8 +35,8 @@ def main() -> None:
     p.add_argument(
         "--batch-size",
         type=int,
-        default=96,
-        help="Records per Pinecone request (1-96; Pinecone hard limit is 96)",
+        default=MAX_BATCH_SIZE,
+        help=f"Records per Pinecone request (1-{MAX_BATCH_SIZE}; Pinecone hard limit is {MAX_BATCH_SIZE})",
     )
     p.add_argument("--checkpoint-dir", type=Path, default=Path("artifacts/checkpoints"))
     p.add_argument("--dedup-db-dir", type=Path, default=Path("artifacts/dedup"))
@@ -61,9 +63,9 @@ def main() -> None:
         )
         sys.exit(1)
 
-    if not (1 <= args.batch_size <= 96):
+    if not (1 <= args.batch_size <= MAX_BATCH_SIZE):
         print(
-            f"ERROR: --batch-size must be between 1 and 96, got {args.batch_size}",
+            f"ERROR: --batch-size must be between 1 and {MAX_BATCH_SIZE}, got {args.batch_size}",
             file=sys.stderr,
         )
         sys.exit(1)

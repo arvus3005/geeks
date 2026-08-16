@@ -34,6 +34,7 @@ from ..ingestion.chunkers import BaseChunker, Chunk, get_chunker
 from ..ingestion.dedup import ContentDeduplicator
 from ..ingestion.passage_ids import make_point_id
 from ..ingestion.schema import build_record, validate_record
+from ..pinecone_contract import MAX_BATCH_SIZE, MODEL
 from ..pinecone_store import PineconeStore
 
 logger = logging.getLogger(__name__)
@@ -66,11 +67,11 @@ class IngestionConfig:
     mode: str  # "canary" | "pilot" | "full"
     pinecone_index: str
     pinecone_namespace: str
-    embed_model: str = "multilingual-e5-large"
+    embed_model: str = MODEL
     chunk_strategy: str = "passage_native"
     chunk_strategy_version: str = "v1"
     dataset_revision: str | None = None
-    batch_size: int = 96
+    batch_size: int = MAX_BATCH_SIZE
     max_retries: int = 3
     retry_backoff_base: float = 2.0
     pilot_rows_per_shard: int = 1000
@@ -81,9 +82,9 @@ class IngestionConfig:
     tokenizer_fingerprint: str = "unknown"
 
     def __post_init__(self) -> None:
-        if not (1 <= self.batch_size <= 96):
+        if not (1 <= self.batch_size <= MAX_BATCH_SIZE):
             raise ValueError(
-                f"batch_size must be between 1 and 96 (Pinecone limit), got {self.batch_size}"
+                f"batch_size must be between 1 and {MAX_BATCH_SIZE} (Pinecone limit), got {self.batch_size}"
             )
         if self.num_workers < 1:
             raise ValueError(f"num_workers must be >= 1, got {self.num_workers}")
@@ -330,9 +331,9 @@ def ingest_shard(
             records.append(rec)
 
         # Enforce per-request limits before any provider call
-        if len(records) > 96:
+        if len(records) > MAX_BATCH_SIZE:
             raise RuntimeError(
-                f"Batch has {len(records)} records, exceeding Pinecone's 96-record limit. "
+                f"Batch has {len(records)} records, exceeding Pinecone's {MAX_BATCH_SIZE}-record limit. "
                 "This is a bug in the batch accumulation logic."
             )
         req_bytes = _estimate_batch_bytes(records)

@@ -18,6 +18,8 @@ import json
 import os
 import sys
 
+from hhgoa_rag.pinecone_contract import CLOUD, MODEL, REGION
+
 
 def _print_plan(args: argparse.Namespace) -> None:
     # Import canonical contract only on dry-run path (no Pinecone needed)
@@ -46,9 +48,9 @@ def main() -> None:
         description="Create Pinecone integrated-embedding index (dry-run by default)"
     )
     p.add_argument("--pinecone-index", required=True, help="Index name (e.g. msmarco-xi)")
-    p.add_argument("--cloud", default=os.environ.get("PINECONE_CLOUD", "aws"))
-    p.add_argument("--region", default=os.environ.get("PINECONE_REGION", "us-east-1"))
-    p.add_argument("--embed-model", default="multilingual-e5-large")
+    p.add_argument("--cloud", default=os.environ.get("PINECONE_CLOUD", CLOUD))
+    p.add_argument("--region", default=os.environ.get("PINECONE_REGION", REGION))
+    p.add_argument("--embed-model", default=MODEL)
     p.add_argument("--output-json", action="store_true")
     p.add_argument(
         "--execute",
@@ -85,7 +87,7 @@ def main() -> None:
 
     from pinecone import Pinecone
 
-    from hhgoa_rag.pinecone_contract import CLOUD, MODEL, REGION, contract_fingerprint
+    from hhgoa_rag.pinecone_contract import contract_fingerprint
     from hhgoa_rag.pinecone_lifecycle import create_index_idempotent, get_index_info
 
     # Validate CLI args against canonical contract before any API call

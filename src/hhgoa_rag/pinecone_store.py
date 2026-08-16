@@ -18,16 +18,20 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from .pinecone_contract import FIELD_MAP as _CANONICAL_FIELD_MAP
 from .pinecone_contract import MAX_BATCH_SIZE
+from .pinecone_contract import TEXT_FIELD as _CANONICAL_TEXT_FIELD
 
 logger = logging.getLogger(__name__)
 
 # The field_map key used in create_index_for_model AND in search inputs
 EMBED_INPUT_FIELD = "text"
-# The record field that holds the passage text
-TEXT_RECORD_FIELD = "chunk_text"
-# The field_map dict passed to IndexEmbed
-FIELD_MAP: dict[str, str] = {EMBED_INPUT_FIELD: TEXT_RECORD_FIELD}
+# The record field that holds the passage text — derived from canonical contract.
+# Callers may use TEXT_RECORD_FIELD for back-compat; it is identical to TEXT_FIELD.
+TEXT_RECORD_FIELD: str = _CANONICAL_TEXT_FIELD  # "chunk_text"
+# The field_map dict passed to IndexEmbed — derived from canonical contract.
+# Callers may use this dict; it is a plain-dict copy of the immutable contract map.
+FIELD_MAP: dict[str, str] = dict(_CANONICAL_FIELD_MAP)
 
 FULL_NAMESPACE = "full"
 SMOKE_NAMESPACE = "smoke"
