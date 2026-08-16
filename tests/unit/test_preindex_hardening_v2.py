@@ -467,7 +467,7 @@ class TestTokenRateLimiterBehavioural:
         waited = limiter.acquire(500)
         assert waited == 0.0
         assert sleeper.waits == []
-        assert limiter._window_tokens == 500
+        assert limiter._current_tokens == 500
 
     def test_multiple_reservations_summing_to_limit_succeed_without_sleeping(self):
         import index_canary as ic
@@ -485,7 +485,7 @@ class TestTokenRateLimiterBehavioural:
         assert w1 == 0.0
         assert w2 == 0.0
         assert sleeper.waits == []
-        assert limiter._window_tokens == 1000
+        assert limiter._current_tokens == 1000
 
     def test_next_reservation_waits_for_next_window(self):
         import index_canary as ic
@@ -501,12 +501,38 @@ class TestTokenRateLimiterBehavioural:
         limiter.acquire(1000)
         clock.advance(10.0)  # 10s elapsed in window
 
-        # Next reservation requires 200 tokens — must wait remaining 50s
+        # Next reservation requires 200 tokens — must wait remaining 50s for past reservation to slide out
         waited = limiter.acquire(200)
         assert waited == 50.0
         assert sleeper.waits == [50.0]
         assert clock() == 160.0
-        assert limiter._window_tokens == 200
+        assert limiter._current_tokens == 200
+
+    def test_sliding_window_prevents_boundary_burst(self):
+        """Reserving 800 tokens at t=50s and 800 at t=65s must NOT double-book."""
+        import index_canary as ic
+
+        clock = FakeClock(0.0)
+        sleeper = FakeSleeper(clock)
+        limiter = ic._TokenRateLimiter(
+            tokens_per_window=1000,
+            window_seconds=60.0,
+            clock=clock,
+            sleeper=sleeper,
+        )
+        clock.advance(50.0)  # at t=50s
+        limiter.acquire(800)
+
+        clock.advance(15.0)  # at t=65s (only 15s since last reservation)
+        # Attempting to acquire 800 more tokens at t=65s: in a fixed-window limiter
+        # this would succeed immediately (new window started at t=60s).
+        # In a sliding-window limiter, 800 tokens reserved at t=50s do NOT expire until t=110s!
+        # Thus the caller must wait (50 + 60) - 65 = 45s.
+        waited = limiter.acquire(800)
+        assert waited == 45.0
+        assert clock() == 110.0
+        assert sleeper.waits == [45.0]
+        assert limiter._current_tokens == 800
 
     def test_oversized_reservation_rejected_immediately(self):
         import index_canary as ic
@@ -556,14 +582,14 @@ class TestTokenRateLimiterBehavioural:
             sleeper=sleeper,
         )
         limiter.acquire(800)
-        assert limiter._window_tokens == 800
+        assert limiter._current_tokens == 800
 
         # Advance clock beyond 60s
         clock.advance(65.0)
         waited = limiter.acquire(500)
         assert waited == 0.0
         assert sleeper.waits == []
-        assert limiter._window_tokens == 500  # Reset and took 500
+        assert limiter._current_tokens == 500  # Reset and took 500
 
     def test_concurrent_workers_cannot_overwrite_each_others_reservations(self):
         import index_canary as ic
@@ -589,7 +615,7 @@ class TestTokenRateLimiterBehavioural:
             t.join()
 
         assert not errors
-        assert limiter._window_tokens == n_threads * tokens_per_thread
+        assert limiter._current_tokens == n_threads * tokens_per_thread
 
     def test_concurrent_workers_waiting_do_not_exceed_ceiling(self):
         import index_canary as ic
@@ -640,7 +666,7 @@ class TestTokenRateLimiterBehavioural:
             t.join()
 
         assert len(results) == n_threads
-        assert limiter._window_tokens == 1000  # 4 * 250 in new window
+        assert limiter._current_tokens == 1000  # 4 * 250 in new window
 
     def test_run_source_uses_rate_limiter_class(self):
         import inspect
@@ -1047,3 +1073,355 @@ class TestStoreMaxBatchSize:
         with pytest.raises(ValueError, match=str(MAX_BATCH_SIZE)):
             store.upsert_records(oversized, namespace="pilot_v1", context="pilot")
         mock_index.upsert_records.assert_not_called()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 18. Pre-write namespace preflight
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestPreWriteNamespacePreflight:
+    def test_fresh_empty_namespace_passes(self, monkeypatch):
+        import index_canary as ic
+
+        mock_index = MagicMock()
+        mock_index.describe_index_stats.return_value = {
+            "namespaces": {"pilot_v1": {"vector_count": 0}}
+        }
+        stats = mock_index.describe_index_stats()
+        count = ic._get_ns_vector_count(stats, "pilot_v1")
+        assert count == 0
+
+    def test_fresh_contaminated_namespace_aborts_without_upserts(self, monkeypatch, tmp_path):
+        import index_canary as ic
+
+        manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
+        report_dir = tmp_path / "reports"
+
+        mock_pc = MagicMock()
+        mock_index = MagicMock()
+        mock_pc.Index.return_value = mock_index
+        # Remote index validation passes
+        mock_desc = MagicMock()
+        mock_desc.dimension = 1024
+        mock_desc.metric = "cosine"
+        mock_desc.spec.serverless.cloud = "aws"
+        mock_desc.spec.serverless.region = "us-east-1"
+        mock_desc.embed.model = "multilingual-e5-large"
+        mock_desc.embed.read_parameters = {"input_type": "query", "truncate": "NONE"}
+        mock_desc.embed.write_parameters = {"input_type": "passage", "truncate": "NONE"}
+        mock_desc.embed.field_map = {"text": "chunk_text"}
+        mock_pc.describe_index.return_value = mock_desc
+        # But namespace contains 50 records (contaminated)
+        mock_index.describe_index_stats.return_value = {
+            "namespaces": {"pilot_v1": {"vector_count": 50}}
+        }
+
+        monkeypatch.setenv("CONFIRM_PINECONE_WRITE", "1")
+        monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake_key_for_testing")
+        monkeypatch.setattr("pinecone.Pinecone", lambda api_key: mock_pc)
+        monkeypatch.setattr("hhgoa_rag.pinecone_lifecycle.validate_index", lambda pc, name: [])
+
+        parser = ic._build_parser()
+        args = parser.parse_args(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--execute",
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
+
+        report_data = {}
+        with pytest.raises(ic.CanaryError) as exc_info:
+            ic._run(
+                args,
+                live_mode=True,
+                run_id="test-run",
+                start_time="2026-08-16T00:00:00Z",
+                git_commit="abc",
+                report_data=report_data,
+            )
+
+        assert exc_info.value.category == "NamespaceContaminatedPreflight"
+        assert "not empty" in str(exc_info.value)
+        # Crucial: NO upsert was attempted!
+        mock_index.upsert_records.assert_not_called()
+
+    def test_resume_compatible_passes_preflight(self, monkeypatch, tmp_path):
+        import index_canary as ic
+
+        manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
+        report_dir = tmp_path / "reports"
+        ckpt_dir = tmp_path / "checkpoints"
+        ckpt_dir.mkdir()
+
+        # Build checkpoint with 1 completed batch (96 records)
+        manifest = json.loads(manifest_path.read_text())
+        records = ic._verify_and_load_records(manifest, manifest_path)
+        batches = ic._build_batches(records, 96)
+        batch_digests = [
+            ic._batch_digest(manifest["manifest_checksum"], i, [r["id"] for r in b])
+            for i, b in enumerate(batches)
+        ]
+        completed_digests = [batch_digests[0]]
+        ckpt_data = {
+            "checkpoint_schema_version": ic.CHECKPOINT_SCHEMA_VERSION,
+            "run_id": "test-run",
+            "manifest_id": manifest["manifest_id"],
+            "manifest_checksum": manifest["manifest_checksum"],
+            "contract_fingerprint": manifest["contract_fingerprint"],
+            "index_name": ic.CANONICAL_INDEX_NAME,
+            "namespace": ic.CANONICAL_NAMESPACE,
+            "batch_size": 96,
+            "batch_digests": batch_digests,
+            "completed_batch_digests": completed_digests,
+            "total_batches": len(batches),
+            "attempts": 1,
+            "retries": 0,
+            "started_at": "2026-08-16T00:00:00Z",
+            "updated_at": "2026-08-16T00:00:00Z",
+        }
+        ckpt_file = ckpt_dir / f"canary_{manifest['manifest_id']}_prev.json"
+        ckpt_file.write_text(json.dumps(ckpt_data))
+
+        mock_pc = MagicMock()
+        mock_index = MagicMock()
+        mock_pc.Index.return_value = mock_index
+        mock_index.describe_index_stats.return_value = {
+            "namespaces": {"pilot_v1": {"vector_count": 96}}
+        }
+        mock_index.upsert_records.return_value = 96
+
+        monkeypatch.setenv("CONFIRM_PINECONE_WRITE", "1")
+        monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake_key_for_testing")
+        monkeypatch.setattr("pinecone.Pinecone", lambda api_key: mock_pc)
+        monkeypatch.setattr("hhgoa_rag.pinecone_lifecycle.validate_index", lambda pc, name: [])
+
+        # Mock second describe_index_stats in step 7 to return 300 so reconciliation passes
+        mock_index.describe_index_stats.side_effect = [
+            {"namespaces": {"pilot_v1": {"vector_count": 96}}},  # preflight
+            {"namespaces": {"pilot_v1": {"vector_count": 300}}},  # step 7 reconciliation
+        ]
+
+        parser = ic._build_parser()
+        args = parser.parse_args(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--execute",
+                "--resume",
+                "--checkpoint-dir",
+                str(ckpt_dir),
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
+
+        report_data = {}
+        ic._run(
+            args,
+            live_mode=True,
+            run_id="test-run",
+            start_time="2026-08-16T00:00:00Z",
+            git_commit="abc",
+            report_data=report_data,
+        )
+        assert report_data["status"] == "success"
+        # Since 1 batch was already done, only 3 batches were submitted
+        assert report_data["completed_batches"] == 3
+        assert report_data["skipped_batches"] == 1
+
+    def test_resume_unexpected_records_aborts_without_upsert(self, monkeypatch, tmp_path):
+        import index_canary as ic
+
+        manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
+        report_dir = tmp_path / "reports"
+        ckpt_dir = tmp_path / "checkpoints"
+        ckpt_dir.mkdir()
+
+        # Checkpoint says 96 records completed, but namespace has 200 records
+        manifest = json.loads(manifest_path.read_text())
+        records = ic._verify_and_load_records(manifest, manifest_path)
+        batches = ic._build_batches(records, 96)
+        batch_digests = [
+            ic._batch_digest(manifest["manifest_checksum"], i, [r["id"] for r in b])
+            for i, b in enumerate(batches)
+        ]
+        ckpt_data = {
+            "checkpoint_schema_version": ic.CHECKPOINT_SCHEMA_VERSION,
+            "run_id": "test-run",
+            "manifest_id": manifest["manifest_id"],
+            "manifest_checksum": manifest["manifest_checksum"],
+            "contract_fingerprint": manifest["contract_fingerprint"],
+            "index_name": ic.CANONICAL_INDEX_NAME,
+            "namespace": ic.CANONICAL_NAMESPACE,
+            "batch_size": 96,
+            "batch_digests": batch_digests,
+            "completed_batch_digests": [batch_digests[0]],
+            "total_batches": len(batches),
+            "attempts": 1,
+            "retries": 0,
+            "started_at": "2026-08-16T00:00:00Z",
+            "updated_at": "2026-08-16T00:00:00Z",
+        }
+        ckpt_file = ckpt_dir / f"canary_{manifest['manifest_id']}_prev.json"
+        ckpt_file.write_text(json.dumps(ckpt_data))
+
+        mock_pc = MagicMock()
+        mock_index = MagicMock()
+        mock_pc.Index.return_value = mock_index
+        mock_index.describe_index_stats.return_value = {
+            "namespaces": {"pilot_v1": {"vector_count": 200}}
+        }
+
+        monkeypatch.setenv("CONFIRM_PINECONE_WRITE", "1")
+        monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake_key_for_testing")
+        monkeypatch.setattr("pinecone.Pinecone", lambda api_key: mock_pc)
+        monkeypatch.setattr("hhgoa_rag.pinecone_lifecycle.validate_index", lambda pc, name: [])
+
+        parser = ic._build_parser()
+        args = parser.parse_args(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--execute",
+                "--resume",
+                "--checkpoint-dir",
+                str(ckpt_dir),
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
+
+        report_data = {}
+        with pytest.raises(ic.CanaryError) as exc_info:
+            ic._run(
+                args,
+                live_mode=True,
+                run_id="test-run",
+                start_time="2026-08-16T00:00:00Z",
+                git_commit="abc",
+                report_data=report_data,
+            )
+
+        assert exc_info.value.category == "NamespaceContaminatedPreflight"
+        assert "exceeds" in str(exc_info.value)
+        mock_index.upsert_records.assert_not_called()
+
+    def test_preflight_provider_failure_aborts_without_upsert(self, monkeypatch, tmp_path):
+        import index_canary as ic
+
+        manifest_path, _ = _write_jsonl_and_manifest(tmp_path)
+        report_dir = tmp_path / "reports"
+
+        mock_pc = MagicMock()
+        mock_index = MagicMock()
+        mock_pc.Index.return_value = mock_index
+        mock_index.describe_index_stats.side_effect = RuntimeError("503 Service Unavailable")
+
+        monkeypatch.setenv("CONFIRM_PINECONE_WRITE", "1")
+        monkeypatch.setenv("PINECONE_API_KEY", "pcsk_fake_key_for_testing")
+        monkeypatch.setattr("pinecone.Pinecone", lambda api_key: mock_pc)
+        monkeypatch.setattr("hhgoa_rag.pinecone_lifecycle.validate_index", lambda pc, name: [])
+
+        parser = ic._build_parser()
+        args = parser.parse_args(
+            [
+                "--manifest",
+                str(manifest_path),
+                "--execute",
+                "--report-dir",
+                str(report_dir),
+            ]
+        )
+
+        report_data = {}
+        with pytest.raises(ic.CanaryError) as exc_info:
+            ic._run(
+                args,
+                live_mode=True,
+                run_id="test-run",
+                start_time="2026-08-16T00:00:00Z",
+                git_commit="abc",
+                report_data=report_data,
+            )
+
+        assert exc_info.value.category == "PreflightProviderFailure"
+        mock_index.upsert_records.assert_not_called()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 19. Capacity estimator tests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestCapacityEstimator:
+    def test_estimator_uses_canonical_dimension(self):
+        import estimate_capacity as ec
+
+        from hhgoa_rag.pinecone_contract import DIMENSION
+
+        report = ec.calculate_estimates()
+        assert report["metadata"]["canonical_dimension"] == DIMENSION == 1024
+
+    def test_changing_dimension_changes_dense_estimate_proportionally(self):
+        import estimate_capacity as ec
+
+        r1024 = ec.calculate_estimates(dimension=1024)
+        r384 = ec.calculate_estimates(dimension=384)
+
+        dense_1024 = r1024["scopes"]["target_3_languages_en_hi_bn"]["storage"]["dense_vectors_gb"]
+        dense_384 = r384["scopes"]["target_3_languages_en_hi_bn"]["storage"]["dense_vectors_gb"]
+
+        ratio = dense_1024 / dense_384
+        assert 2.66 < ratio < 2.67  # 1024 / 384 = 2.666666...
+
+    def test_all_expected_scopes_present(self):
+        import estimate_capacity as ec
+
+        report = ec.calculate_estimates()
+        scopes = report["scopes"]
+        assert "canary_300_records" in scopes
+        assert "bounded_pilot_10k_records" in scopes
+        assert "target_3_languages_en_hi_bn" in scopes
+        assert "full_corpus_14_languages" in scopes
+
+    def test_local_disk_warning_present(self):
+        import estimate_capacity as ec
+
+        report = ec.calculate_estimates()
+        note = report["assumptions_vs_measured"]["unmeasured_assumptions"]["note_on_local_disk"]
+        assert "200 GB" in note
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 20. Integration smoke test opt-in and fail-closed behavior
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+class TestIntegrationOptIn:
+    def test_smoke_test_skips_when_opt_in_missing(self, monkeypatch):
+        from tests.integration.test_pinecone_smoke import _require_opt_in
+
+        monkeypatch.delenv("PINECONE_SMOKE_TEST", raising=False)
+        monkeypatch.setenv("PINECONE_API_KEY", "pcsk_test")
+        with pytest.raises(pytest.skip.Exception):
+            _require_opt_in()
+
+    def test_smoke_test_fails_closed_when_opt_in_set_but_key_missing(self, monkeypatch):
+        from tests.integration.test_pinecone_smoke import _require_opt_in
+
+        monkeypatch.setenv("PINECONE_SMOKE_TEST", "1")
+        monkeypatch.delenv("PINECONE_API_KEY", raising=False)
+        with pytest.raises(pytest.fail.Exception, match="PINECONE_API_KEY is missing"):
+            _require_opt_in()
+
+    def test_smoke_test_passes_when_opt_in_and_key_provided(self, monkeypatch):
+        from tests.integration.test_pinecone_smoke import _require_opt_in
+
+        monkeypatch.setenv("PINECONE_SMOKE_TEST", "1")
+        monkeypatch.setenv("PINECONE_API_KEY", "pcsk_valid_key")
+        key = _require_opt_in()
+        assert key == "pcsk_valid_key"

@@ -34,14 +34,19 @@ EMBED_MODEL = "multilingual-e5-large"
 SMOKE_TEST_NAMESPACE = "smoke-fixture-v001"
 
 
-def _require_opt_in():
-    api_key = os.environ.get("PINECONE_API_KEY")
+def _require_opt_in() -> str:
     opt_in = os.environ.get("PINECONE_SMOKE_TEST") == "1"
-    if not api_key or not opt_in:
+    if not opt_in:
         pytest.skip(
             "Real Pinecone integration test skipped. "
             "To run: set PINECONE_API_KEY and PINECONE_SMOKE_TEST=1. "
             "See tests/integration/test_pinecone_smoke.py for setup instructions."
+        )
+    api_key = os.environ.get("PINECONE_API_KEY")
+    if not api_key:
+        pytest.fail(
+            "PINECONE_SMOKE_TEST=1 was set, but PINECONE_API_KEY is missing or empty. "
+            "Integration tests require a valid PINECONE_API_KEY."
         )
     return api_key
 

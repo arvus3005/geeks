@@ -140,6 +140,7 @@ There are no silent passes.
 6. Construct control-plane client (`Pinecone()`)
 7. `validate_index()` — verify remote index matches canonical contract
 8. Construct data-plane client (`index = pc.Index()`)
-9. `upsert_records()` — data-plane writes
-10. `describe_index_stats()` — freshness reconciliation (must reach exactly 300 vectors)
+9. `describe_index_stats()` — pre-write namespace preflight (verifies `pilot_v1` is clean before any write)
+10. `upsert_records()` — token-paced parallel data-plane writes with atomic checkpointing
+11. `describe_index_stats()` — freshness reconciliation (must reach exactly 300 vectors)
 

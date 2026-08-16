@@ -21,7 +21,7 @@ test-unit:
 test:
 	uv run pytest tests/ -q -rs
 
-ci: typecheck lint fmt-check test
+ci: typecheck lint fmt-check scan-secrets test
 
 # Offline dry-runs — require no credentials, make no Pinecone calls
 dry-run-index:
@@ -37,9 +37,7 @@ dry-run-ingest-prepared:
 
 # Secret scan (filenames only — never prints secret values)
 scan-secrets:
-	@echo "Scanning for credential literals..."
-	@rg -l "pc-[a-zA-Z0-9]{8}-[a-zA-Z0-9]{4}" src tests scripts bench || true
-	@echo "Scan complete."
+	uv run python scripts/scan_secrets.py
 
 # Validate a prepared-canary manifest (offline, no credentials)
 validate-manifest:

@@ -48,11 +48,10 @@ import json
 import logging
 import os
 import sys
-
-# ── Canonical constants ───────────────────────────────────────────────────────
 import threading
 import time
 import uuid
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -173,19 +172,22 @@ _REGENERATION_COMMAND = (
 
 
 class _TokenRateLimiter:
-    """Thread-safe sliding-window token-rate limiter.
+    """Thread-safe rolling sliding-window token-rate limiter.
 
-    Every call to ``acquire(token_count)`` blocks until the requested tokens
-    can be reserved without exceeding ``tokens_per_window`` within the current
-    rolling window. Only atomic check-and-reserve decisions are performed
-    under the lock, preventing concurrent workers from double-booking capacity.
+    Maintains a timestamped queue of reservations within the rolling interval
+    `[now - window_seconds, now]`. Any reservation that would cause the sum
+    of reserved tokens in any rolling `window_seconds` interval to exceed
+    `tokens_per_window` is delayed until older reservations slide out of the window.
+
+    Check-and-reserve decisions are executed atomically under the lock.
+    Sleeps are performed outside the lock so other threads can proceed.
 
     Parameters
     ----------
     tokens_per_window:
-        Maximum tokens that may be reserved within one window (must be > 0).
+        Maximum tokens that may be reserved within any rolling window (must be > 0).
     window_seconds:
-        Duration of each rolling window in seconds. Defaults to 60.0.
+        Duration of the rolling window in seconds. Defaults to 60.0.
     clock:
         Injectable monotonic clock callable (default: ``time.monotonic``).
         Tests may pass a deterministic fake clock.
@@ -210,11 +212,17 @@ class _TokenRateLimiter:
         self._clock = clock if clock is not None else time.monotonic
         self._sleeper = sleeper if sleeper is not None else time.sleep
         self._lock = threading.Lock()
-        self._window_start: float = self._clock()
-        self._window_tokens: int = 0
+        self._reservations: deque[tuple[float, int]] = deque()
+        self._current_tokens: int = 0
+
+    def _prune(self, now: float) -> None:
+        cutoff = now - self._window_seconds
+        while self._reservations and self._reservations[0][0] <= cutoff:
+            _, tokens = self._reservations.popleft()
+            self._current_tokens -= tokens
 
     def acquire(self, token_count: int) -> float:
-        """Block until ``token_count`` tokens can be reserved in the current window.
+        """Block until ``token_count`` tokens can be reserved in the current rolling window.
 
         Parameters
         ----------
@@ -243,19 +251,24 @@ class _TokenRateLimiter:
             wait = 0.0
             with self._lock:
                 now = self._clock()
-                elapsed = now - self._window_start
-                if elapsed >= self._window_seconds:
-                    # Roll window forward while holding the lock
-                    self._window_start = now
-                    self._window_tokens = 0
-                    elapsed = 0.0
+                self._prune(now)
 
-                if self._window_tokens + token_count <= self._tokens_per_window:
-                    self._window_tokens += token_count
+                if self._current_tokens + token_count <= self._tokens_per_window:
+                    self._reservations.append((now, token_count))
+                    self._current_tokens += token_count
                     return total_waited
 
-                # Compute remaining wait until window resets
-                wait = max(self._window_seconds - elapsed, 0.001)
+                # Calculate required sleep until enough tokens slide out of the window
+                needed_freed = (self._current_tokens + token_count) - self._tokens_per_window
+                freed = 0
+                earliest_expiring_ts = now
+                for ts, tok in self._reservations:
+                    freed += tok
+                    earliest_expiring_ts = ts
+                    if freed >= needed_freed:
+                        break
+
+                wait = max((earliest_expiring_ts + self._window_seconds) - now, 0.001)
 
             # Sleep outside the lock so other threads can proceed
             self._sleeper(wait)
@@ -263,6 +276,28 @@ class _TokenRateLimiter:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _get_ns_vector_count(stats: object, namespace: str = CANONICAL_NAMESPACE) -> int | None:
+    """Extract namespace vector count from SDK object or dict-shaped fixture."""
+    namespaces = getattr(stats, "namespaces", None)
+    if namespaces is None and isinstance(stats, dict):
+        namespaces = stats.get("namespaces")
+    if namespaces is None:
+        return None
+    if isinstance(namespaces, dict):
+        ns_info = namespaces.get(namespace)
+    else:
+        try:
+            ns_info = namespaces[namespace]
+        except (KeyError, TypeError):
+            ns_info = None
+    if ns_info is None:
+        return 0
+    vc = getattr(ns_info, "vector_count", None)
+    if vc is None and isinstance(ns_info, dict):
+        vc = ns_info.get("vector_count")
+    return int(vc) if vc is not None else 0
 
 
 def _sha256_file(path: Path) -> str:
@@ -1067,6 +1102,85 @@ def _run(
 
     store = PineconeStore(index, embed_model=MODEL)
 
+    # ── Step 5.5: Pre-write namespace preflight (fail-closed) ─────────────────
+    logger.info("Performing pre-write preflight check on namespace '%s' …", CANONICAL_NAMESPACE)
+    preflight_stats: object = None
+    try:
+        preflight_stats = index.describe_index_stats()
+    except Exception as exc:
+        logger.error("Pre-write namespace preflight provider call failed: %s", exc)
+        report_data["preflight_status"] = f"FAILED: Provider error {exc}"
+        raise CanaryError(
+            f"Pre-write namespace preflight failed due to provider error: {exc}",
+            category="PreflightProviderFailure",
+            safe_next_action="Check network connectivity, API credentials, and Pinecone service status before retrying.",
+        ) from exc
+
+    preflight_count = _get_ns_vector_count(preflight_stats, CANONICAL_NAMESPACE)
+    if preflight_count is None:
+        preflight_count = 0
+
+    is_resume_run = bool(args.resume and completed_digests)
+
+    if not is_resume_run:
+        # Fresh canary run: namespace MUST be empty (0 records).
+        if preflight_count > 0:
+            msg = (
+                f"Namespace '{CANONICAL_NAMESPACE}' is not empty (contains {preflight_count} vectors) "
+                f"for a fresh canary run (expected 0). Refusing to write to prevent contamination. "
+                "The namespace must be manually verified and cleared by the operator before running a fresh canary."
+            )
+            logger.error(msg)
+            report_data["preflight_status"] = f"FAILED: Contaminated ({preflight_count} vectors)"
+            raise CanaryError(
+                msg,
+                category="NamespaceContaminatedPreflight",
+                safe_next_action="Verify index contents. If stale, manually clear vectors in the pilot namespace. Never automatically clear.",
+            )
+    else:
+        # Resume run: verify checkpoint and existing records
+        completed_record_count = sum(
+            len(batches[i]) for i, d in enumerate(batch_digests) if d in completed_digests
+        )
+        if preflight_count > CANARY_EXPECTED_TOTAL:
+            msg = (
+                f"Namespace '{CANONICAL_NAMESPACE}' contains {preflight_count} vectors, "
+                f"which exceeds the total expected canary size of {CANARY_EXPECTED_TOTAL}. "
+                "Namespace is contaminated or stale."
+            )
+            logger.error(msg)
+            report_data["preflight_status"] = (
+                f"FAILED: Contaminated ({preflight_count} vectors > {CANARY_EXPECTED_TOTAL})"
+            )
+            raise CanaryError(
+                msg,
+                category="NamespaceContaminatedPreflight",
+                safe_next_action="Verify index contents. Stale vectors must be manually cleared by the operator before resuming.",
+            )
+        if preflight_count > completed_record_count:
+            msg = (
+                f"Namespace '{CANONICAL_NAMESPACE}' contains {preflight_count} vectors, "
+                f"which exceeds the {completed_record_count} records recorded in the resume checkpoint. "
+                "Unrelated or stale records detected in namespace."
+            )
+            logger.error(msg)
+            report_data["preflight_status"] = (
+                f"FAILED: Unexpected records ({preflight_count} > {completed_record_count})"
+            )
+            raise CanaryError(
+                msg,
+                category="NamespaceContaminatedPreflight",
+                safe_next_action="Verify index contents against checkpoint before retrying with --resume.",
+            )
+
+    logger.info(
+        "Pre-write namespace preflight PASSED (namespace '%s' has %d vectors, is_resume=%s).",
+        CANONICAL_NAMESPACE,
+        preflight_count,
+        is_resume_run,
+    )
+    report_data["preflight_status"] = "PASSED"
+
     # ── Step 6: Token-paced parallel upserts ─────────────────────────────────
     # Initialize checkpoint for this run.
     ckpt_data: dict = {
@@ -1227,30 +1341,6 @@ def _run(
     final_count: int | None = None
     reconciled = False
     contaminated = False
-
-    def _get_ns_vector_count(stats: object) -> int | None:
-        """Extract namespace vector count from SDK object or dict-shaped fixture."""
-        # SDK object: stats.namespaces is a dict-like mapping namespace->NamespaceSummary
-        namespaces = getattr(stats, "namespaces", None)
-        if namespaces is None and isinstance(stats, dict):
-            namespaces = stats.get("namespaces")
-        if namespaces is None:
-            return None
-        # namespaces may be dict-like (SDK) or a plain dict (fixture)
-        if isinstance(namespaces, dict):
-            ns_info = namespaces.get(CANONICAL_NAMESPACE)
-        else:
-            try:
-                ns_info = namespaces[CANONICAL_NAMESPACE]
-            except (KeyError, TypeError):
-                ns_info = None
-        if ns_info is None:
-            return 0
-        # SDK struct: ns_info.vector_count; dict fixture: ns_info["vector_count"]
-        vc = getattr(ns_info, "vector_count", None)
-        if vc is None and isinstance(ns_info, dict):
-            vc = ns_info.get("vector_count")
-        return int(vc) if vc is not None else 0
 
     while time.monotonic() < deadline:
         try:

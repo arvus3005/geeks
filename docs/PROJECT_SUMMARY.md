@@ -173,21 +173,21 @@ Artifacts are git-ignored. Regenerate after a fresh clone with:
 uv run python scripts/prepare_canary.py \
     --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b \
     --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 \
-    --seed 42
+    --seed 42 \
+    --chunk-strategy sentence_aware
 ```
 
 | Property | Value |
 |----------|-------|
-| Manifest ID | `canary-42-02c06c8a0809` |
+| Manifest ID | `canary-42-ee540c17772a` |
 | Records | 300 (en=100, hi=100, bn=100) |
-| JSONL SHA-256 | `a580705f0ccb8bd4c0c66e19d94c79c9cb9401fee9752464bef2eb2452aafe17` |
-| JSONL bytes | 414,371 |
+| JSONL SHA-256 | `ca912d133c3033eca71cc86045923e0165f5b43baba6f1951a1741ff0a3a9217` |
+| JSONL bytes | 395,171 |
 | Total tokens | 28,366 |
 | Max token length | 211 (≤ 507 ✓) |
 | Duplicate IDs | 0 |
 | Forbidden fields | None |
 | Planned requests | 4 × ≤96 records |
-| Projected indexed bytes | 2,136,122 |
 | `ready_for_write` | **true** — empty `readiness_failures` |
 | Determinism | Two runs produced byte-identical JSONL and same manifest ID |
 
@@ -199,7 +199,7 @@ uv run python scripts/prepare_canary.py \
 |----------|--------|
 | `--dry-run` from repo root with live-looking credentials | Offline; printed plan; no Pinecone client constructed |
 | `--dry-run` from `/tmp` (different CWD) | Resolved data via manifest-relative path; 4 batches; namespace `pilot_v1` |
-| `--dry-run --execute` together | Exit 2 (mutually exclusive) |
+| `--dry-run --execute` together (ingest_prepared) | Exit 2 (mutually exclusive) |
 | `--execute` without `CONFIRM_PINECONE_WRITE=1` | Exit 2 |
 
 ---
@@ -221,15 +221,17 @@ into `pilot_v1` are live actions out of scope for this pass — Gemini's respons
 
 ---
 
-## First command Gemini should run to begin live indexing
+## Approved canary command for Gemini live execution
 
 > Regenerate the artifact first if working from a fresh clone (command above).  
 > The `msmarco-xi` integrated-embedding index must be created first with the contract above.
 
 ```bash
-PINECONE_API_KEY="$PINECONE_API_KEY" CONFIRM_PINECONE_WRITE=1 \
-  uv run python scripts/ingest_prepared.py \
-    --manifest artifacts/prepared/canary-42-02c06c8a0809_manifest.json \
-    --execute \
-    --namespace pilot_v1
+export PINECONE_API_KEY=<your-key>
+CONFIRM_PINECONE_WRITE=1 \
+  uv run python scripts/index_canary.py \
+    --manifest artifacts/prepared/canary-42-ee540c17772a_manifest.json \
+    --execute --resume --concurrency 4
 ```
+
+*(Note: `scripts/ingest_prepared.py` remains available as a lower-level legacy alternative, but `scripts/index_canary.py` is the approved canonical path with pre-write preflight and atomic checkpointing).*

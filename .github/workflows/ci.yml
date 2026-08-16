@@ -23,6 +23,8 @@ jobs:
       - run: uv sync --all-extras
       - run: uv run ruff format --check src/ tests/ bench/ scripts/
       - run: uv run ruff check src/ tests/ bench/ scripts/
+      - name: Type check (mypy)
+        run: uv run mypy src/
       - name: Secret scanner (normal offline CI must contain no provider credentials)
         run: uv run python scripts/scan_secrets.py
       - name: Offline tests (no live credentials)
@@ -56,10 +58,11 @@ jobs:
       - name: Verify no secrets in source before live run
         run: uv run python scripts/scan_secrets.py
       - name: Live integration tests (manual dispatch only)
-        run: uv run pytest tests/integration/ -v
+        run: uv run pytest tests/integration/ -v -rs
         env:
           # Secrets provided ONLY in this manual job, never in push/PR CI.
           # Values come from GitHub Secrets — never printed.
           PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
           SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
+          PINECONE_SMOKE_TEST: "1"
           HHGOA_USE_FAKE_EMBEDDER: "0"

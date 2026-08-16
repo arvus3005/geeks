@@ -120,11 +120,11 @@ Verify output against canonical contract in `pinecone_contract.py`:
 ## Step 6: Run bounded smoke integration tests
 
 ```bash
-PINECONE_API_KEY=<your-key> \
+PINECONE_API_KEY=<your-key> PINECONE_SMOKE_TEST=1 \
     uv run pytest tests/integration/ -v -k "not full_corpus"
 ```
 
-These tests are opt-in and never run in normal CI.
+These tests are opt-in and never run in normal offline CI. They require explicit confirmation via `PINECONE_SMOKE_TEST=1`.
 
 ---
 

@@ -47,7 +47,7 @@ uv run python scripts/ingest_all.py --mode pilot                                
 ### Running real integration tests (opt-in, requires PINECONE_API_KEY)
 ```bash
 export PINECONE_API_KEY=<your-key>
-uv run pytest tests/integration -q
+PINECONE_SMOKE_TEST=1 uv run pytest tests/integration -v
 ```
 
 ### Key guardrails
@@ -59,3 +59,4 @@ uv run pytest tests/integration -q
 See `docs/INGESTION_RUNBOOK.md` for the live ingestion procedure.
 See `docs/PINECONE_SCHEMA.md` for the Pinecone record schema.
 See `docs/DATASET_CONTRACT.md` for the data leakage boundary rules.
+See `docs/PROJECT_SUMMARY.md` for the project overview.
