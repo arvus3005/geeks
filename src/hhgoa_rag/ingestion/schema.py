@@ -9,9 +9,20 @@ must never pass through to the Pinecone layer.
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from ..pinecone_store import TEXT_RECORD_FIELD
+
+# Languages permitted in prepared records.
+ALLOWED_LANGUAGES: frozenset[str] = frozenset({"en", "hi", "bn"})
+
+# Pinecone limits (integrated dense embedding, Starter).
+MAX_ID_LENGTH = 512
+MAX_METADATA_BYTES = 40_960
+
+_HEX40_RE = re.compile(r"^[0-9a-f]{40}$")
 
 # Fields that must exist in every indexed record
 REQUIRED_FIELDS: frozenset[str] = frozenset(
@@ -106,12 +117,61 @@ def validate_record(record: dict[str, Any]) -> None:
     missing = REQUIRED_FIELDS - set(record.keys())
     if missing:
         raise SchemaViolationError(f"Record missing required fields: {sorted(missing)}")
-    if not record.get("id"):
+
+    # Non-empty string ID with Pinecone length bound.
+    record_id = record.get("id")
+    if not isinstance(record_id, str) or not record_id:
         raise SchemaViolationError("Record 'id' must be a non-empty string")
-    if not record.get(TEXT_RECORD_FIELD):
+    if len(record_id) > MAX_ID_LENGTH:
+        raise SchemaViolationError(
+            f"Record 'id' exceeds Pinecone max length {MAX_ID_LENGTH}: {len(record_id)}"
+        )
+
+    # Non-empty text.
+    text = record.get(TEXT_RECORD_FIELD)
+    if not isinstance(text, str) or not text.strip():
         raise SchemaViolationError(f"Record '{TEXT_RECORD_FIELD}' must be a non-empty string")
+
+    # Language must be allowed.
+    language = record.get("language")
+    if language not in ALLOWED_LANGUAGES:
+        raise SchemaViolationError(
+            f"Record 'language' {language!r} not in allowed {sorted(ALLOWED_LANGUAGES)}"
+        )
+
+    # Positive token length.
     if not isinstance(record.get("token_length"), int) or record["token_length"] <= 0:
         raise SchemaViolationError("Record 'token_length' must be a positive integer")
+
+    # chunk_ordinal / chunk_total consistency: 0 <= ordinal < total.
+    ordinal = record.get("chunk_ordinal")
+    total = record.get("chunk_total")
+    if not isinstance(ordinal, int) or not isinstance(total, int):
+        raise SchemaViolationError("chunk_ordinal and chunk_total must be integers")
+    if total <= 0:
+        raise SchemaViolationError(f"chunk_total must be positive, got {total}")
+    if not (0 <= ordinal < total):
+        raise SchemaViolationError(
+            f"chunk_ordinal must satisfy 0 <= ordinal < total; got ordinal={ordinal}, total={total}"
+        )
+
+    # Dataset revision must be a full 40-char hex commit SHA.
+    revision = record.get("dataset_revision")
+    if not isinstance(revision, str) or not _HEX40_RE.match(revision):
+        raise SchemaViolationError(
+            f"dataset_revision must be a full 40-char hex SHA, got {revision!r}"
+        )
+
+    # Bounded metadata payload for Pinecone.
+    metadata_bytes = len(
+        json.dumps({k: v for k, v in record.items() if k != "id"}, ensure_ascii=False).encode(
+            "utf-8"
+        )
+    )
+    if metadata_bytes > MAX_METADATA_BYTES:
+        raise SchemaViolationError(
+            f"Record metadata {metadata_bytes} bytes exceeds Pinecone limit {MAX_METADATA_BYTES}"
+        )
 
 
 def _check_forbidden_recursive(obj: Any, path: str) -> None:

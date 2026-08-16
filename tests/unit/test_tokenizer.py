@@ -72,8 +72,8 @@ def test_exceeds_model_limit_very_long_text(tokenizer):
     assert not tokenizer.fits_model_limit(long_text)
 
 
-def test_model_input_limit_is_512(tokenizer):
-    assert tokenizer.model_input_limit == 512
+def test_model_input_limit_is_507(tokenizer):
+    assert tokenizer.model_input_limit == 507
 
 
 def test_tokenizer_info_has_correct_repo(tokenizer):

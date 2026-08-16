@@ -54,6 +54,28 @@ logger = logging.getLogger(__name__)
 DATASET_REPO = "ai4bharat/MSMARCO-XI"
 CHUNK_STRATEGY_VERSION = "v1"
 
+# Version tags that participate in manifest identity.
+NORMALIZATION_VERSION = "v1"
+SCHEMA_VERSION = "2"
+
+# Text field / index contract.
+TEXT_FIELD = "chunk_text"
+
+
+def _chunk_parameters(strategy: str) -> dict:
+    """Return the deterministic parameters for a chunk strategy (for manifest identity)."""
+    from hhgoa_rag.ingestion.chunkers import CHUNKERS
+
+    chunker = CHUNKERS.get(strategy)
+    if chunker is None:
+        return {}
+    params: dict = {}
+    for attr in ("target_chars", "overlap_sentences", "target_tokens", "overlap_tokens"):
+        if hasattr(chunker, attr):
+            params[attr] = getattr(chunker, attr)
+    return params
+
+
 SUPPORTED_CHUNK_STRATEGIES = [
     "passage_native",
     "sentence_aware",
@@ -251,13 +273,35 @@ def _preflight_schema(row: dict, config_lang: str, parquet_path: str) -> None:
     logger.info("Schema preflight PASSED for %s (config_lang=%s)", parquet_path, config_lang)
 
 
-def _stream_parquet(
+def _preflight_disk_space(min_free_bytes: int = 3 * 1024 * 1024 * 1024) -> None:
+    """Fail closed if too little free disk space remains before downloads.
+
+    Full MSMARCO-XI Parquet shards are large; --max-rows-per-config caps how many
+    rows we READ but does NOT cap how many bytes are DOWNLOADED (the whole shard
+    is fetched into the HF cache). Guard against filling the disk.
+    """
+    import shutil
+
+    free = shutil.disk_usage(".").free
+    if free < min_free_bytes:
+        raise RuntimeError(
+            f"Insufficient free disk space: {free / 1e9:.1f} GB free, "
+            f"need at least {min_free_bytes / 1e9:.1f} GB. "
+            "Full Parquet shards are downloaded regardless of --max-rows-per-config."
+        )
+    logger.info("Disk preflight OK: %.1f GB free", free / 1e9)
+
+
+def _download_and_read_parquet(
     config_lang: str,
     split: str,
     dataset_revision: str,
     max_rows: int,
 ) -> tuple[list[dict], str]:
-    """Download (with caching) and read up to max_rows records from the Parquet file.
+    """Download the FULL Parquet shard (cached) then read up to max_rows records.
+
+    NOTE: the entire Parquet shard is downloaded regardless of max_rows;
+    max_rows only bounds how many rows are parsed into memory.
 
     Uses hf_hub_download to fetch the revision-pinned Parquet file into the local
     HuggingFace cache, then reads it with pyarrow.  Direct-URL streaming mode is
@@ -438,58 +482,98 @@ def _check_sources_differ(hi_path: str, bn_path: str) -> None:
     logger.info("Source identity check PASSED: hi=%s, bn=%s (different files)", hi_path, bn_path)
 
 
+def _split_units(text: str, level: str) -> list[str]:
+    """Split text into ordered non-empty units at the given granularity.
+
+    level="sentence": sentence/newline boundaries (Latin + Indic punctuation)
+    level="word":     whitespace boundaries
+    level="char":     individual characters (last-resort for CJK / no-space text)
+    """
+    import re
+
+    if level == "sentence":
+        sent_re = re.compile(r"(?<=[.?!।॥])\s+|\n+")
+        units = sent_re.split(text.strip())
+    elif level == "word":
+        units = re.split(r"\s+", text.strip())
+    elif level == "char":
+        units = list(text.strip())
+    else:  # pragma: no cover - programming error
+        raise ValueError(f"Unknown split level: {level!r}")
+    return [u for u in units if u.strip()]
+
+
+_NEXT_LEVEL: dict[str, str | None] = {"sentence": "word", "word": "char", "char": None}
+
+
 def _split_text_to_fit(
     text: str,
     tok_wrapper: object,
     model_limit: int,
 ) -> list[str]:
-    """Split text into chunks that each fit within model_limit tokens.
+    """Split text into ordered chunks that each fit within model_limit tokens.
 
-    Splits on sentence boundaries first, then word boundaries.
-    Returns a list of non-empty strings that each fit.
+    Cascades sentence -> word -> character granularity.  ALL text is retained:
+    every sub-chunk produced is returned in order with no duplication and no
+    silent loss.  If a single character still exceeds the limit (pathological),
+    the whole passage is rejected by returning an empty list.
     """
-    from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT  # noqa: F401
-
     if tok_wrapper.count_tokens(text, add_prefix=True) <= model_limit:  # type: ignore[attr-defined]
         return [text]
 
-    import re
+    def _pack(segment: str, level: str) -> list[str]:
+        joiner = "" if level == "char" else " "
+        units = _split_units(segment, level)
+        if not units:
+            return []
+        next_level = _NEXT_LEVEL[level]
+        out: list[str] = []
+        current: list[str] = []
 
-    sent_re = re.compile(r"(?<=[.?!।॥])\s+|\n+")
-    sentences = sent_re.split(text.strip())
-    sentences = [s.strip() for s in sentences if s.strip()]
+        def flush() -> None:
+            if current:
+                out.append(joiner.join(current))
+                current.clear()
 
-    chunks: list[str] = []
-    current_parts: list[str] = []
-
-    for sent in sentences:
-        candidate = " ".join(current_parts + [sent])
-        if tok_wrapper.count_tokens(candidate, add_prefix=True) <= model_limit:  # type: ignore[attr-defined]
-            current_parts.append(sent)
-        else:
-            if current_parts:
-                chunks.append(" ".join(current_parts))
-            # If single sentence still oversized, split by words
-            if tok_wrapper.count_tokens(sent, add_prefix=True) > model_limit:  # type: ignore[attr-defined]
-                words = sent.split()
-                word_parts: list[str] = []
-                for w in words:
-                    candidate_w = " ".join(word_parts + [w])
-                    if tok_wrapper.count_tokens(candidate_w, add_prefix=True) <= model_limit:  # type: ignore[attr-defined]
-                        word_parts.append(w)
-                    else:
-                        if word_parts:
-                            chunks.append(" ".join(word_parts))
-                        word_parts = [w]
-                if word_parts:
-                    chunks.append(" ".join(word_parts))
+        for unit in units:
+            if tok_wrapper.count_tokens(unit, add_prefix=True) > model_limit:  # type: ignore[attr-defined]
+                flush()
+                if next_level is None:
+                    # A single character exceeds the limit — unrecoverable.
+                    return []
+                sub = _pack(unit, next_level)
+                if not sub:
+                    return []
+                out.extend(sub)
+                continue
+            candidate = joiner.join(current + [unit])
+            if tok_wrapper.count_tokens(candidate, add_prefix=True) <= model_limit:  # type: ignore[attr-defined]
+                current.append(unit)
             else:
-                current_parts = [sent]
+                flush()
+                current.append(unit)
+        flush()
+        return out
 
-    if current_parts:
-        chunks.append(" ".join(current_parts))
+    result = _pack(text, "sentence")
+    return [c for c in result if c.strip()]
 
-    return [c for c in chunks if c.strip()]
+
+def _chunk_passage_texts(
+    text: str,
+    passage_id: str,
+    chunk_strategy: str,
+) -> list[str]:
+    """Route a passage through the chunker registry, returning ordered chunk texts.
+
+    The selected strategy from the registry is authoritatively used; every chunk
+    it produces is retained in order (no text loss).
+    """
+    from hhgoa_rag.ingestion.chunkers import get_chunker
+
+    chunker = get_chunker(chunk_strategy)
+    chunks = chunker.chunk(text, passage_id)
+    return [c.text for c in chunks if c.text.strip()]
 
 
 def _build_prepared_records_for_passage(
@@ -502,22 +586,38 @@ def _build_prepared_records_for_passage(
     split_counts: dict[str, int],
     rejection_counts: dict[str, int],
 ) -> list[dict]:
-    """Build 1+ prepared records from a passage, splitting if needed.
+    """Build 1+ prepared records from a passage.
 
-    Returns list of records (may be empty if rejected, or multiple if split).
+    1. Route the passage through the selected chunker (registry-backed).
+    2. Enforce the 507-token limit on every chunk, splitting oversized chunks
+       further with deterministic sentence/word/char cascade — retaining ALL
+       resulting sub-chunks (no text loss, no duplication).
+    3. Emit one record per final chunk with correct chunk_ordinal/chunk_total
+       describing the actual parent-passage chunking, via build_record().
+
+    Returns list of records (empty only if every chunk is unsplittable).
     """
+    from hhgoa_rag.ingestion.schema import SchemaViolationError, build_record
     from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT
 
     lang = rec["language"]
-    text = rec["normalized_text"]
-    token_length = tok_wrapper.count_tokens(text, add_prefix=True)  # type: ignore[attr-defined]
+    parent_passage_id = rec["content_hash"]
 
-    if token_length > MODEL_INPUT_LIMIT:
-        # Attempt deterministic splitting
-        sub_texts = _split_text_to_fit(text, tok_wrapper, MODEL_INPUT_LIMIT)
+    # Step 1: chunk via the selected strategy.
+    strategy_chunks = _chunk_passage_texts(
+        rec["normalized_text"], parent_passage_id, chunk_strategy
+    )
+
+    # Step 2: enforce token limit on each chunk, expanding oversized ones.
+    final_texts: list[str] = []
+    for chunk_text in strategy_chunks:
+        if tok_wrapper.count_tokens(chunk_text, add_prefix=True) <= MODEL_INPUT_LIMIT:  # type: ignore[attr-defined]
+            final_texts.append(chunk_text)
+            continue
+        sub_texts = _split_text_to_fit(chunk_text, tok_wrapper, MODEL_INPUT_LIMIT)
         if not sub_texts:
             logger.warning(
-                "Passage unsplittable at physical_source=%s row=%d pos=%d — rejecting",
+                "Chunk unsplittable at physical_source=%s row=%d pos=%d — rejecting passage",
                 rec["physical_source"],
                 rec["local_source_row"],
                 rec["passage_position"],
@@ -525,49 +625,54 @@ def _build_prepared_records_for_passage(
             rejection_counts[lang] = rejection_counts.get(lang, 0) + 1
             return []
         split_counts[lang] = split_counts.get(lang, 0) + (len(sub_texts) - 1)
-        logger.info(
-            "Split passage into %d sub-chunks at physical_source=%s row=%d",
-            len(sub_texts),
-            rec["physical_source"],
-            rec["local_source_row"],
-        )
-        # Build a record for the first sub-chunk only (we only need one passage per slot)
-        text = sub_texts[0]
+        final_texts.extend(sub_texts)
+
+    if not final_texts:
+        rejection_counts[lang] = rejection_counts.get(lang, 0) + 1
+        return []
+
+    # Step 3: build one record per final chunk with real ordinal/total.
+    chunk_total = len(final_texts)
+    records: list[dict] = []
+    for ordinal, text in enumerate(final_texts):
         token_length = tok_wrapper.count_tokens(text, add_prefix=True)  # type: ignore[attr-defined]
+        sub_content_hash = _content_hash(text)
+        point_id = _make_point_id(
+            dataset_revision=dataset_revision,
+            language=lang,
+            content_hash=sub_content_hash,
+            chunk_strategy_version=f"{chunk_strategy}_{chunk_strategy_version}",
+            chunk_ordinal=ordinal,
+        )
+        try:
+            record = build_record(
+                record_id=point_id,
+                chunk_text=text,
+                language=lang,
+                config_language=rec["config_language"],
+                dataset_revision=dataset_revision,
+                split=rec["split"],
+                physical_shard="0",
+                local_source_row=rec["local_source_row"],
+                passage_position=rec["passage_position"],
+                parent_passage_id=parent_passage_id,
+                content_hash=sub_content_hash,
+                chunk_strategy=chunk_strategy,
+                chunk_strategy_version=chunk_strategy_version,
+                chunk_ordinal=ordinal,
+                chunk_total=chunk_total,
+                token_length=token_length,
+                tokenizer_fingerprint=tok_wrapper.fingerprint,  # type: ignore[attr-defined]
+                manifest_id=manifest_id,
+            )
+        except SchemaViolationError as e:  # pragma: no cover - defensive
+            raise RuntimeError(f"build_record rejected a prepared record: {e}") from e
+        # Extra provenance fields not part of the required schema.
+        record["dataset_repo"] = DATASET_REPO
+        record["physical_source"] = rec["physical_source"]
+        records.append(record)
 
-    sub_content_hash = _content_hash(text)
-    point_id = _make_point_id(
-        dataset_revision=dataset_revision,
-        language=lang,
-        content_hash=sub_content_hash,
-        chunk_strategy_version=f"{chunk_strategy}_{chunk_strategy_version}",
-        chunk_ordinal=0,
-    )
-
-    return [
-        {
-            "id": point_id,
-            "chunk_text": text,
-            "language": lang,
-            "config_language": rec["config_language"],
-            "dataset_repo": DATASET_REPO,
-            "dataset_revision": dataset_revision,
-            "split": rec["split"],
-            "physical_source": rec["physical_source"],
-            "physical_shard": "0",
-            "local_source_row": rec["local_source_row"],
-            "passage_position": rec["passage_position"],
-            "parent_passage_id": rec["content_hash"],
-            "content_hash": sub_content_hash,
-            "chunk_strategy": chunk_strategy,
-            "chunk_strategy_version": chunk_strategy_version,
-            "chunk_ordinal": 0,
-            "chunk_total": 1,
-            "token_length": token_length,
-            "tokenizer_fingerprint": tok_wrapper.fingerprint,  # type: ignore[attr-defined]
-            "manifest_id": manifest_id,
-        }
-    ]
+    return records
 
 
 def _fill_quota(
@@ -633,18 +738,43 @@ def main() -> None:
     dataset_revision = _resolve_dataset_revision(args.dataset_revision)
     is_pinned = args.dataset_revision is not None
 
-    # Fingerprint: seed + quotas + dataset_revision + chunk_strategy
+    # Resolve tokenizer contract early so it feeds the manifest identity.
+    from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT, TOKENIZER_REPO
+
+    resolved_tok_revision = _resolve_tokenizer_revision(args.tokenizer_revision, TOKENIZER_REPO)
+    from hhgoa_rag.ingestion.tokenizer import get_tokenizer
+
+    tok = get_tokenizer(revision=resolved_tok_revision)
+    logger.info("Tokenizer loaded: fingerprint=%s", tok.fingerprint)
+
+    # Manifest identity depends on EVERY corpus-affecting input.  Changing any of
+    # these changes the manifest_id (and hence output filenames + record IDs).
     fingerprint_src = json.dumps(
         {
-            "quotas": quotas,
-            "seed": args.seed,
+            "dataset_repo": DATASET_REPO,
             "dataset_revision": dataset_revision,
+            "tokenizer_repo": TOKENIZER_REPO,
+            "tokenizer_revision": resolved_tok_revision,
+            "tokenizer_fingerprint": tok.fingerprint,
+            "embedding_model": "multilingual-e5-large",
+            "model_input_limit": MODEL_INPUT_LIMIT,
             "split": args.split,
+            "physical_sources": {
+                lang: _PARQUET_FILES.get((lang, args.split)) for lang in CANARY_SOURCE_CONFIGS
+            },
+            "seed": args.seed,
+            "quotas": quotas,
+            "normalization_version": NORMALIZATION_VERSION,
+            "schema_version": SCHEMA_VERSION,
             "chunk_strategy": chunk_strategy,
+            "chunk_strategy_version": CHUNK_STRATEGY_VERSION,
+            "chunk_parameters": _chunk_parameters(chunk_strategy),
+            "text_field": TEXT_FIELD,
+            "field_map": {"text": TEXT_FIELD},
         },
         sort_keys=True,
     )
-    manifest_id = f"canary-{args.seed}-{hashlib.sha256(fingerprint_src.encode()).hexdigest()[:8]}"
+    manifest_id = f"canary-{args.seed}-{hashlib.sha256(fingerprint_src.encode()).hexdigest()[:12]}"
 
     logger.info("Manifest ID: %s", manifest_id)
     logger.info("Quotas: %s", quotas)
@@ -653,30 +783,22 @@ def main() -> None:
         "Dataset revision: %s (%s)", dataset_revision, "pinned" if is_pinned else "resolved HEAD"
     )
 
-    # Step 2: Resolve tokenizer revision to a full immutable SHA
-    logger.info("Resolving tokenizer revision …")
-    from hhgoa_rag.ingestion.tokenizer import MODEL_INPUT_LIMIT, TOKENIZER_REPO
-
-    resolved_tok_revision = _resolve_tokenizer_revision(args.tokenizer_revision, TOKENIZER_REPO)
+    # Tokenizer pin status (tokenizer already resolved + loaded above).
     tokenizer_revision_pinned = (
         args.tokenizer_revision is not None
         and args.tokenizer_revision not in ("HEAD", "main", "unknown")
         and len(args.tokenizer_revision) >= 7
     )
-    # If we auto-resolved, check it looks like a SHA
     if not tokenizer_revision_pinned and resolved_tok_revision not in ("HEAD", "main", "unknown"):
         if len(resolved_tok_revision) >= 7:
             tokenizer_revision_pinned = True
 
-    logger.info("Loading tokenizer %s revision=%s …", TOKENIZER_REPO, resolved_tok_revision)
-    from hhgoa_rag.ingestion.tokenizer import get_tokenizer
-
-    tok = get_tokenizer(revision=resolved_tok_revision)
-    logger.info("Tokenizer loaded: fingerprint=%s", tok.fingerprint)
-
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 3: Stream Parquet files for each source config
+    # Preflight disk space before any (full-shard) downloads.
+    _preflight_disk_space()
+
+    # Step 3: Download + read Parquet files for each source config
     all_native_hi: list[dict] = []
     all_native_bn: list[dict] = []
     all_english: list[dict] = []
@@ -687,7 +809,7 @@ def main() -> None:
     bn_parquet_path: str = ""
 
     for config_lang in CANARY_SOURCE_CONFIGS:
-        rows, parquet_path = _stream_parquet(
+        rows, parquet_path = _download_and_read_parquet(
             config_lang,
             args.split,
             dataset_revision,
@@ -844,7 +966,14 @@ def main() -> None:
     jsonl_checksum = _sha256_file(jsonl_path)
     jsonl_bytes = jsonl_path.stat().st_size
 
-    projected_indexed_bytes = total_records * 1500
+    # Conservative documented storage estimate for integrated dense embeddings:
+    #   dense vector: 1024 dims * 4 bytes = 4096 bytes
+    #   metadata + text payload: measured prepared bytes per record
+    #   overhead factor: 1.3x for index structures
+    # This replaces the arbitrary total_records * 1500 heuristic.
+    DENSE_VECTOR_BYTES = 1024 * 4
+    avg_payload_bytes = (jsonl_bytes / total_records) if total_records else 0
+    projected_indexed_bytes = int(total_records * (DENSE_VECTOR_BYTES + avg_payload_bytes) * 1.3)
 
     starter_budget_ok = (
         total_records <= 10_000
@@ -929,7 +1058,8 @@ def main() -> None:
         "forbidden_field_audit": (
             "PASS" if not forbidden_found else f"FAIL: {sorted(set(forbidden_found))}"
         ),
-        "prepared_record_path": str(jsonl_path),
+        "prepared_record_path": jsonl_path.name,
+        "prepared_record_path_full": str(jsonl_path),
         "prepared_record_checksum": jsonl_checksum,
         "prepared_data_checksum": prepared_data_checksum,
         "number_of_planned_requests": num_planned_requests,

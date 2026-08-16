@@ -528,7 +528,7 @@ def test_dry_run_never_touches_pinecone(tmp_path: Path, monkeypatch: pytest.Monk
 
     # Run dry-run validation (not full main, just the validation functions)
     loaded_manifest = ip._load_manifest(manifest_path)
-    record_path = ip._verify_data_file(loaded_manifest)
+    record_path = ip._verify_data_file(loaded_manifest, manifest_path)
     loaded_records = ip._load_and_validate_records(record_path, loaded_manifest)
     ip._build_batches(loaded_records)
 

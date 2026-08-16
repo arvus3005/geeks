@@ -6,9 +6,9 @@ from .base import BaseSTTAdapter, TranscriptResult
 
 
 class SarvamSTTAdapter(BaseSTTAdapter):
-    """Sarvam Saaras v2 STT adapter."""
+    """Sarvam Saaras v3 STT adapter."""
 
-    def __init__(self, api_key: str, model: str = "saaras:v2"):
+    def __init__(self, api_key: str, model: str = "saaras:v3"):
         self.api_key = api_key
         self.model = model
 

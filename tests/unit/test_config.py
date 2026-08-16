@@ -32,13 +32,15 @@ def test_pinecone_namespace_default():
     assert s.pinecone_namespace == "smoke"
 
 
-def test_missing_pinecone_api_key_ok():
-    # Key is optional at startup; app marks not-ready instead of crashing
+def test_missing_pinecone_api_key_ok(monkeypatch):
+    # Key is optional at startup; app marks not-ready instead of crashing.
+    # An unset OR empty-string credential must both read as falsy.
+    monkeypatch.delenv("PINECONE_API_KEY", raising=False)
     s = Settings(_env_file=None)
-    assert s.pinecone_api_key is None
+    assert not s.pinecone_api_key
 
 
-def test_missing_sarvam_key_ok():
+def test_missing_sarvam_key_ok(monkeypatch):
+    monkeypatch.delenv("SARVAM_API_KEY", raising=False)
     s = Settings(_env_file=None)
-    assert s.sarvam_api_key is None
-
+    assert not s.sarvam_api_key

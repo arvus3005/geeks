@@ -10,7 +10,7 @@
 - SQLite-backed content deduplication with WAL
 - Safety gates: dry-run by default; full-mode permanently blocked on Starter plan
 - Contract tests: forbidden fields (query, Answer, etc.) cannot enter Pinecone records
-- **208 offline tests pass; 8 real Pinecone integration tests remain opt-in skipped**
+- **Offline test suite passes with no live provider credentials; real Pinecone integration tests are opt-in (separate CI job).**
 
 ### What is NOT yet done (requires live indexing session)
 - Real Pinecone index creation (blocked until credentials and pilot manifest are approved)

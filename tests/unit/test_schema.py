@@ -21,7 +21,7 @@ def _valid_kwargs() -> dict:
         chunk_text="The capital of India is New Delhi.",
         language="en",
         config_language="hi",
-        dataset_revision="abc123def456",
+        dataset_revision="bf5cdc1f26e581e519018e434db14edd1b77602b",
         split="train",
         physical_shard="0",
         local_source_row=42,

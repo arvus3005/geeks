@@ -1,6 +1,9 @@
 name: CI
 on: [push, pull_request]
 jobs:
+  # Offline test job — MUST NEVER receive live provider credentials.
+  # No PINECONE_API_KEY / SARVAM_API_KEY are injected here so that offline
+  # unit/behavioural/contract tests exercise the fail-closed dry-run paths.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -11,10 +14,30 @@ jobs:
       - run: uv sync --all-extras
       - run: uv run ruff format --check src/ tests/ bench/ scripts/
       - run: uv run ruff check src/ tests/ bench/ scripts/
-      - run: uv run pytest tests/unit/ tests/behavioural/ tests/contract/ -v
+      - name: Offline tests (no live credentials)
+        run: uv run pytest tests/unit/ tests/behavioural/ tests/contract/ -v
         env:
           HHGOA_USE_FAKE_EMBEDDER: "1"
           CORPUS_MODE: smoke
+          # Writable HF cache so tokenizer tests do not silently skip.
+          HF_HOME: ${{ github.workspace }}/.cache/huggingface
+          # Credentials explicitly blanked — offline tests are isolated.
+          PINECONE_API_KEY: ""
+          SARVAM_API_KEY: ""
+
+  # Live integration tests are opt-in and only run when explicitly enabled.
+  # They are the only place live credentials are provided.
+  integration:
+    runs-on: ubuntu-latest
+    if: ${{ vars.RUN_LIVE_INTEGRATION == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
+      - run: uv sync --all-extras
+      - name: Live integration tests (opt-in)
+        run: uv run pytest tests/integration/ -v
+        env:
           PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
           SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
-

@@ -866,7 +866,13 @@ def _make_minimal_valid_record() -> dict:
             rec[field] = "sample text"
         elif field == "token_length":
             rec[field] = 10
-        elif field in ("chunk_ordinal", "chunk_total", "local_source_row", "passage_position"):
+        elif field == "language":
+            rec[field] = "en"
+        elif field == "dataset_revision":
+            rec[field] = "bf5cdc1f26e581e519018e434db14edd1b77602b"
+        elif field == "chunk_total":
+            rec[field] = 1
+        elif field in ("chunk_ordinal", "local_source_row", "passage_position"):
             rec[field] = 0
         else:
             rec[field] = "test-value"
@@ -882,7 +888,7 @@ def _make_built_record() -> dict:
         chunk_text="sample text for testing",
         language="en",
         config_language="en",
-        dataset_revision="abc123",
+        dataset_revision="bf5cdc1f26e581e519018e434db14edd1b77602b",
         split="train",
         physical_shard="0",
         local_source_row=0,

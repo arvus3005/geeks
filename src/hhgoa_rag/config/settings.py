@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # STT
     sarvam_api_key: str | None = None
-    sarvam_model: str = "saaras:v2"
+    sarvam_model: str = "saaras:v3"
     whisper_enabled: bool = False  # dev fallback only
 
     # Timeouts (ms)

@@ -79,6 +79,17 @@ REQUIRED_MANIFEST_FIELDS = {
 
 FORBIDDEN_FIELDS = {"query", "Answer", "Eng_Query", "Eng_Answer", "query_type", "is_selected"}
 
+# Immutable Pinecone integrated-embedding index contract.
+INDEX_CONTRACT = {
+    "model": "multilingual-e5-large",
+    "dimension": 1024,
+    "metric": "cosine",
+    "field_map": {"text": "chunk_text"},
+    "write_parameters": {"input_type": "passage", "truncate": "NONE"},
+    "read_parameters": {"input_type": "query", "truncate": "NONE"},
+}
+SAFE_NAMESPACE = "pilot_v1"
+
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -165,9 +176,31 @@ def _load_manifest(manifest_path: Path) -> dict:
     return manifest
 
 
-def _verify_data_file(manifest: dict) -> Path:
+def _resolve_record_path(manifest: dict, manifest_path: Path) -> Path:
+    """Resolve the prepared JSONL path portably.
+
+    The manifest stores a bare filename ('prepared_record_path'); we resolve it
+    relative to the manifest's own directory so that ingestion works regardless
+    of the current working directory (repo root, /tmp, anywhere).
+    """
+    stored = manifest["prepared_record_path"]
+    candidate = Path(stored)
+    if candidate.is_absolute() and candidate.exists():
+        return candidate
+    # Resolve relative to the manifest directory (portable).
+    sibling = manifest_path.resolve().parent / candidate.name
+    if sibling.exists():
+        return sibling
+    # Fall back to any recorded full path for legacy manifests.
+    full = manifest.get("prepared_record_path_full")
+    if full and Path(full).exists():
+        return Path(full)
+    return sibling
+
+
+def _verify_data_file(manifest: dict, manifest_path: Path) -> Path:
     """Verify the prepared JSONL file exists and matches its checksum."""
-    record_path = Path(manifest["prepared_record_path"])
+    record_path = _resolve_record_path(manifest, manifest_path)
     if not record_path.exists():
         raise FileNotFoundError(
             f"Prepared data file not found: {record_path}. " "Run prepare_canary.py first."
@@ -400,12 +433,26 @@ def main() -> None:
 
     manifest_path: Path = args.manifest
 
-    # Determine mode BEFORE touching any Pinecone-related code
-    live_mode = _is_live_mode(args)
-    dry_mode = not live_mode
+    import os
 
-    if dry_mode and args.execute:
-        logger.info("--execute was set but CONFIRM_PINECONE_WRITE=1 is not set — running dry-run.")
+    # Fail closed on contradictory flags.
+    if args.dry_run and args.execute:
+        logger.error("--dry-run and --execute are mutually exclusive. Aborting.")
+        sys.exit(2)
+
+    # --execute without the confirmation variable is an error (never silently
+    # downgraded to a live write, never silently ignored).
+    if args.execute and os.environ.get("CONFIRM_PINECONE_WRITE") != "1":
+        logger.error(
+            "--execute requires CONFIRM_PINECONE_WRITE=1 to be set. "
+            "Refusing to proceed. (Default, no --execute, is always safe dry-run.)"
+        )
+        sys.exit(2)
+
+    # Determine mode BEFORE touching any Pinecone-related code.
+    # --dry-run ALWAYS stays offline even if credentials are present.
+    live_mode = (not args.dry_run) and _is_live_mode(args)
+    dry_mode = not live_mode
 
     # Step 1: Load and validate manifest (always, including dry-run)
     logger.info("Loading manifest: %s", manifest_path)
@@ -418,14 +465,14 @@ def main() -> None:
     )
 
     # Step 2: Verify and load data file (always, including dry-run)
-    record_path = _verify_data_file(manifest)
+    record_path = _verify_data_file(manifest, manifest_path)
     logger.info("Data file verified: %s", record_path)
 
     records = _load_and_validate_records(record_path, manifest)
     logger.info("Loaded and validated %d records from data file", len(records))
 
-    # Step 3: Determine target namespace
-    namespace = args.namespace or f"pilot_{manifest['manifest_id']}"
+    # Step 3: Determine target namespace (default to the immutable safe namespace)
+    namespace = args.namespace or SAFE_NAMESPACE
 
     # Step 4: Build batches
     batches = _build_batches(records)
@@ -437,11 +484,27 @@ def main() -> None:
         sys.exit(0)
 
     # Step 5: Live mode — all validations must pass before constructing Pinecone client
-    import os
-
     if not manifest.get("ready_for_write"):
         failures = manifest.get("readiness_failures", ["unknown"])
         logger.error("Manifest is not ready_for_write: %s", failures)
+        sys.exit(1)
+
+    # Require the exact safe namespace for the pilot write.
+    if namespace != SAFE_NAMESPACE:
+        logger.error(
+            "Live ingestion is restricted to the safe namespace %r; got %r.",
+            SAFE_NAMESPACE,
+            namespace,
+        )
+        sys.exit(1)
+
+    # Reject manifest / index-contract mismatches before any client construction.
+    if args.embed_model != INDEX_CONTRACT["model"]:
+        logger.error(
+            "Embed model %r does not match index contract %r.",
+            args.embed_model,
+            INDEX_CONTRACT["model"],
+        )
         sys.exit(1)
 
     api_key = os.environ.get("PINECONE_API_KEY")

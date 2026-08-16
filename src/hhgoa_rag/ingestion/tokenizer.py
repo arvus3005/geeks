@@ -33,9 +33,11 @@ logger = logging.getLogger(__name__)
 
 TOKENIZER_REPO = "intfloat/multilingual-e5-large"
 
-# The model was trained with max 512 tokens; inputs exceeding this are truncated
-# by the model.  We reject or split passages above this limit.
-MODEL_INPUT_LIMIT = 512
+# Official provider contract for the integrated multilingual-e5-large embedding:
+# the maximum token sequence length accepted per record is 507 tokens (including
+# special tokens).  We enforce this ourselves (truncate=NONE) rather than relying
+# on Pinecone to truncate.  Inputs above this limit are split before indexing.
+MODEL_INPUT_LIMIT = 507
 
 # e5 models use a query/passage prefix; the prefix itself consumes tokens.
 # "query: " → 3 tokens; "passage: " → 3 tokens.
