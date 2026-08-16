@@ -40,6 +40,12 @@ DATASET_REPO = "ai4bharat/MSMARCO-XI"
 CHUNK_STRATEGY = "passage_native"
 CHUNK_STRATEGY_VERSION = "v1"
 
+# NOTE: The ai4bharat/MSMARCO-XI dataset currently exposes a single 'default'
+# config rather than per-language configs.  The config name must be confirmed
+# against the pinned dataset revision before running the real canary.
+# Pass --hf-config to override the default.
+DEFAULT_HF_CONFIG = "default"
+
 # Forbidden fields that must never appear in prepared records
 FORBIDDEN_FIELDS = {"query", "Answer", "Eng_Query", "Eng_Answer", "query_type", "is_selected"}
 
@@ -79,6 +85,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Directory for JSONL and manifest output",
     )
     p.add_argument("--tokenizer-revision", default=None, help="Pin HF tokenizer revision")
+    p.add_argument(
+        "--hf-config",
+        default=DEFAULT_HF_CONFIG,
+        help=(
+            "HuggingFace dataset config name. "
+            "ai4bharat/MSMARCO-XI currently uses 'default'; "
+            "confirm against the pinned revision before running."
+        ),
+    )
     p.add_argument("--output-json", action="store_true", help="Print manifest JSON to stdout")
     return p
 
@@ -112,14 +127,26 @@ def _stream_config(
     split: str,
     dataset_revision: str | None,
     max_rows: int,
+    hf_config: str = DEFAULT_HF_CONFIG,
 ) -> list[dict]:
-    """Stream up to max_rows records from a config.  Returns raw HF records."""
+    """Stream up to max_rows records from the HF dataset config.  Returns raw HF records.
+
+    NOTE: ai4bharat/MSMARCO-XI currently exposes a single 'default' config.
+    The hf_config parameter must be verified against the pinned revision.
+    Pass --hf-config to override.
+    """
     from datasets import load_dataset
 
-    logger.info("Streaming %s/%s (max_rows=%d) …", config_lang, split, max_rows)
+    logger.info(
+        "Streaming hf_config=%s lang_filter=%s split=%s (max_rows=%d) …",
+        hf_config,
+        config_lang,
+        split,
+        max_rows,
+    )
     ds = load_dataset(
         DATASET_REPO,
-        config_lang,
+        hf_config,
         split=split,
         streaming=True,
         revision=dataset_revision,
@@ -274,7 +301,13 @@ def main() -> None:
     eff_revision = dataset_revision or "main"
 
     for config_lang in CANARY_SOURCE_CONFIGS:
-        rows = _stream_config(config_lang, args.split, dataset_revision, args.max_rows_per_config)
+        rows = _stream_config(
+            config_lang,
+            args.split,
+            dataset_revision,
+            args.max_rows_per_config,
+            hf_config=args.hf_config,
+        )
         native, english = _extract_passages(rows, config_lang, args.split, eff_revision)
 
         if config_lang == "hi":
@@ -421,6 +454,7 @@ def main() -> None:
         "dataset_repo": DATASET_REPO,
         "dataset_revision": dataset_revision,
         "source_configs": CANARY_SOURCE_CONFIGS,
+        "hf_config": args.hf_config,
         "split": args.split,
         "sampling_algorithm": "reservoir",
         "sampling_seed": args.seed,
