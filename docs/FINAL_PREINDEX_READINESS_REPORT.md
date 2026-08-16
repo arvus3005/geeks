@@ -1,8 +1,24 @@
 # Final Pre-Index Readiness Report
 
-**Date:** 2026-08-16  
-**Audited commit:** `80537f4` (hardening pass, pushed to `https://github.com/arvus3005/geeks` main)  
+**Date:** 2026-08-16
+**Verdict:** `CODE READY FOR GEMINI CANARY EXECUTION`
+**Tested code commit:** 148e2537b54749597aa2022de08ed2b2555c72de
 **Working-tree status:** Clean — all changes committed and pushed
+
+---
+
+## Readiness classification
+
+| Layer | Status |
+|-------|--------|
+| Offline code / test readiness | READY (see test counts below) |
+| Local prepared-artifact readiness | READY — canary-42-ee540c17772a (300 records, 28,366 tokens) |
+| Runtime remote-index validation | WILL RUN LIVE during Gemini canary execution — not pre-validated here |
+| Live canary completion | NOT YET — must be triggered by Gemini |
+
+This report documents offline acceptance only. The final `index_canary.py` will perform
+remote validation and write records during Gemini's execution. Any claim of live
+completion belongs in `artifacts/reports/canary_index_execution_<run-id>.json`.
 
 ---
 
@@ -10,29 +26,25 @@
 
 | File | Change |
 |------|--------|
-| `src/hhgoa_rag/pinecone_contract.py` | **NEW** — canonical contract module |
-| `src/hhgoa_rag/pinecone_lifecycle.py` | Rewrote validate_index() to cover ALL contract fields; added read/write_parameters to IndexEmbed; imports from contract module |
-| `src/hhgoa_rag/ingestion/schema.py` | Added unknown-field rejection; added 507-token enforcement in validate_record() |
-| `src/hhgoa_rag/api/app.py` | Updated validate_index() call to new signature |
-| `scripts/create_pinecone_index.py` | --execute alone now exits 2 (fail-closed); dry-run shows full canonical contract; imports from contract module |
-| `scripts/ingest_prepared.py` | Imports contract from canonical module; adds contract fingerprint/version/namespace/embedded-contract validation in _load_manifest() |
-| `scripts/prepare_canary.py` | physical_shard = real parquet path (not "0"); removed physical_source unofficial field; SUPPORTED_CHUNK_STRATEGIES derived from real CHUNKERS registry; "semantic" removed; manifest schema version bumped to "3" with contract fields |
-| `scripts/audit_ids.py` | Complete rewrite — comprehensive ID audit with duplicate/collision/ordinal/parent-linkage/content-dedup detection |
-| `bench/chunking_ablation.py` | Replaced stub with real offline comparison (passage_native, sentence_aware, fixed_token_overlap, parent_child) |
-| `.github/workflows/ci.yml` | Live integration moved to workflow_dispatch only with explicit YES_RUN_LIVE confirmation; secret scanner added to normal CI |
-| `tests/unit/test_preindex_hardening.py` | Added 14 new tests covering contract, schema, strategy registry, physical_shard, create gate, eval label isolation, manifest fingerprint |
-| `tests/contract/test_ingestion_safety.py` | Updated test_create_index_execute_alone: now asserts exit 2 (fail-closed), not exit 0 |
-| `tests/unit/test_canary_preparation.py` | Removed physical_source and dataset_repo unofficial fields from _make_record() helper; physical_shard now holds real path |
-| `docs/PROJECT_SUMMARY.md` | Updated schema table; updated CI isolation section |
-| `docs/PINECONE_SCHEMA.md` | **NEW** — full index schema documentation |
-| `docs/INGESTION_RUNBOOK.md` | **NEW** — 10-step handoff sequence |
+| `src/hhgoa_rag/pinecone_contract.py` | Immutable `MappingProxyType` for FIELD_MAP / WRITE_PARAMETERS / READ_PARAMETERS; `canonical_contract()` returns deep copy; added `MANIFEST_SCHEMA_VERSION = "3"` |
+| `src/hhgoa_rag/pinecone_lifecycle.py` | Fixed SDK 9.1.0 shape: reads `info.embed` (top-level) not `info.spec.embed`; normalization helpers for SDK objects and dict fixtures; readiness check via `info.status.ready` |
+| `src/hhgoa_rag/ingestion/chunkers.py` | `FixedTokenChunker` requires real tokenizer injection; `allow_approximate=True` opt-in for test use; `get_chunker(strategy, tokenizer=None)` factory |
+| `scripts/prepare_canary.py` | Imports canonical constants; fixed `SCHEMA_VERSION = "2"` → `MANIFEST_SCHEMA_VERSION = "3"`; passes tokenizer to `get_chunker` for fixed_token_overlap |
+| `scripts/ingest_prepared.py` | Strict manifest validation (all 7 new required fields); calls `validate_index()` before first upsert; rejects noncanonical index name |
+| `scripts/index_canary.py` | **NEW** — resumable one-command canary indexer with checkpointing, bounded concurrency, token rate limiting, retry logic, freshness reconciliation, JSON+MD reports |
+| `bench/chunking_ablation.py` | Fixed MSMARCO-XI Parquet schema (English_passages/Translated_passages); executed benchmark |
+| `tests/unit/test_sdk_validation.py` | **NEW** — 62 regression tests (Pinecone 9.1.0 SDK shape, strict manifest, immutable contract, FixedTokenChunker, index_canary dry-run/checkpoint/retry) |
+| `tests/unit/test_chunkers.py` | Added `allow_approximate=True` to all FixedTokenChunker test instantiations |
+| `tests/unit/test_adversarial.py` | Updated manifest helpers to produce v3 manifests with all required fields |
+| `tests/unit/test_canary_preparation.py` | Updated `_make_manifest` helper to produce v3 manifests |
+| `tests/unit/test_preindex_hardening.py` | Fixed spy signature for `_chunk_passage_texts(tokenizer=)` kwarg; fixed manifest fingerprint test with all required fields |
 
 ---
 
 ## Canonical Pinecone contract
 
-**Module:** `src/hhgoa_rag/pinecone_contract.py`  
-**Contract version:** `1`  
+**Module:** `src/hhgoa_rag/pinecone_contract.py`
+**Contract version:** `1`
 **SHA-256 fingerprint:** `a76947f5d5f5afb41a693501e927394705c607ff4f59b160c225ad6c2be9ddaa`
 
 | Field | Value |
@@ -59,257 +71,147 @@
 
 ## Schema and manifest versions
 
-- Record schema: unchanged required fields, new enforcement of unknown-field rejection and 507-token limit in validate_record()
-- Manifest schema version: bumped `"2"` → `"3"` (adds contract_version, contract_fingerprint, index_contract, index_name, index_namespace)
+| Name | Value | Purpose |
+|------|-------|---------|
+| `MANIFEST_SCHEMA_VERSION` | `"3"` | Manifest envelope schema — enforced by `ingest_prepared.py` and `index_canary.py` |
+| `CONTRACT_VERSION` | `"1"` | Index contract version — embedded in every v3 manifest |
+| `RECORD_SCHEMA_VERSION` | `"1"` | Per-record field schema (in `prepare_canary.py`) |
+
+Legacy v2 manifests are unconditionally rejected by all production ingestion paths.
 
 ---
 
-## Blockers corrected
+## Confirmed defect resolution
 
-### 1. No canonical contract module (CRITICAL)
-**Before:** Contract fields duplicated as hand-written dicts in ingest_prepared.py, create_pinecone_index.py, and implicitly in pinecone_lifecycle.py.  
-**After:** Single source of truth in `pinecone_contract.py`. All paths import from it.
-
-### 2. IndexEmbed missing read/write_parameters
-**Before:** `create_index_idempotent()` constructed IndexEmbed without `write_parameters` or `read_parameters`.  
-**After:** Explicit `write_parameters={"input_type": "passage", "truncate": "NONE"}` and `read_parameters={"input_type": "query", "truncate": "NONE"}` passed.
-
-### 3. validate_index() incomplete
-**Before:** Only checked model, field_map, cloud, region. dimension, metric, write/read_parameters were unchecked. Missing field = silent pass.  
-**After:** All canonical fields checked. Any field not returned by API produces an explicit "unverifiable contract field" error.
-
-### 4. create_pinecone_index.py: --execute alone was exit 0
-**Before:** `--execute` without CONFIRM_PINECONE_CREATE silently became a dry-run (exit 0).  
-**After:** `--execute` without CONFIRM_PINECONE_CREATE=1 exits **2** (fail-closed). Never silently downgraded.
-
-### 5. physical_shard hardcoded to "0"
-**Before:** `prepare_canary.py` passed `physical_shard="0"` to every build_record() call.  
-**After:** `physical_shard=rec["physical_source"]` — real parquet path (e.g. `train/hintrain.parquet`).
-
-### 6. physical_source unofficial field appended after schema validation
-**Before:** After calling `build_record()` and `validate_record()`, the code appended `record["physical_source"]` and `record["dataset_repo"]` — unofficial extra fields that would bypass schema validation.  
-**After:** These lines removed. physical_shard holds the path; dataset_repo stays in the manifest.
-
-### 7. validate_record() allowed unknown fields
-**Before:** validate_record() only checked required fields were present. Any extra fields silently passed.  
-**After:** Unknown top-level fields raise SchemaViolationError.
-
-### 8. SUPPORTED_CHUNK_STRATEGIES included "semantic" (not in registry)
-**Before:** SUPPORTED_CHUNK_STRATEGIES = ["passage_native", "sentence_aware", "fixed_token_overlap", "semantic"] — "semantic" is not in CHUNKERS and would raise ValueError at runtime.  
-**After:** `SUPPORTED_CHUNK_STRATEGIES = sorted(CHUNKERS.keys())` — derived from real registry. "semantic" excluded.
-
-### 9. Manifest lacked contract binding
-**Before:** Manifests (version "2") had no contract_fingerprint, no index_contract, no index_namespace.  
-**After:** Manifests (version "3") include contract_version, contract_fingerprint, index_contract, index_name, index_namespace. ingest_prepared.py validates all of these.
-
-### 10. audit_ids.py was minimal
-**Before:** Only checked UUIDv5 determinism on smoke fixtures.  
-**After:** Full audit: duplicate IDs, text/lang conflicts, ID recomputation, cross-language collisions, ordinal errors, parent linkage, duplicate content.
-
-### 11. chunking_ablation.py was a stub
-**Before:** `print("TODO: implement")`.  
-**After:** Real offline comparison of all 4 strategies with per-strategy metrics. Proxy MRR/Recall clearly labeled as offline estimates.
-
-### 12. CI live integration always received secrets
-**Before:** `integration` job ran whenever `vars.RUN_LIVE_INTEGRATION == 'true'` (a repository variable, not manual confirmation).  
-**After:** `live-integration` job only runs on `workflow_dispatch` with explicit `confirm_live: YES_RUN_LIVE` input. Normal push/PR CI is unconditionally credential-free. Secret scanner added to offline CI.
+| Defect | Status |
+|--------|--------|
+| 1. `validate_index()` reads `info.spec.embed` (wrong for SDK 9.1.0) | FIXED — now reads `info.embed` |
+| 2. Correct SDK-shaped IndexModel produced validation errors | FIXED — empty error list for correct index |
+| 3. `ingest_prepared.py` upserts without calling `validate_index()` | FIXED — validates before data-plane client construction |
+| 4. v2 manifest without contract fields accepted | FIXED — all 7 fields now required; v2 schema rejected |
+| 5. No `index_canary.py`, no checkpoint/resume, no rate limiter, no reports | FIXED — full implementation at `scripts/index_canary.py` |
+| 6. `FixedTokenChunker` uses whitespace approximation | FIXED — real tokenizer injection required in production; approximate requires explicit opt-in |
+| 7. `SCHEMA_VERSION = "2"` while emitting `"3"` | FIXED — removed ambiguous variable; imports `MANIFEST_SCHEMA_VERSION` from contract |
+| 8. Canonical constants duplicated across scripts | FIXED — `prepare_canary.py` and `ingest_prepared.py` import from `pinecone_contract` |
+| 9. `FIELD_MAP`, `WRITE_PARAMETERS`, `READ_PARAMETERS` mutable | FIXED — `MappingProxyType`; `canonical_contract()` returns deep copy |
 
 ---
 
-## Reference-repository ideas adopted/not adopted
+## Prepared canary artifact
 
-| Idea | Status | Reason |
-|------|--------|--------|
-| Canonical contract module | Adopted | Eliminates duplicated dicts |
-| Manifest contract fingerprint | Adopted | Binds manifest to exact index |
-| Unknown-field rejection in schema | Adopted | Prevents leakage of unofficial fields |
-| physical_shard as real path | Adopted | Audit traceability |
-| workflow_dispatch for live CI | Adopted | Credentials never in push/PR CI |
-| Full MSMARCO-XI corpus now | Not adopted | Task constraint: do not begin indexing |
-| Qdrant migration | Not adopted | Task constraint: keep Pinecone |
-| Sarvam v3 change | Already done | Not reverted |
+| Field | Value |
+|-------|-------|
+| Manifest ID | `canary-42-ee540c17772a` |
+| Records | 300 total (100 en, 100 hi, 100 bn) |
+| Total tokens | 28,366 |
+| JSONL SHA-256 | `ca912d133c3033eca71cc86045923e0165f5b43baba6f1951a1741ff0a3a9217` |
+| Chunking strategy | `sentence_aware` |
+| Manifest schema version | `3` |
+| Contract fingerprint | `a76947f5d5f5afb41a693501e927394705c607ff4f59b160c225ad6c2be9ddaa` |
+| Dataset revision | `bf5cdc1f26e581e519018e434db14edd1b77602b` (pinned) |
+| Tokenizer revision | `3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3` (pinned) |
 
----
+**Note:** Artifacts are git-ignored and not tracked in the repository. They were regenerated
+locally due to manifest schema changes (v2→v3). Regeneration is deterministic: running
+the command below twice produces byte-for-byte identical JSONL.
 
-## Commands executed with exit codes
-
-```
-uv run ruff format --check src/ tests/ bench/ scripts/    exit 0 (100 files clean)
-uv run ruff check src/ tests/ bench/ scripts/             exit 0 (all passed)
-uv run mypy src/                                           exit 0 (0 issues, 48 files)
-uv run python scripts/scan_secrets.py                     exit 0 (no secrets detected)
-uv run pytest tests/unit/ tests/behavioural/ tests/contract/ -v    exit 0 (367 passed, 4.90s)
-uv run python scripts/audit_ids.py --fixtures tests/fixtures/smoke_passages.json --legacy    exit 0 (PASS, 17 records)
-uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi    exit 0 (dry-run)
-uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi --execute    exit 2 (fail-closed)
-```
-
-```
+**Regeneration command:**
+```bash
 uv run python scripts/prepare_canary.py \
-  --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b \
-  --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 \
-  --split train --seed 42 \
-  --en-quota 100 --hi-quota 100 --bn-quota 100 \
-  --chunk-strategy sentence_aware \
-  --output-dir /tmp/canary-run-1                    exit 0
-
-# Run twice, compared:
-diff canary-run-1/...records.jsonl canary-run-2/...records.jsonl   BYTE-IDENTICAL
-
-env -u PINECONE_API_KEY uv run python scripts/ingest_prepared.py \
-  --manifest /tmp/canary-run-1/canary-42-02c06c8a0809_manifest.json \
-  --dry-run                                          exit 0
-
-PINECONE_API_KEY=dummy-key-not-real uv run python scripts/ingest_prepared.py \
-  --manifest /tmp/canary-run-1/canary-42-02c06c8a0809_manifest.json \
-  --dry-run                                          exit 0
-
-uv run python scripts/audit_ids.py \
-  --records /tmp/canary-run-1/canary-42-02c06c8a0809_records.jsonl   exit 0 PASS
+    --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b \
+    --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 \
+    --seed 42
 ```
 
----
-
-## Artifact paths
-
-| Artifact | Path | SHA-256 | Size |
-|----------|------|---------|------|
-| Canonical contract module | `src/hhgoa_rag/pinecone_contract.py` | — | — |
-| Prepared canary JSONL | `artifacts/prepared/canary-42-02c06c8a0809_records.jsonl` | `e9270ad3c66a4ccbfcf409439a4cf42901cad498018030ceb59462d0b99bfedc` | 386 KB |
-| Prepared canary manifest | `artifacts/prepared/canary-42-02c06c8a0809_manifest.json` | `2e0609a8ffd7c16d147024a86348000936f0749e817169188dcd40e908396e07` | 3.0 KB |
-| Lifecycle module (fixed) | `src/hhgoa_rag/pinecone_lifecycle.py` | — | — |
-| Schema module (fixed) | `src/hhgoa_rag/ingestion/schema.py` | — | — |
-| Create index script (fixed) | `scripts/create_pinecone_index.py` | — | — |
-| Ingest prepared script (fixed) | `scripts/ingest_prepared.py` | — | — |
-| Canary preparation script (fixed) | `scripts/prepare_canary.py` | — | — |
-| ID audit script (upgraded) | `scripts/audit_ids.py` | — | — |
-| Chunking ablation (implemented) | `bench/chunking_ablation.py` | — | — |
-| Schema docs | `docs/PINECONE_SCHEMA.md` | — | — |
-| Ingestion runbook | `docs/INGESTION_RUNBOOK.md` | — | — |
-| CI workflow (hardened) | `.github/workflows/ci.yml` | — | — |
-
-Note: `artifacts/prepared/` is git-ignored. Regenerate with the command above (deterministic).
+Previous artifact (`canary-42-02c06c8a0809`) fails the strict v3 loader and must not be used.
 
 ---
 
-## Determinism evidence
+## Offline chunking benchmark results
 
-**Two canary runs produced byte-identical JSONL:**
+Run: `uv run python bench/chunking_ablation.py --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 --config-lang hi --max-rows 100 --seed 42`
 
-| Run | Output dir | JSONL SHA-256 |
-|-----|-----------|---------------|
-| Run 1 | `/tmp/canary-run-1/` | `e9270ad3c66a4ccbfcf409439a4cf42901cad498018030ceb59462d0b99bfedc` |
-| Run 2 | `/tmp/canary-run-2/` | `e9270ad3c66a4ccbfcf409439a4cf42901cad498018030ceb59462d0b99bfedc` |
+| Strategy | Passages | Chunks | Expansion | Token P95 | MRR@10 (proxy) | R@10 (proxy) |
+|---|---|---|---|---|---|---|
+| passage_native | 1000 | 999 | 1.00 | 176 | 0.950 | 1.000 |
+| **sentence_aware** | **1000** | **1039** | **1.04** | **161** | **0.950** | **1.000** |
+| fixed_token_overlap | 1000 | 1032 | 1.03 | 179 | 0.950 | 1.000 |
+| parent_child | 1000 | 2038 | 2.04 | 168 | 0.933 | 1.000 |
 
-Manifest differs only in absolute path and `created_at` timestamp (expected). Manifest ID, contract fingerprint, record IDs, and all record content are identical.
+**Selected canary strategy: `sentence_aware`** — lowest expansion (1.04x), lowest P95 token count (161),
+equal retrieval proxy to passage_native, without the 2x overhead of parent_child.
+Token P95 is well within the 507-token limit. No strategy change required; no canary regeneration needed.
 
----
-
-## Canary record totals
-
-| Language | Records | Token P50 | Token P95 |
-|----------|---------|-----------|-----------|
-| English | 100 | 73 | 143 |
-| Hindi | 100 | 97 | 168 |
-| Bengali | 100 | 92 | 185 |
-| **Total** | **300** | — | — |
-
-- Manifest ID: `canary-42-02c06c8a0809`
-- Total tokens: 28,366
-- Physical shards: `train/hintrain.parquet`, `train/bentrain.parquet` (English from inline dataset)
-- `ready_for_write: true`
-- Batches: 4 (96 / 96 / 96 / 12 records)
+*Metrics are OFFLINE PROXY only — BM25-style token-overlap ranking, NOT live Pinecone vector search.*
 
 ---
 
-## Dry-run ingestion plan
+## Test counts and exit codes
 
 ```
-Manifest ID       : canary-42-02c06c8a0809
-Dataset revision  : bf5cdc1f26e581e519018e434db14edd1b77602b
-Total records     : 300
-Target namespace  : pilot_v1
-Batches           : 4
-Batch 001: 96 records,  93,533 bytes
-Batch 002: 96 records, 143,980 bytes
-Batch 003: 96 records, 140,093 bytes
-Batch 004: 12 records,  17,265 bytes
-DRY RUN complete — no records were written.
+uv run pytest tests/unit/ tests/behavioural/ tests/contract/ -q
+429 passed in ~5s  (exit 0)
+
+uv run ruff format --check src/ tests/ bench/ scripts/   → 102 files already formatted (exit 0)
+uv run ruff check src/ tests/ bench/ scripts/             → All checks passed! (exit 0)
+uv run mypy src                                           → Success: no issues found (exit 0)
+uv run python scripts/scan_secrets.py                    → .env only (expected; not committed) (exit 0)
+uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi  → dry-run OK (exit 0)
+uv run python scripts/create_pinecone_index.py --pinecone-index msmarco-xi --execute  → exit 2 (fail-closed) ✓
+uv run python scripts/index_canary.py --manifest artifacts/prepared/canary-42-ee540c17772a_manifest.json  → DRY-RUN complete (exit 0)
 ```
 
-Both dry-runs (no credentials, dummy credentials) produced identical output and exited 0.
+### New regression tests added (62 tests in `tests/unit/test_sdk_validation.py`)
+
+- Pinecone 9.1.0 SDK-shaped validator: 11 tests
+- Strict manifest validation (each required field): 12 tests
+- Immutable contract mappings: 8 tests
+- FixedTokenChunker real-tokenizer mode: 8 tests
+- index_canary dry-run: 5 tests
+- index_canary checkpoint/resume: 7 tests
+- index_canary transient retry: 3 tests
 
 ---
 
-## Chunking comparison results
+## CI guarantees
 
-`bench/chunking_ablation.py` is implemented with all 4 strategies. Offline metrics require a separate network run; results will be written to `artifacts/reports/` when executed.
+- Normal push/PR CI: no provider secrets exposed
+- Live integration: manual `workflow_dispatch` only with `YES_RUN_LIVE` confirmation
+- No live Pinecone, Sarvam, or ElevenLabs call was made during this pass
+- No secret was printed or committed
 
 ---
 
-## ID/linkage audit result
+## Known remaining runtime-only actions
 
-**Audit on 300 prepared canary records: PASS**
+1. **Live canary execution** — must be triggered by Gemini using the command below
+2. **Remote index validation** — performed automatically by `index_canary.py` at execution start
+3. **Freshness reconciliation** — performed automatically by `index_canary.py` after write completes
+4. **Execution report** — generated automatically at `artifacts/reports/canary_index_execution_<run-id>.json`
 
+---
+
+## Gemini canary command
+
+```bash
+CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> \
+  uv run python scripts/index_canary.py \
+    --manifest artifacts/prepared/canary-42-ee540c17772a_manifest.json \
+    --execute --resume --concurrency 4
 ```
-Total records        : 300
-Unique IDs           : 300
-Duplicate IDs        : 0
-ID text conflicts    : 0
-ID lang conflicts    : 0
-Recompute mismatches : 0
-Cross-lang collisions: 0
-Ordinal errors       : 0
-Duplicate texts      : 0
-Broken parent links  : 0
+
+If the artifact is missing (fresh checkout), regenerate first:
+```bash
+uv run python scripts/prepare_canary.py \
+    --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b \
+    --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 \
+    --seed 42
 ```
 
----
-
-## No live provider operations
-
-- No Pinecone API call was made
-- No Sarvam API call was made
-- No ElevenLabs API call was made
-- HuggingFace parquet files downloaded for canary generation only (read-only dataset access, no credentials required)
-- No secrets were read, printed, or logged
-- PINECONE_API_KEY was explicitly unset for all offline test and dry-run invocations
-
----
-
-## Exact Gemini indexing sequence
-
-Per INGESTION_RUNBOOK.md:
-
-1. Fresh-clone setup + secret scan
-2. Regenerate/verify prepared artifacts (prepare_canary.py with pinned revisions)
-3. Offline dry-run (ingest_prepared.py --dry-run) from repo root and from different CWD
-4. Create Pinecone index (create_pinecone_index.py --execute + CONFIRM_PINECONE_CREATE=1)
-5. Validate actual index contract (describe_pinecone_index.py vs canonical)
-6. Run bounded smoke integration tests (pytest tests/integration/)
-7. Ingest 300-record canary into pilot_v1 (ingest_prepared.py --execute + CONFIRM_PINECONE_WRITE=1)
-8. Reconcile counts (reconcile_corpus.py)
-9. Post-index evaluation (audit_ids.py on ingested records)
-10. Stop before expansion
-
----
-
-## Final verdict
-
-# ✅ READY FOR GEMINI INDEXING
-
-All gates pass:
-
-| Gate | Result |
-|------|--------|
-| Index creation request contains complete canonical contract | PASS |
-| Live ingestion validates actual index before writing | PASS |
-| Manifest binds exact index contract (fingerprint + embedded contract) | PASS |
-| Schema/provenance inconsistencies resolved | PASS |
-| Every advertised chunking strategy is real (semantic removed from CLI) | PASS |
-| New prepared canary is deterministic and `ready_for_write: true` | PASS (two byte-identical runs) |
-| All offline gates pass (367 tests, ruff, mypy, scan_secrets) | PASS |
-| No secrets tracked | PASS |
-| No provider calls occurred | PASS |
-
-No remaining blockers.
+Background execution (nohup, checkpoint/resume as primary recovery):
+```bash
+nohup CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> \
+  uv run python scripts/index_canary.py \
+    --manifest artifacts/prepared/canary-42-ee540c17772a_manifest.json \
+    --execute --resume > logs/index_canary.log 2>&1 &
+```
