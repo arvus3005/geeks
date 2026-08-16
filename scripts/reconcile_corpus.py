@@ -25,25 +25,38 @@ def main() -> None:
     parser.add_argument(
         "--expected-count",
         type=int,
-        default=None,
+        required=True,
         help=(
-            "Assert the verified namespace vector count equals this positive "
-            "integer. Exit 0 only on exact match; otherwise exit non-zero."
+            "REQUIRED. Assert the verified namespace vector count equals this "
+            "positive integer. Exit 0 only on exact match; otherwise exit non-zero. "
+            "NOTE: count equality is a SECONDARY check — index_canary.py exact-ID "
+            "equality is authoritative and can detect unrelated replacement IDs "
+            "that count equality alone cannot."
         ),
     )
     parser.add_argument("--output-json", action="store_true")
     args = parser.parse_args()
 
-    # Validate the expectation itself before doing anything else. An invalid
-    # expectation fails closed — never treated as "no expectation".
-    if args.expected_count is not None and args.expected_count <= 0:
+    # Validate the expectation itself before doing anything else — before any
+    # Pinecone import or client construction. An invalid expectation fails
+    # closed. argparse type=int already rejects floats and non-numeric strings;
+    # here we additionally reject zero and negatives (must be a genuine positive
+    # integer). bool is a subclass of int but argparse never produces one.
+    if not isinstance(args.expected_count, int) or isinstance(args.expected_count, bool):
+        print("ERROR: --expected-count must be a positive integer", file=sys.stderr)
+        sys.exit(1)
+    if args.expected_count <= 0:
         print(
-            f"ERROR: --expected-count must be a positive integer, got " f"{args.expected_count}",
+            f"ERROR: --expected-count must be a positive integer, got {args.expected_count}",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    api_key = os.environ.get("PINECONE_API_KEY")
+    # Credentials come ONLY from PINECONE_API_KEY. Whitespace-aware validation:
+    # absent, empty, or whitespace-only values fail closed BEFORE the Pinecone
+    # SDK is imported or a client is constructed. The value itself is never
+    # logged or echoed.
+    api_key = os.environ.get("PINECONE_API_KEY", "").strip()
     if not api_key:
         print("ERROR: PINECONE_API_KEY not set", file=sys.stderr)
         sys.exit(1)
@@ -59,11 +72,52 @@ def main() -> None:
         total = store.count_namespace(args.namespace)
         stats = store.describe_index_stats()
     except PineconeProviderError as e:
+        # Provider error / malformed / unverifiable count. Emit an
+        # "unverifiable" record with actual_count=null and NO credentials, then
+        # exit non-zero. The exception message may reference the namespace but
+        # never the API key.
         print(
             f"ERROR: reconciliation UNVERIFIABLE — could not obtain a valid vector "
             f"count for namespace '{args.namespace}': {e}",
             file=sys.stderr,
         )
+        if args.output_json:
+            print(
+                json.dumps(
+                    {
+                        "index": args.pinecone_index,
+                        "namespace": args.namespace,
+                        "expected_count": args.expected_count,
+                        "actual_count": None,
+                        "status": "unverifiable",
+                    },
+                    indent=2,
+                )
+            )
+        sys.exit(1)
+
+    # Strict validation of the actual count. count_namespace already fails
+    # closed on malformed values (raising PineconeProviderError), but guard
+    # defensively: only a genuine non-negative int is verifiable.
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        print(
+            f"ERROR: reconciliation UNVERIFIABLE — malformed vector count for "
+            f"namespace '{args.namespace}'.",
+            file=sys.stderr,
+        )
+        if args.output_json:
+            print(
+                json.dumps(
+                    {
+                        "index": args.pinecone_index,
+                        "namespace": args.namespace,
+                        "expected_count": args.expected_count,
+                        "actual_count": None,
+                        "status": "unverifiable",
+                    },
+                    indent=2,
+                )
+            )
         sys.exit(1)
 
     manifest_per_lang: dict[str, int] = {}
@@ -83,16 +137,12 @@ def main() -> None:
                 manifest_per_lang[lang] = manifest_per_lang.get(lang, 0) + expected
 
     # Secondary count-assertion status. This is a SECONDARY count check only;
-    # index_canary.py exact-ID reconciliation remains authoritative.
-    if args.expected_count is None:
-        status = "pass"
-    elif total == args.expected_count:
-        status = "pass"
-    else:
-        status = "mismatch"
+    # index_canary.py exact-ID reconciliation remains authoritative. Exit 0 only
+    # when the strictly validated actual count exactly equals the expectation.
+    status = "pass" if total == args.expected_count else "mismatch"
 
     reconciliation = {
-        "pinecone_index": args.pinecone_index,
+        "index": args.pinecone_index,
         "namespace": args.namespace,
         "expected_count": args.expected_count,
         "actual_count": total,
@@ -111,8 +161,7 @@ def main() -> None:
     else:
         print(f"Index: {args.pinecone_index}  Namespace: {args.namespace}")
         print(f"Total vectors in namespace: {total}")
-        if args.expected_count is not None:
-            print(f"Expected count: {args.expected_count}  Status: {status}")
+        print(f"Expected count: {args.expected_count}  Status: {status}")
         if manifest_per_lang:
             total_expected = sum(manifest_per_lang.values())
             print(f"Manifest expected total: {total_expected}")

@@ -18,7 +18,9 @@ def main() -> None:
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
 
-    api_key = os.environ.get("PINECONE_API_KEY")
+    # Whitespace-aware credential validation. Absent, empty, or whitespace-only
+    # values fail closed BEFORE the Pinecone SDK is imported. Never log the value.
+    api_key = os.environ.get("PINECONE_API_KEY", "").strip()
     if not api_key:
         print("ERROR: PINECONE_API_KEY not set", file=sys.stderr)
         sys.exit(1)

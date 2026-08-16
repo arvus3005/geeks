@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -62,7 +63,12 @@ _SCAN_EXTENSIONS = {
     ".conf",
 }
 
-# Paths to skip entirely (directories or files)
+# Paths to skip entirely (directories or files).
+#
+# NOTE: ``artifacts`` is intentionally NOT skipped. All tracked text files must
+# be eligible for scanning regardless of directory. Untracked runtime output
+# under artifacts/ is excluded by the git-tracked-only file discovery below;
+# dependency caches, virtualenvs, and VCS metadata are skipped here.
 _SKIP_PREFIXES = {
     ".venv",
     ".git",
@@ -71,7 +77,6 @@ _SKIP_PREFIXES = {
     ".ruff_cache",
     ".pytest_cache",
     "__pycache__",
-    "artifacts",
     "node_modules",
     "uv.lock",
     ".env",
@@ -84,8 +89,19 @@ def _should_skip(path: Path, root: Path) -> bool:
     return bool(parts & _SKIP_PREFIXES)
 
 
+def _is_binary(path: Path) -> bool:
+    """Heuristic: a file containing a NUL byte in its first chunk is binary."""
+    try:
+        with open(path, "rb") as f:
+            return b"\x00" in f.read(8192)
+    except OSError:
+        return True
+
+
 def scan_file(path: Path) -> list[str]:
     """Return list of matched pattern names (no secret values)."""
+    if _is_binary(path):
+        return []
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -97,23 +113,55 @@ def scan_file(path: Path) -> list[str]:
     return found
 
 
+def _tracked_files(root: Path) -> list[Path] | None:
+    """Return git-tracked files under ``root`` (untracked runtime output excluded).
+
+    Returns None if this is not a git working tree or git is unavailable, so the
+    caller can fall back to a filesystem walk.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return [root / rel for rel in result.stdout.split("\0") if rel]
+
+
+def _walk_files(root: Path) -> list[Path]:
+    """Filesystem fallback when git tracking information is unavailable."""
+    files: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dp = Path(dirpath)
+        dirnames[:] = [d for d in dirnames if not _should_skip(dp / d, root)]
+        for fname in filenames:
+            files.append(dp / fname)
+    return files
+
+
 def main() -> None:
     root = Path(os.getcwd())
     flagged: list[tuple[Path, list[str]]] = []
 
-    for dirpath, dirnames, filenames in os.walk(root):
-        dp = Path(dirpath)
-        # Prune skipped directories in-place
-        dirnames[:] = [d for d in dirnames if not _should_skip(dp / d, root)]
-        for fname in filenames:
-            fpath = dp / fname
-            if fpath.suffix not in _SCAN_EXTENSIONS and fpath.name not in {".env", ".env.example"}:
-                continue
-            if _should_skip(fpath, root):
-                continue
-            hits = scan_file(fpath)
-            if hits:
-                flagged.append((fpath, hits))
+    candidates = _tracked_files(root)
+    if candidates is None:
+        candidates = _walk_files(root)
+
+    for fpath in candidates:
+        if not fpath.exists():
+            continue
+        if fpath.suffix not in _SCAN_EXTENSIONS and fpath.name not in {".env", ".env.example"}:
+            continue
+        if _should_skip(fpath, root):
+            continue
+        hits = scan_file(fpath)
+        if hits:
+            flagged.append((fpath, hits))
 
     if flagged:
         print("CREDENTIAL SCAN: POTENTIAL SECRETS FOUND", file=sys.stderr)

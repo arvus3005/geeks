@@ -206,9 +206,14 @@ uv run python scripts/reconcile_corpus.py \
   --expected-count 300
 ```
 
+`--expected-count` is **mandatory**. Its absence, or a non-positive / non-integer
+value, exits non-zero before any Pinecone import or client construction.
+
 This is a **secondary** count check; `index_canary.py` exact-ID reconciliation
-remains authoritative. With `--expected-count 300`, the script exits 0 only when
-the verified namespace vector count equals exactly 300, and exits non-zero on any
+remains authoritative — count equality alone cannot detect unrelated replacement
+IDs (a namespace with 300 wrong vectors passes a pure count check but fails
+exact-ID equality). With `--expected-count 300`, the script exits 0 only when the
+verified namespace vector count equals exactly 300, and exits non-zero on any
 mismatch, invalid expectation, or unverifiable count.
 
 `reconcile_corpus.py` fails closed: if a valid namespace vector count cannot be

@@ -46,6 +46,12 @@ artifacts/checkpoints/
 artifacts/dedup/
 artifacts/ledgers/
 
+# Generated canary execution reports (runtime output — never committed)
+artifacts/reports/canary_index_execution_*.json
+artifacts/reports/canary_index_execution_*.md
+artifacts/reports/chunking_ablation_*.json
+artifacts/reports/chunking_ablation_*.md
+
 # Budget ledgers
 *.ledger.json
 

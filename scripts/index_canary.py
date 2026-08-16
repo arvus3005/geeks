@@ -1086,7 +1086,9 @@ def _run(
         return
 
     # ── Step 5: Live mode — validate remote index ─────────────────────────────
-    api_key = os.environ.get("PINECONE_API_KEY")
+    # Whitespace-aware credential validation. Absent, empty, or whitespace-only
+    # values fail closed BEFORE the Pinecone SDK is imported. Never log the value.
+    api_key = os.environ.get("PINECONE_API_KEY", "").strip()
     if not api_key:
         raise CanaryError(
             "PINECONE_API_KEY is not set. Export it before running with --execute.",

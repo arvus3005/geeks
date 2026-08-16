@@ -25,13 +25,65 @@ that is Gemini's live step in Antigravity IDE.
 
 ## Commit state
 
-- Starting commit SHA (this hardening pass): `273c290604859355b357df300836930d76cf7b95`
-- Final commit SHA: recorded in the git history of `origin/main` immediately
-  after this report is committed (this file cannot embed its own commit hash — a
-  circular reference). See the "fix(pre-index): close final count and
-  reconciliation gaps" commit at the tip of `main`.
+- Starting commit SHA (this operational-gap pass): `c4b3d6cbb2a4535f2a39c8d9e6425acb41701399`
+  on branch `main` (HEAD == `origin/main`, clean worktree at start).
+- Final commit SHA: recorded in `origin/main` immediately after this report is
+  committed (this file cannot embed its own commit hash). See the
+  "fix(pre-index): close final operational gaps" commit at the tip of `main`.
 - Tested tree state: the working tree containing the changes below, with the full
   offline gate suite rerun successfully (see "Gate results").
+- **`CLAUDE.md` is intentionally absent** from the project and is git-ignored. It
+  was NOT restored, recreated, or replaced during this pass. This is by design,
+  not a defect.
+
+---
+
+## Fixes completed in this pass (final operational-gap hardening)
+
+1. **`--expected-count` is now mandatory in `reconcile_corpus.py`.** It is a
+   `required=True` argparse argument (`type=int`). Its absence, or a non-positive
+   / non-integer value, exits non-zero BEFORE any Pinecone import or client
+   construction. Exit 0 only when the strictly validated actual count exactly
+   equals the expected count; exit non-zero for `actual != expected`, malformed
+   provider counts, unverifiable results, and provider exceptions. Floats,
+   numeric strings, and booleans are never coerced. JSON output uses the key
+   `index` (not `pinecone_index`) with statuses `pass` / `mismatch` /
+   `unverifiable`; provider errors emit `status: "unverifiable"`,
+   `actual_count: null`, and never expose credentials. The former test that
+   approved success without an expected count was rewritten to assert the
+   mandatory-flag failure before provider construction.
+2. **Whitespace-safe Pinecone credential validation.** Every affected CLI utility
+   (`index_canary.py`, `reconcile_corpus.py`, `describe_pinecone_index.py`,
+   `smoke_query_pinecone.py`, `validate_pinecone_config.py`) now reads the key via
+   `os.environ.get("PINECONE_API_KEY", "").strip()` and fails closed on absent,
+   empty, or whitespace-only values (`""`, spaces, tabs, newlines) BEFORE the
+   Pinecone SDK is constructed. The validated stripped value is used to construct
+   the client. No API-key CLI argument exists or was reintroduced; the value is
+   never logged or echoed. Tests cover missing / empty / spaces / tabs / newlines
+   and confirm `--help` exposes no key option.
+3. **Generated execution reports removed; safe artifact handling restored.** All
+   52 runtime-generated canary/chunking reports previously committed under
+   `artifacts/reports/` were removed with `git rm`. Only the `.gitkeep`
+   placeholders remain tracked under `artifacts/`. `.gitignore` now ignores
+   `artifacts/reports/canary_index_execution_*.{json,md}` and
+   `chunking_ablation_*.{json,md}` (in addition to the existing
+   `artifacts/prepared/`, `artifacts/checkpoints/`, `*.log`, `logs/`,
+   `*.checkpoint.json`, `model_cache/`, `.cache/`, `hf_cache/` rules).
+   `git check-ignore` confirms a sample generated report is ignored.
+4. **Secret scanner covers tracked files under `artifacts/`.** `scan_secrets.py`
+   no longer broadly exempts `artifacts/`; that prefix was removed from
+   `_SKIP_PREFIXES`. Discovery now enumerates git-tracked files (untracked runtime
+   output is therefore excluded), with a filesystem-walk fallback when git is
+   unavailable. Binary files are skipped via a NUL-byte heuristic. A tracked text
+   fixture under `artifacts/` containing an obvious fake secret is detected;
+   scanner output names the file without printing the secret value; a clean tree
+   passes. New tests use `tmp_path` fixtures, not permanent files.
+5. **Frozen Docker installation.** The `Dockerfile` now runs
+   `RUN uv sync --frozen --no-dev` (was `uv sync --no-dev`) and copies the
+   committed `uv.lock` (not `uv.lock*`). `--frozen` is mandatory; dev dependencies
+   are excluded from the production image.
+6. **This report updated** with the starting SHA/branch, the intentional removal
+   of `CLAUDE.md`, all five fixes above, verification evidence, and the verdict.
 
 ---
 
@@ -78,8 +130,7 @@ that is Gemini's live step in Antigravity IDE.
    says "language metadata filter"; `.gitignore` and `.dockerignore` label
    `qdrant_data/` as "legacy local vector-store artefacts". Public function names
    and the deterministic ID algorithm are unchanged. Remaining references
-   (`CLAUDE.md` project rules; the historical audit doc) are canonical or
-   genuinely historical/comparative.
+   (the historical audit doc) are genuinely historical/comparative.
 8. **Corrected background execution example.** `index_canary.py` docstring and
    the Runbook now use valid `nohup env VAR=val ...` shell with no literal
    secret, writing to `artifacts/logs/index_canary.log`.
@@ -166,18 +217,24 @@ that is Gemini's live step in Antigravity IDE.
 
 ---
 
-## Files changed (this pass)
+## Files changed (this operational-gap pass)
 
-- `src/hhgoa_rag/pinecone_store.py` (strict int in `count_namespace`)
-- `scripts/index_canary.py` (strict int in `_get_ns_vector_count`; nohup example)
-- `scripts/reconcile_corpus.py` (env-only key; `--expected-count`)
-- `scripts/describe_pinecone_index.py`, `scripts/smoke_query_pinecone.py` (env-only key)
-- `src/hhgoa_rag/ingestion/passage_ids.py`, `src/hhgoa_rag/retrieval/language_routing.py` (terminology)
-- `Makefile` (`.PHONY`, quoting, frozen install), `.gitignore`, `.dockerignore`
-- `README.md`, `docs/INGESTION_RUNBOOK.md`, `docs/PROJECT_SUMMARY.md`,
-  `docs/SKEPTICAL_PREINDEX_AUDIT.md`, `docs/FINAL_PREINDEX_READINESS_REPORT.md`
-- `tests/unit/test_preindex_hardening_v5.py` (new — 52 tests)
-- `tests/unit/test_preindex_hardening_v4.py` (updated match string for bool)
+- `scripts/reconcile_corpus.py` (mandatory `--expected-count`; whitespace-safe
+  key; JSON `index` key; `unverifiable` handling)
+- `scripts/index_canary.py` (whitespace-safe key in live mode)
+- `scripts/describe_pinecone_index.py`, `scripts/smoke_query_pinecone.py`,
+  `scripts/validate_pinecone_config.py` (whitespace-safe key)
+- `scripts/scan_secrets.py` (drop `artifacts` exemption; git-tracked discovery;
+  binary skip)
+- `Dockerfile` (`uv sync --frozen --no-dev`; copy `uv.lock`)
+- `.gitignore` (generated report rules)
+- `docs/INGESTION_RUNBOOK.md` (Step 8: mandatory `--expected-count`; exact-ID
+  authoritative note)
+- `docs/FINAL_PREINDEX_READINESS_REPORT.md` (this file)
+- `tests/unit/test_preindex_hardening_v5.py` (mandatory-count + blank-credential +
+  scanner tests)
+- Removed: 52 generated reports under `artifacts/reports/`
+  (`canary_index_execution_*` and `chunking_ablation_*`, both `.json` and `.md`).
 
 ---
 
@@ -193,29 +250,40 @@ uv run python scripts/scan_secrets.py .
 uv run pytest tests/unit tests/contract tests/behavioural -q -rs
 ```
 
-## Gate results (this pass, 2026-08-16)
+## Gate results (this pass, 2026-08-17)
 
-- `uv sync --frozen --all-extras` — locked environment resolved (exit 0).
-- `ruff format --check .` — 107 files already formatted (0 errors).
+- `uv sync --frozen --all-extras` — locked environment resolved; 75 packages
+  checked (exit 0).
+- `ruff format .` then `ruff format --check .` — 107 files already formatted
+  (0 errors).
 - `ruff check .` — All checks passed (0 errors).
 - `mypy src scripts` — Success: no issues found in 64 source files.
 - `scan_secrets.py .` — no secrets detected in tracked source files; exit 0.
 - `pytest tests/unit tests/contract tests/behavioural -q -rs`
   (with `PINECONE_API_KEY`/`SARVAM_API_KEY`/`HF_TOKEN`/`CONFIRM_PINECONE_WRITE`
-  unset) — **609 passed, 0 failed, 0 skipped** (was 557; +52 new v5 tests).
+  unset) — **642 passed, 0 failed, 0 skipped**.
 
 ### Targeted checks
 
-- `make -n canary-dry-run MANIFEST=test.json` — expands to
-  `uv run python scripts/index_canary.py --manifest "test.json"` (quoted; no run).
-- `ingest_prepared.py --execute` with `PINECONE_API_KEY` +
-  `CONFIRM_PINECONE_WRITE=1` set — exit 2 before any Pinecone import.
+- Canary dry-run against the valid 300-record manifest
+  (`artifacts/prepared/canary-42-ee540c17772a_manifest.json`, git-ignored) with
+  credentials unset — exit 0: 300 records, 100/100/100 en/hi/bn split, 300 unique
+  IDs, batch size 96, 4 batches, concurrency 4, "DRY-RUN complete — no records
+  were written." No Pinecone SDK construction and no provider call. (Two other
+  legacy manifests in `artifacts/prepared/` are pre-schema and correctly rejected
+  as missing required fields.)
+- `ingest_prepared.py --execute --manifest <path>` with `PINECONE_API_KEY` +
+  `CONFIRM_PINECONE_WRITE=1` set — exit 2, "Live ingestion … is DISABLED", before
+  any Pinecone import.
+- `git check-ignore -v artifacts/reports/canary_index_execution_test.json` —
+  matched by `.gitignore` rule (ignored).
+- `git ls-files .env` and `git ls-files CLAUDE.md` — both empty (neither tracked).
+- `git ls-files artifacts` — only the three `.gitkeep` placeholders remain.
 - `--help` for reconcile/describe/smoke/validate — zero `--pinecone-api-key`
-  occurrences; the flag is rejected by argparse (exit 2).
-- Deterministic preparation: two `prepare_canary.py` runs
-  (`HF_HUB_OFFLINE=1`, seed 42, pinned revisions) into `/tmp/run1` and
-  `/tmp/run2` produced byte-identical JSONL and manifest (`cmp` exit 0); JSONL
-  SHA-256 `ca912d133c3033eca71cc86045923e0165f5b43baba6f1951a1741ff0a3a9217`.
+  occurrences; the flag is rejected by argparse (exit 2). `reconcile_corpus.py`
+  without `--expected-count` exits non-zero before provider construction.
+- Blank/whitespace `PINECONE_API_KEY` (`""`, spaces, tab, newline) fails closed
+  before provider construction across all four env-only utilities.
 
 ---
 
