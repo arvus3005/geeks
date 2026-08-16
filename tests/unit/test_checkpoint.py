@@ -30,6 +30,7 @@ def _make_ckpt(**overrides) -> IngestCheckpoint:
         started_at="2026-08-15T00:00:00+00:00",
         updated_at="2026-08-15T01:00:00+00:00",
         mode="pilot",
+        num_workers=1,
     )
     defaults.update(overrides)
     return IngestCheckpoint(**defaults)

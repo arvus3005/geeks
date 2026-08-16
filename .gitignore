@@ -36,6 +36,7 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+__MACOSX/
 
 # Large artifacts (store externally)
 artifacts/benchmarks/*.json
@@ -43,12 +44,28 @@ artifacts/benchmarks/*.csv
 artifacts/manifests/*.json
 artifacts/reports/*.html
 
-# Qdrant local storage
+# Prepared canary/pilot datasets and manifests (generated offline)
+artifacts/prepared/
+artifacts/checkpoints/
+artifacts/dedup/
+artifacts/ledgers/
+
+# Budget ledgers
+*.ledger.json
+
+# Dedup databases
+*.db
+
+# Checkpoint files
+*.checkpoint.json
+
+# Qdrant local storage (legacy — unused)
 qdrant_data/
 
-# Model cache
+# Model cache / tokenizer cache
 model_cache/
 .cache/
+hf_cache/
 
 # Pickle / binary checkpoints
 *.pkl
@@ -69,7 +86,13 @@ logs/
 .ipynb_checkpoints/
 *.ipynb
 
-# Reference code & documentation
+# Nested archives (must not be committed)
+*.zip
+*.tar.gz
+*.tar
+*.tgz
+
+# Reference code & documentation (read-only; Git-excluded)
 reference/
 
 # Claude memory file

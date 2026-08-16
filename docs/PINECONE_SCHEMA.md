@@ -1,4 +1,9 @@
-# Pinecone Record Schema — MSMARCO-XI Pilot
+# Pinecone Record Schema — MSMARCO-XI (Authoritative)
+
+> This schema is enforced by `src/hhgoa_rag/ingestion/schema.py`.
+> All ingestion paths use `build_record()` and `validate_record()`.
+> No Pinecone index or records exist yet — schema is for the upcoming canary.
+
 
 ## Index configuration
 | Property       | Value                      |
@@ -29,7 +34,7 @@
 | `chunk_strategy_version` | str    | Chunker version string (e.g. "v1")               |
 | `chunk_ordinal`          | int    | 0-based position of chunk within passage         |
 | `chunk_total`            | int    | Total chunks emitted from this passage           |
-| `token_length`           | int    | Token count (real tokenizer or approximate)      |
+| `token_length`           | int    | Exact token count from `intfloat/multilingual-e5-large` tokenizer (includes prefix + special tokens) |
 | `tokenizer_fingerprint`  | str    | Tokenizer revision/fingerprint used              |
 | `manifest_id`            | str    | Ingestion manifest identifier                    |
 

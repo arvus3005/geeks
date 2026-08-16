@@ -7,9 +7,10 @@ No Pinecone writes occur unless both --execute and CONFIRM_PINECONE_WRITE=1 are 
 Modes:
   smoke  — deterministic local fixtures, no HuggingFace network needed (default)
   pilot  — bounded real-data subset from HuggingFace (NOT FULL CORPUS)
-  full   — entire dataset; additionally requires --confirm-full-ingest
-           and CONFIRM_FULL_INGEST=YES_I_APPROVE_FULL_CORPUS
-           DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED
+  full   — entire dataset; blocked permanently on Starter plan regardless of flags.
+           Also requires --confirm-full-ingest and
+           CONFIRM_FULL_INGEST=YES_I_APPROVE_FULL_CORPUS on non-Starter.
+           DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED.
 
 Pinecone integrated multilingual embedding (multilingual-e5-large) is used
 server-side. No local dense model is loaded during ingestion.
@@ -41,19 +42,24 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--mode", choices=["smoke", "pilot", "full"], default="smoke")
     p.add_argument("--config", default="configs/smoke.yaml")
-    p.add_argument("--pinecone-index", default=None, help="Override Pinecone index name")
-    p.add_argument("--pinecone-namespace", default=None, help="Override namespace")
+    p.add_argument("--pinecone-index", default=None)
+    p.add_argument("--pinecone-namespace", default=None)
     p.add_argument("--chunk-strategy", default="passage_native")
-    p.add_argument("--dataset-revision", default=None, help="Pin dataset revision")
+    p.add_argument("--dataset-revision", default=None)
     p.add_argument("--pilot-rows-per-shard", type=int, default=1000)
-    p.add_argument("--batch-size", type=int, default=96)
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        default=96,
+        help="Records per Pinecone request (1-96; Pinecone hard limit is 96)",
+    )
     p.add_argument("--checkpoint-dir", type=Path, default=Path("artifacts/checkpoints"))
     p.add_argument("--dedup-db-dir", type=Path, default=Path("artifacts/dedup"))
-    p.add_argument("--run-id", default=None, help="Resume with existing run ID")
+    p.add_argument("--run-id", default=None)
     p.add_argument(
         "--confirm-full-ingest",
         action="store_true",
-        help="Required CLI acknowledgement for full mode (also needs env var)",
+        help="Required CLI acknowledgement for full mode on non-Starter (also needs env var)",
     )
     p.add_argument(
         "--execute",
@@ -105,7 +111,28 @@ def _check_write_guards(mode: str, args: argparse.Namespace) -> bool:
 def main() -> None:
     args = _build_parser().parse_args()
 
-    # Refuse immediately for full mode without guards (even before API key check)
+    # ── Validate batch size before any other processing ───────────────────────
+    if not (1 <= args.batch_size <= 96):
+        print(
+            f"ERROR: --batch-size must be between 1 and 96 (Pinecone limit), got {args.batch_size}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # ── Starter full-mode block — BEFORE API key, BEFORE HF data, BEFORE client ──
+    from hhgoa_rag.ingestion.budget import get_plan
+
+    plan = get_plan()
+    if args.mode == "full" and plan == "starter":
+        print(
+            "ERROR: Full-corpus ingestion is permanently blocked on Pinecone Starter plan.\n"
+            f"PINECONE_PLAN={plan!r} is active. No flag or environment variable can override this.\n"
+            "Switch to a paid Pinecone plan to enable full-corpus ingestion.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # ── Full mode non-Starter: requires CLI flag + env var ────────────────────
     if args.mode == "full":
         if not args.confirm_full_ingest:
             print(
@@ -127,12 +154,12 @@ def main() -> None:
     write_ok = _check_write_guards(args.mode, args)
 
     if not write_ok:
-        # Offline preparation path — no API key needed, no Pinecone instantiation
         print(
             json.dumps(
                 {
                     "mode": args.mode,
                     "status": "dry_run",
+                    "plan": plan,
                     "note": "offline preparation only — no Pinecone writes",
                 },
                 indent=2,
@@ -174,26 +201,22 @@ def main() -> None:
             print(f"{status}: {result.get('records_submitted', 0)} records in '{SMOKE_NAMESPACE}'")
         sys.exit(0 if result.get("success") else 1)
 
-    # ── Pilot / Full modes ────────────────────────────────────────────────────
+    # ── Pilot mode ────────────────────────────────────────────────────────────
     print(
-        f"WARNING: {args.mode.upper()} MODE — "
-        + ("EXPERIMENT SUBSET — NOT FULL CORPUS" if args.mode == "pilot" else "FULL CORPUS INGEST"),
+        f"WARNING: {args.mode.upper()} MODE — EXPERIMENT SUBSET — NOT FULL CORPUS",
         file=sys.stderr,
     )
 
     from pinecone import Pinecone
 
     from hhgoa_rag.dataset.models import INDIC_LANGUAGE_CODES
+    from hhgoa_rag.ingestion.budget import make_default_guard
     from hhgoa_rag.ingestion.dedup import ContentDeduplicator
     from hhgoa_rag.ingestion.engine import IngestionConfig, ingest_shard
-    from hhgoa_rag.pinecone_store import FULL_NAMESPACE, PILOT_NAMESPACE_PREFIX, PineconeStore
+    from hhgoa_rag.pinecone_store import PILOT_NAMESPACE_PREFIX, PineconeStore
 
     run_id = args.run_id or str(uuid.uuid4())[:8]
-
-    if args.mode == "pilot":
-        namespace = args.pinecone_namespace or f"{PILOT_NAMESPACE_PREFIX}{run_id}"
-    else:
-        namespace = FULL_NAMESPACE
+    namespace = args.pinecone_namespace or f"{PILOT_NAMESPACE_PREFIX}{run_id}"
 
     ingest_cfg = IngestionConfig(
         mode=args.mode,
@@ -206,16 +229,14 @@ def main() -> None:
         pilot_rows_per_shard=args.pilot_rows_per_shard,
         checkpoint_dir=args.checkpoint_dir,
         dedup_db_dir=args.dedup_db_dir,
+        num_workers=1,
     )
     ingest_cfg.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     ingest_cfg.dedup_db_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.mode == "full" and namespace != FULL_NAMESPACE:
-        print(f"ERROR: Full mode must use namespace '{FULL_NAMESPACE}'", file=sys.stderr)
-        sys.exit(1)
-
     pc = Pinecone(api_key=api_key)
     store = PineconeStore(pc.Index(index_name), embed_model=embed_model)
+    guard = make_default_guard()
 
     dedup_en = ContentDeduplicator(ingest_cfg.dedup_db_dir / f"{run_id}_en_global.db")
 
@@ -236,6 +257,7 @@ def main() -> None:
                     dedup_en=dedup_en,
                     dedup_lang=dedup_lang,
                     run_id=run_id,
+                    budget_guard=guard,
                 )
                 all_stats.append(
                     {
@@ -263,7 +285,7 @@ def main() -> None:
         "pinecone_index": index_name,
         "namespace": namespace,
         "shard_stats": all_stats,
-        "note": "EXPERIMENT SUBSET — NOT FULL CORPUS" if args.mode == "pilot" else "FULL CORPUS",
+        "note": "EXPERIMENT SUBSET — NOT FULL CORPUS",
     }
 
     if args.output_json:
@@ -271,8 +293,7 @@ def main() -> None:
     else:
         total = sum(s.get("indexed_points", 0) for s in all_stats if isinstance(s, dict))
         print(f"Run {run_id}: {total} points in index='{index_name}' ns='{namespace}'")
-        if args.mode == "pilot":
-            print("NOTE: EXPERIMENT SUBSET — NOT FULL CORPUS")
+        print("NOTE: EXPERIMENT SUBSET — NOT FULL CORPUS")
 
     sys.exit(0)
 

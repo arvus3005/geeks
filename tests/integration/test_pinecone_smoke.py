@@ -5,28 +5,33 @@ Requires:
   - PINECONE_API_KEY environment variable
   - PINECONE_SMOKE_TEST=1 environment variable (explicit opt-in)
   - An existing Pinecone integrated-embedding index (PINECONE_INDEX env var,
-    default: msmarco-xi) created with:
-      python scripts/create_pinecone_index.py --pinecone-index msmarco-xi
+    default: msmarco-xi) created with multilingual-e5-large.
 
 Run command:
-  PINECONE_API_KEY=... PINECONE_SMOKE_TEST=1 uv run pytest tests/integration/test_pinecone_smoke.py -v
+  PINECONE_API_KEY=... PINECONE_SMOKE_TEST=1 uv run pytest tests/integration/ -v
 
 Safety:
-  - Uses a unique smoke namespace per test run (smoke-test-<run_id>)
-  - Never deletes the index
-  - Uses bounded polling for eventual consistency (not fixed sleeps)
+  - Uses a FIXED deterministic namespace 'smoke-fixture-v001' for all runs.
+  - Repeated runs are idempotent — same fixture IDs overwrite, count stays constant.
+  - Never deletes the index.
+  - Never targets canary, pilot or full namespaces.
+  - Never invokes reranking.
+  - Bounded eventual-consistency polling with timeout.
+  - Skips honestly without credentials.
 """
 
 from __future__ import annotations
 
 import os
 import time
-import uuid
 
 import pytest
 
 PINECONE_INDEX = os.environ.get("PINECONE_INDEX", "msmarco-xi")
 EMBED_MODEL = "multilingual-e5-large"
+
+# Fixed, deterministic smoke namespace — repeated runs are idempotent
+SMOKE_TEST_NAMESPACE = "smoke-fixture-v001"
 
 
 def _require_opt_in():
@@ -36,7 +41,7 @@ def _require_opt_in():
         pytest.skip(
             "Real Pinecone integration test skipped. "
             "To run: set PINECONE_API_KEY and PINECONE_SMOKE_TEST=1. "
-            "See tests/integration/test_pinecone_smoke.py docstring for setup."
+            "See tests/integration/test_pinecone_smoke.py for setup instructions."
         )
     return api_key
 
@@ -55,14 +60,7 @@ def pinecone_store():
     return store
 
 
-@pytest.fixture(scope="module")
-def smoke_namespace():
-    """Unique namespace per test run — avoids polluting shared state."""
-    run_id = str(uuid.uuid4())[:8]
-    return f"smoke-test-{run_id}"
-
-
-def _poll_count(store, namespace: str, min_count: int, timeout: float = 60.0) -> int:
+def _poll_count(store, namespace: str, min_count: int, timeout: float = 90.0) -> int:
     """Poll until namespace count reaches min_count or timeout. Returns actual count."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -76,8 +74,8 @@ def _poll_count(store, namespace: str, min_count: int, timeout: float = 60.0) ->
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 
-def test_smoke_ingest_inserts_records(pinecone_store, smoke_namespace):
-    """Insert smoke fixtures and verify count reaches expected value."""
+def test_smoke_ingest_inserts_records(pinecone_store):
+    """Insert smoke fixtures into fixed namespace and verify count reaches expected value."""
     import json
 
     from hhgoa_rag.ingestion.smoke_ingest import SMOKE_FIXTURES_PATH, _build_record
@@ -86,15 +84,17 @@ def test_smoke_ingest_inserts_records(pinecone_store, smoke_namespace):
         passages = json.load(f)
 
     records = [_build_record(p) for p in passages]
-    submitted = pinecone_store.upsert_records(records, namespace=smoke_namespace, context="smoke")
+    submitted = pinecone_store.upsert_records(
+        records, namespace=SMOKE_TEST_NAMESPACE, context="smoke"
+    )
     assert submitted == len(records)
 
-    count = _poll_count(pinecone_store, smoke_namespace, min_count=len(records), timeout=90)
+    count = _poll_count(pinecone_store, SMOKE_TEST_NAMESPACE, min_count=len(records), timeout=90)
     assert count == len(records), f"Expected {len(records)} records, got {count}"
 
 
-def test_smoke_ingest_is_idempotent(pinecone_store, smoke_namespace):
-    """Re-inserting same records must not grow count."""
+def test_smoke_ingest_is_idempotent(pinecone_store):
+    """Re-inserting same records must not grow the count."""
     import json
 
     from hhgoa_rag.ingestion.smoke_ingest import SMOKE_FIXTURES_PATH, _build_record
@@ -103,62 +103,72 @@ def test_smoke_ingest_is_idempotent(pinecone_store, smoke_namespace):
         passages = json.load(f)
 
     records = [_build_record(p) for p in passages]
-    before = _poll_count(pinecone_store, smoke_namespace, min_count=len(records), timeout=30)
-    pinecone_store.upsert_records(records, namespace=smoke_namespace, context="smoke")
-    time.sleep(5)  # brief pause for consistency
-    after = pinecone_store.count_namespace(smoke_namespace)
+    before = _poll_count(pinecone_store, SMOKE_TEST_NAMESPACE, min_count=len(records), timeout=30)
+    pinecone_store.upsert_records(records, namespace=SMOKE_TEST_NAMESPACE, context="smoke")
+    time.sleep(5)
+    after = pinecone_store.count_namespace(SMOKE_TEST_NAMESPACE)
     assert after == before, f"Idempotent ingest changed count from {before} to {after}"
 
 
-def test_query_returns_results(pinecone_store, smoke_namespace):
+def test_query_returns_results(pinecone_store):
     """Text query must return at least one hit from the smoke namespace."""
     hits = pinecone_store.search(
         query_text="What is the capital of India?",
         top_k=5,
-        namespace=smoke_namespace,
+        namespace=SMOKE_TEST_NAMESPACE,
     )
     assert len(hits) > 0, "Expected at least one search result"
     assert all(h.score >= 0 for h in hits)
 
 
-def test_multilingual_query(pinecone_store, smoke_namespace):
-    """Hindi query must return results."""
+def test_multilingual_query_hindi(pinecone_store):
+    """Hindi query must not raise an error."""
     hits = pinecone_store.search(
         query_text="भारत की राजधानी क्या है",
         top_k=3,
-        namespace=smoke_namespace,
+        namespace=SMOKE_TEST_NAMESPACE,
     )
-    assert len(hits) >= 0  # may be 0 if no Hindi fixtures; pass if no error
+    assert isinstance(hits, list)
 
 
-def test_metadata_correctness(pinecone_store, smoke_namespace):
-    """Every returned record must have required metadata, no forbidden eval fields."""
+def test_multilingual_query_bengali(pinecone_store):
+    """Bengali query must not raise an error."""
+    hits = pinecone_store.search(
+        query_text="ভারতের রাজধানী কী",
+        top_k=3,
+        namespace=SMOKE_TEST_NAMESPACE,
+    )
+    assert isinstance(hits, list)
+
+
+def test_metadata_correctness(pinecone_store):
+    """Every returned record must have required metadata and no forbidden eval fields."""
+    from hhgoa_rag.ingestion.schema import FORBIDDEN_FIELDS
     from hhgoa_rag.pinecone_store import TEXT_RECORD_FIELD
 
-    forbidden = {"query", "Answer", "Eng_Query", "Eng_Answer", "query_type", "is_selected"}
-    hits = pinecone_store.search("capital city", top_k=10, namespace=smoke_namespace)
+    hits = pinecone_store.search("capital city", top_k=10, namespace=SMOKE_TEST_NAMESPACE)
 
     for hit in hits:
         assert hit.id, "Hit must have an ID"
-        assert TEXT_RECORD_FIELD in hit.fields, "Hit must have chunk_text field"
+        assert TEXT_RECORD_FIELD in hit.fields, f"Hit must have {TEXT_RECORD_FIELD} field"
         assert "language" in hit.fields, "Hit must have language field"
-        leaked = forbidden & set(hit.fields.keys())
+        leaked = FORBIDDEN_FIELDS & set(hit.fields.keys())
         assert not leaked, f"Forbidden eval fields in hit: {leaked}"
 
 
-def test_language_filter(pinecone_store, smoke_namespace):
+def test_language_filter(pinecone_store):
     """Language filter must restrict results to requested language."""
     hits = pinecone_store.search(
         "India",
         top_k=10,
-        namespace=smoke_namespace,
+        namespace=SMOKE_TEST_NAMESPACE,
         filter={"language": {"$in": ["en"]}},
     )
     for hit in hits:
         assert hit.language == "en", f"Got language {hit.language!r}, expected 'en'"
 
 
-def test_no_forbidden_fields_in_namespace_guard(pinecone_store, smoke_namespace):
+def test_namespace_guard_blocks_full_writes(pinecone_store):
     """Smoke context cannot write to full namespace."""
     from hhgoa_rag.pinecone_store import FULL_NAMESPACE, TEXT_RECORD_FIELD
 
@@ -170,8 +180,16 @@ def test_no_forbidden_fields_in_namespace_guard(pinecone_store, smoke_namespace)
         )
 
 
-def test_reconciliation_count(pinecone_store, smoke_namespace):
+def test_count_namespace_is_non_negative_integer(pinecone_store):
     """count_namespace must return a non-negative integer."""
-    count = pinecone_store.count_namespace(smoke_namespace)
+    count = pinecone_store.count_namespace(SMOKE_TEST_NAMESPACE)
     assert isinstance(count, int)
     assert count >= 0
+
+
+def test_smoke_namespace_is_not_canary_or_pilot(pinecone_store):
+    """Confirm test does not write to canary/pilot/full namespaces."""
+    assert SMOKE_TEST_NAMESPACE.startswith("smoke-")
+    assert "canary" not in SMOKE_TEST_NAMESPACE
+    assert "pilot" not in SMOKE_TEST_NAMESPACE
+    assert "full" not in SMOKE_TEST_NAMESPACE

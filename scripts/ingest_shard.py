@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Ingest a single shard from MSMARCO-XI into Pinecone.
 
-Pilot mode: bounded by --pilot-rows. Full mode requires --confirm-full-ingest.
+Pilot mode: bounded by --pilot-rows. Full mode requires --confirm-full-ingest
+AND a non-Starter PINECONE_PLAN.
 Pinecone handles server-side embedding; no local model is loaded.
 """
 
@@ -20,19 +21,24 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Ingest one MSMARCO-XI shard into Pinecone")
-    p.add_argument("--config-lang", required=True, help="Language config code (e.g. bn)")
+    p.add_argument("--config-lang", required=True)
     p.add_argument("--split", required=True, choices=["train", "validation"])
     p.add_argument("--shard", type=int, default=0)
     p.add_argument("--mode", choices=["pilot", "full"], required=True)
-    p.add_argument("--pinecone-index", required=True, help="Pinecone index name")
-    p.add_argument("--pinecone-namespace", required=True, help="Target namespace")
+    p.add_argument("--pinecone-index", required=True)
+    p.add_argument("--pinecone-namespace", required=True)
     p.add_argument("--chunk-strategy", default="passage_native")
     p.add_argument("--dataset-revision", default=None)
-    p.add_argument("--pilot-rows", type=int, default=1000, help="Max rows in pilot mode")
-    p.add_argument("--batch-size", type=int, default=96)
+    p.add_argument("--pilot-rows", type=int, default=1000)
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        default=96,
+        help="Records per Pinecone request (1-96; Pinecone hard limit is 96)",
+    )
     p.add_argument("--checkpoint-dir", type=Path, default=Path("artifacts/checkpoints"))
     p.add_argument("--dedup-db-dir", type=Path, default=Path("artifacts/dedup"))
-    p.add_argument("--run-id", default=None, help="Use existing run ID to resume")
+    p.add_argument("--run-id", default=None)
     p.add_argument("--confirm-full-ingest", action="store_true")
     p.add_argument(
         "--execute",
@@ -41,6 +47,25 @@ def main() -> None:
     )
     p.add_argument("--output-json", action="store_true")
     args = p.parse_args()
+
+    if not (1 <= args.batch_size <= 96):
+        print(
+            f"ERROR: --batch-size must be between 1 and 96, got {args.batch_size}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Starter full-mode block — BEFORE all other checks
+    from hhgoa_rag.ingestion.budget import get_plan
+
+    plan = get_plan()
+    if args.mode == "full" and plan == "starter":
+        print(
+            "ERROR: Full-corpus ingestion is permanently blocked on Pinecone Starter plan.\n"
+            f"PINECONE_PLAN={plan!r} is active. No flag or environment variable can override this.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     if args.mode == "full" and not args.confirm_full_ingest:
         print(
@@ -80,6 +105,7 @@ def main() -> None:
 
     from pinecone import Pinecone
 
+    from hhgoa_rag.ingestion.budget import make_default_guard
     from hhgoa_rag.ingestion.dedup import ContentDeduplicator
     from hhgoa_rag.ingestion.engine import IngestionConfig, ingest_shard
     from hhgoa_rag.pinecone_store import FULL_NAMESPACE, PineconeStore
@@ -103,12 +129,14 @@ def main() -> None:
         pilot_rows_per_shard=args.pilot_rows,
         checkpoint_dir=args.checkpoint_dir,
         dedup_db_dir=args.dedup_db_dir,
+        num_workers=1,
     )
     cfg.checkpoint_dir.mkdir(parents=True, exist_ok=True)
     cfg.dedup_db_dir.mkdir(parents=True, exist_ok=True)
 
     pc = Pinecone(api_key=api_key)
     store = PineconeStore(pc.Index(args.pinecone_index), embed_model=cfg.embed_model)
+    guard = make_default_guard()
 
     dedup_en = ContentDeduplicator(cfg.dedup_db_dir / f"{run_id}_en_global.db")
     dedup_lang = ContentDeduplicator(cfg.dedup_db_dir / f"{run_id}_{args.config_lang}.db")
@@ -123,6 +151,7 @@ def main() -> None:
             dedup_en=dedup_en,
             dedup_lang=dedup_lang,
             run_id=run_id,
+            budget_guard=guard,
         )
         result = {
             "run_id": run_id,
@@ -134,9 +163,7 @@ def main() -> None:
             "indexed_points": stats.indexed_points,
             "chunks_emitted": stats.chunks_emitted,
             "elapsed_s": round(stats.elapsed_seconds, 1),
-            "note": "EXPERIMENT SUBSET — NOT FULL CORPUS"
-            if args.mode == "pilot"
-            else "FULL CORPUS",
+            "note": "EXPERIMENT SUBSET — NOT FULL CORPUS",
         }
         if args.output_json:
             print(json.dumps(result, indent=2))

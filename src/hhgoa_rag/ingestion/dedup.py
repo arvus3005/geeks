@@ -3,9 +3,18 @@ from pathlib import Path
 
 
 class ContentDeduplicator:
-    def __init__(self, db_path: Path, batch_size: int = 500):
+    """SQLite-backed deduplication tracker.
+
+    Crash-consistency contract:
+      - mark_seen() adds to an in-memory buffer only; never auto-flushes.
+      - flush() is the only path that commits hashes to SQLite.
+      - Callers MUST call flush() only AFTER the associated Pinecone batch is
+        successfully acknowledged, so a crash before ack leaves the DB unchanged
+        and the engine safely re-processes the records on resume.
+    """
+
+    def __init__(self, db_path: Path):
         self.db_path = db_path
-        self.batch_size = batch_size
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(
@@ -16,18 +25,21 @@ class ContentDeduplicator:
         self._pending: list[tuple[str, str]] = []
 
     def is_duplicate(self, content_hash: str) -> bool:
-        # Check pending buffer first (not yet committed)
+        """Return True if content_hash is committed to DB or reserved in pending buffer."""
         if any(h == content_hash for h, _ in self._pending):
             return True
         cur = self._conn.execute("SELECT 1 FROM seen_hashes WHERE content_hash=?", (content_hash,))
         return cur.fetchone() is not None
 
     def mark_seen(self, content_hash: str, passage_id: str) -> None:
+        """Reserve hash in the in-memory buffer.
+
+        Does NOT write to SQLite — caller must call flush() after Pinecone ack.
+        """
         self._pending.append((content_hash, passage_id))
-        if len(self._pending) >= self.batch_size:
-            self.flush()
 
     def flush(self) -> None:
+        """Commit buffered hashes to SQLite.  Call only after Pinecone acknowledges the batch."""
         if self._pending:
             self._conn.executemany("INSERT OR IGNORE INTO seen_hashes VALUES (?,?)", self._pending)
             self._conn.commit()

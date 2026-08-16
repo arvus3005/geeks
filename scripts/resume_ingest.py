@@ -16,13 +16,9 @@ from pathlib import Path
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Resume interrupted MSMARCO-XI ingestion")
-    p.add_argument("--checkpoint", required=True, type=Path, help="Path to checkpoint JSON")
+    p.add_argument("--checkpoint", required=True, type=Path)
     p.add_argument("--dedup-db-dir", type=Path, default=Path("artifacts/dedup"))
-    p.add_argument(
-        "--confirm-full-ingest",
-        action="store_true",
-        help="Required to resume a full-mode ingestion",
-    )
+    p.add_argument("--confirm-full-ingest", action="store_true")
     p.add_argument(
         "--execute",
         action="store_true",
@@ -33,7 +29,23 @@ def main() -> None:
 
     from hhgoa_rag.ingestion.checkpoint import IngestCheckpoint
 
-    ckpt = IngestCheckpoint.load(args.checkpoint)
+    try:
+        ckpt = IngestCheckpoint.load(args.checkpoint)
+    except RuntimeError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Starter full-mode block — BEFORE any other checks
+    from hhgoa_rag.ingestion.budget import get_plan
+
+    plan = get_plan()
+    if ckpt.mode == "full" and plan == "starter":
+        print(
+            "ERROR: Full-corpus ingestion is permanently blocked on Pinecone Starter plan.\n"
+            f"PINECONE_PLAN={plan!r} is active. Cannot resume a full-mode checkpoint on Starter.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     if ckpt.mode == "full" and not args.confirm_full_ingest:
         print(
@@ -68,6 +80,7 @@ def main() -> None:
 
     from pinecone import Pinecone
 
+    from hhgoa_rag.ingestion.budget import make_default_guard
     from hhgoa_rag.ingestion.dedup import ContentDeduplicator
     from hhgoa_rag.ingestion.engine import IngestionConfig, ingest_shard
     from hhgoa_rag.pinecone_store import PineconeStore
@@ -95,10 +108,12 @@ def main() -> None:
         dataset_revision=ckpt.dataset_revision,
         dedup_db_dir=args.dedup_db_dir,
         checkpoint_dir=args.checkpoint.parent,
+        num_workers=ckpt.num_workers,
     )
 
     pc = Pinecone(api_key=api_key)
     store = PineconeStore(pc.Index(ckpt.pinecone_index), embed_model=ckpt.embed_model)
+    guard = make_default_guard()
 
     dedup_en = ContentDeduplicator(cfg.dedup_db_dir / f"{ckpt.run_id}_en_global.db")
     dedup_lang = ContentDeduplicator(cfg.dedup_db_dir / f"{ckpt.run_id}_{ckpt.config_language}.db")
@@ -113,6 +128,7 @@ def main() -> None:
             dedup_en=dedup_en,
             dedup_lang=dedup_lang,
             run_id=ckpt.run_id,
+            budget_guard=guard,
         )
         result = {
             "run_id": ckpt.run_id,

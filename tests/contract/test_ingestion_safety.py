@@ -8,17 +8,53 @@ def _run(cmd: list[str], env: dict | None = None) -> subprocess.CompletedProcess
     import os
 
     run_env = os.environ.copy()
-    # Strip any real credentials and confirmation vars from the test environment
     for k in [
         "PINECONE_API_KEY",
         "CONFIRM_PINECONE_CREATE",
         "CONFIRM_PINECONE_WRITE",
         "CONFIRM_FULL_INGEST",
+        "PINECONE_PLAN",
     ]:
         run_env.pop(k, None)
     if env:
         run_env.update(env)
     return subprocess.run(cmd, capture_output=True, text=True, env=run_env)
+
+
+def _make_pilot_ckpt(path, mode="pilot", namespace="pilot_test"):
+    import json
+
+    path.write_text(
+        json.dumps(
+            {
+                "run_id": "test",
+                "dataset_repo": "ai4bharat/MSMARCO-XI",
+                "dataset_revision": None,
+                "config_language": "bn",
+                "split": "train",
+                "source_shard": 0,
+                "chunk_strategy": "passage_native",
+                "chunk_strategy_version": "v1",
+                "embed_model": "multilingual-e5-large",
+                "pinecone_index": "msmarco-xi",
+                "pinecone_namespace": namespace,
+                "schema_fingerprint": "abc",
+                "last_acknowledged_row": 0,
+                "cumulative_source_rows": 0,
+                "cumulative_valid_occurrences": 0,
+                "cumulative_duplicate_occurrences": 0,
+                "cumulative_rejected_occurrences": 0,
+                "cumulative_chunks_emitted": 0,
+                "cumulative_indexed_points": 0,
+                "started_at": "2026-08-15T00:00:00+00:00",
+                "updated_at": "2026-08-15T00:00:00+00:00",
+                "mode": mode,
+                "num_workers": 1,
+                "status": "running",
+                "warnings": [],
+            }
+        )
+    )
 
 
 # ── create_pinecone_index.py ──────────────────────────────────────────────────
@@ -61,9 +97,7 @@ def test_create_index_env_alone_is_dry_run():
 
 
 def test_create_index_requires_both_guards():
-    """Both --execute and CONFIRM_PINECONE_CREATE=1 are required to attempt creation."""
-    # Without API key it fails at the API-key check, not the guard check —
-    # which confirms both guards passed and the script correctly reached the write path.
+    """Both --execute and CONFIRM_PINECONE_CREATE=1 required to attempt creation."""
     result = _run(
         [
             sys.executable,
@@ -74,7 +108,6 @@ def test_create_index_requires_both_guards():
         ],
         env={"CONFIRM_PINECONE_CREATE": "1"},
     )
-    # Should fail at API key check (not dry-run exit)
     assert result.returncode != 0
     assert "PINECONE_API_KEY" in result.stderr or "api_key" in result.stderr.lower()
 
@@ -82,15 +115,43 @@ def test_create_index_requires_both_guards():
 # ── ingest_all.py ─────────────────────────────────────────────────────────────
 
 
+def test_full_mode_on_starter_blocked_before_confirm_flag():
+    """Full mode on Starter plan is blocked regardless of --confirm-full-ingest."""
+    result = _run(
+        [
+            sys.executable,
+            "scripts/ingest_all.py",
+            "--mode",
+            "full",
+            "--confirm-full-ingest",
+        ],
+        env={
+            "PINECONE_PLAN": "starter",
+            "CONFIRM_FULL_INGEST": "YES_I_APPROVE_FULL_CORPUS",
+            "CONFIRM_PINECONE_WRITE": "1",
+        },
+    )
+    assert result.returncode != 0
+    # Must fail with Starter plan error, not with API key error
+    assert "starter" in result.stderr.lower() or "permanently blocked" in result.stderr.lower()
+    assert "PINECONE_API_KEY" not in result.stderr
+
+
 def test_full_mode_refuses_without_cli_flag():
-    result = _run([sys.executable, "scripts/ingest_all.py", "--mode", "full"])
+    """Full mode without --confirm-full-ingest must be refused (non-Starter)."""
+    result = _run(
+        [sys.executable, "scripts/ingest_all.py", "--mode", "full"],
+        env={"PINECONE_PLAN": "standard"},
+    )
     assert result.returncode != 0
     assert "confirm-full-ingest" in result.stderr.lower() or "DO NOT RUN" in result.stderr
 
 
 def test_full_mode_refuses_without_env_var():
+    """Full mode without env var must be refused (non-Starter)."""
     result = _run(
-        [sys.executable, "scripts/ingest_all.py", "--mode", "full", "--confirm-full-ingest"]
+        [sys.executable, "scripts/ingest_all.py", "--mode", "full", "--confirm-full-ingest"],
+        env={"PINECONE_PLAN": "standard"},
     )
     assert result.returncode != 0
     assert "CONFIRM_FULL_INGEST" in result.stderr or "DO NOT RUN" in result.stderr
@@ -109,7 +170,44 @@ def test_ingest_all_pilot_no_execute_is_dry_run():
     assert "dry" in result.stderr.lower() or "dry_run" in result.stdout
 
 
+def test_ingest_all_batch_size_over_96_rejected():
+    """--batch-size > 96 must be rejected before any other processing."""
+    result = _run(
+        [sys.executable, "scripts/ingest_all.py", "--mode", "pilot", "--batch-size", "200"]
+    )
+    assert result.returncode != 0
+    assert "batch-size" in result.stderr.lower() or "96" in result.stderr
+
+
 # ── ingest_shard.py ───────────────────────────────────────────────────────────
+
+
+def test_ingest_shard_full_on_starter_blocked():
+    """Full mode on Starter blocked before confirm flag."""
+    result = _run(
+        [
+            sys.executable,
+            "scripts/ingest_shard.py",
+            "--config-lang",
+            "bn",
+            "--split",
+            "train",
+            "--mode",
+            "full",
+            "--pinecone-index",
+            "msmarco-xi",
+            "--pinecone-namespace",
+            "full",
+        ],
+        env={
+            "PINECONE_PLAN": "starter",
+            "CONFIRM_FULL_INGEST": "YES_I_APPROVE_FULL_CORPUS",
+            "CONFIRM_PINECONE_WRITE": "1",
+        },
+    )
+    assert result.returncode != 0
+    assert "starter" in result.stderr.lower() or "permanently blocked" in result.stderr.lower()
+    assert "PINECONE_API_KEY" not in result.stderr
 
 
 def test_ingest_shard_full_refuses_without_flag():
@@ -127,7 +225,8 @@ def test_ingest_shard_full_refuses_without_flag():
             "msmarco-xi",
             "--pinecone-namespace",
             "full",
-        ]
+        ],
+        env={"PINECONE_PLAN": "standard"},
     )
     assert result.returncode != 0
     assert "confirm-full-ingest" in result.stderr.lower() or "DO NOT RUN" in result.stderr
@@ -154,56 +253,75 @@ def test_ingest_shard_no_execute_is_dry_run():
     assert "dry" in result.stderr.lower()
 
 
+def test_ingest_shard_batch_size_over_96_rejected():
+    result = _run(
+        [
+            sys.executable,
+            "scripts/ingest_shard.py",
+            "--config-lang",
+            "bn",
+            "--split",
+            "train",
+            "--mode",
+            "pilot",
+            "--pinecone-index",
+            "msmarco-xi",
+            "--pinecone-namespace",
+            "pilot_test",
+            "--batch-size",
+            "200",
+        ]
+    )
+    assert result.returncode != 0
+    assert "batch-size" in result.stderr.lower() or "96" in result.stderr
+
+
 # ── resume_ingest.py ──────────────────────────────────────────────────────────
 
 
-def test_resume_full_refuses_without_flag(tmp_path):
-    import json
-
+def test_resume_full_on_starter_blocked(tmp_path):
+    """Full mode checkpoint on Starter plan must be rejected immediately."""
     ckpt_path = tmp_path / "ckpt.json"
-    ckpt_path.write_text(
-        json.dumps(
-            {
-                "run_id": "test",
-                "dataset_repo": "ai4bharat/MSMARCO-XI",
-                "dataset_revision": None,
-                "config_language": "bn",
-                "split": "train",
-                "source_shard": 0,
-                "chunk_strategy": "passage_native",
-                "chunk_strategy_version": "v1",
-                "embed_model": "multilingual-e5-large",
-                "pinecone_index": "msmarco-xi",
-                "pinecone_namespace": "full",
-                "schema_fingerprint": "abc",
-                "last_acknowledged_row": 0,
-                "cumulative_source_rows": 0,
-                "cumulative_valid_occurrences": 0,
-                "cumulative_duplicate_occurrences": 0,
-                "cumulative_rejected_occurrences": 0,
-                "cumulative_chunks_emitted": 0,
-                "cumulative_indexed_points": 0,
-                "started_at": "2026-08-15T00:00:00+00:00",
-                "updated_at": "2026-08-15T00:00:00+00:00",
-                "mode": "full",
-                "status": "running",
-                "warnings": [],
-            }
-        )
+    _make_pilot_ckpt(ckpt_path, mode="full", namespace="full")
+    result = _run(
+        [sys.executable, "scripts/resume_ingest.py", "--checkpoint", str(ckpt_path)],
+        env={"PINECONE_PLAN": "starter"},
     )
-    result = _run([sys.executable, "scripts/resume_ingest.py", "--checkpoint", str(ckpt_path)])
+    assert result.returncode != 0
+    # Must fail with Starter plan error before API key check
+    assert "starter" in result.stderr.lower() or "permanently blocked" in result.stderr.lower()
+    assert "PINECONE_API_KEY" not in result.stderr
+
+
+def test_resume_full_refuses_without_flag(tmp_path):
+    """Full mode checkpoint without --confirm-full-ingest must be refused (non-Starter)."""
+    ckpt_path = tmp_path / "ckpt.json"
+    _make_pilot_ckpt(ckpt_path, mode="full", namespace="full")
+    result = _run(
+        [sys.executable, "scripts/resume_ingest.py", "--checkpoint", str(ckpt_path)],
+        env={"PINECONE_PLAN": "standard"},
+    )
     assert result.returncode != 0
     assert "confirm-full-ingest" in result.stderr.lower() or "DO NOT RUN" in result.stderr
 
 
 def test_resume_no_execute_is_dry_run(tmp_path):
+    ckpt_path = tmp_path / "ckpt.json"
+    _make_pilot_ckpt(ckpt_path)
+    result = _run([sys.executable, "scripts/resume_ingest.py", "--checkpoint", str(ckpt_path)])
+    assert result.returncode == 0
+    assert "dry" in result.stderr.lower()
+
+
+def test_resume_old_checkpoint_without_num_workers_fails_closed(tmp_path):
+    """Old checkpoint missing num_workers must be rejected — fail closed."""
     import json
 
-    ckpt_path = tmp_path / "ckpt.json"
+    ckpt_path = tmp_path / "old.json"
     ckpt_path.write_text(
         json.dumps(
             {
-                "run_id": "test",
+                "run_id": "old",
                 "dataset_repo": "ai4bharat/MSMARCO-XI",
                 "dataset_revision": None,
                 "config_language": "bn",
@@ -225,11 +343,12 @@ def test_resume_no_execute_is_dry_run(tmp_path):
                 "started_at": "2026-08-15T00:00:00+00:00",
                 "updated_at": "2026-08-15T00:00:00+00:00",
                 "mode": "pilot",
+                # num_workers intentionally absent
                 "status": "running",
                 "warnings": [],
             }
         )
     )
     result = _run([sys.executable, "scripts/resume_ingest.py", "--checkpoint", str(ckpt_path)])
-    assert result.returncode == 0
-    assert "dry" in result.stderr.lower()
+    assert result.returncode != 0
+    assert "num_workers" in result.stderr.lower() or "missing" in result.stderr.lower()

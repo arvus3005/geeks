@@ -1,17 +1,19 @@
 """Resumable ingestion engine for MSMARCO-XI → Pinecone.
 
 Pipeline per shard:
-  source rows → parser → normalization → dedup → chunker
-  → batch records → Pinecone upsert_records → checkpoint
+  source rows → parser → normalisation → dedup → chunker
+  → batch records → budget check → Pinecone upsert_records → ack
+  → dedup commit → budget commit → checkpoint
 
-Pinecone handles server-side embedding (integrated multilingual-e5-large);
-no local dense/sparse encoder is involved.
+Crash-consistency guarantees:
+  - Dedup hashes are committed to SQLite ONLY after Pinecone acknowledges the batch.
+  - Budget usage is committed ONLY after Pinecone acknowledges the batch.
+  - The checkpoint is updated ONLY after dedup and budget are committed.
+  - A crash at any point before acknowledgement allows safe replay.
+  - Deterministic UUIDs make re-upsert idempotent.
 
-Crash-consistency: checkpoint only after Pinecone acknowledges a batch.
-Replay is safe because point IDs are deterministic (UUIDv5).
-
-Full ingestion is gated by --confirm-full-ingest and must not be started
-in a development session. See docs/INGESTION_RUNBOOK.md.
+Full ingestion is permanently blocked when PINECONE_PLAN=starter.
+Single-worker mode is required for Starter canary/pilot ingestion.
 """
 
 from __future__ import annotations
@@ -26,16 +28,21 @@ from pathlib import Path
 
 from ..dataset.models import PassageOccurrence
 from ..dataset.parser import parse_record
+from ..ingestion.budget import BudgetGuard, StarterFullModeError, get_plan, make_default_guard
 from ..ingestion.checkpoint import IngestCheckpoint, make_schema_fingerprint
 from ..ingestion.chunkers import BaseChunker, Chunk, get_chunker
 from ..ingestion.dedup import ContentDeduplicator
 from ..ingestion.passage_ids import make_point_id
-from ..pinecone_store import TEXT_RECORD_FIELD, PineconeStore
+from ..ingestion.schema import build_record, validate_record
+from ..pinecone_store import PineconeStore
 
 logger = logging.getLogger(__name__)
 
 DATASET_REPO = "ai4bharat/MSMARCO-XI"
 EXPECTED_SPLITS = ["train", "validation"]
+
+# Conservative byte ceiling below Pinecone's 2 MB payload limit
+MAX_REQUEST_BYTES = 1_800_000
 
 
 @dataclass
@@ -56,35 +63,52 @@ class ShardStats:
 
 @dataclass
 class IngestionConfig:
-    mode: str  # "pilot" | "full"
+    mode: str  # "canary" | "pilot" | "full"
     pinecone_index: str
     pinecone_namespace: str
     embed_model: str = "multilingual-e5-large"
     chunk_strategy: str = "passage_native"
     chunk_strategy_version: str = "v1"
     dataset_revision: str | None = None
-    batch_size: int = 96  # Pinecone upsert_records supports up to 96 records per batch
+    batch_size: int = 96
     max_retries: int = 3
     retry_backoff_base: float = 2.0
-    pilot_rows_per_shard: int = 1000  # rows per language/split in pilot mode
+    pilot_rows_per_shard: int = 1000
     checkpoint_dir: Path = Path("artifacts/checkpoints")
     dedup_db_dir: Path = Path("artifacts/dedup")
     manifest_dir: Path = Path("artifacts/manifests")
-    num_workers: int = 1  # total parallel workers for this config/split
+    num_workers: int = 1
+    tokenizer_fingerprint: str = "unknown"
+
+    def __post_init__(self) -> None:
+        if not (1 <= self.batch_size <= 96):
+            raise ValueError(
+                f"batch_size must be between 1 and 96 (Pinecone limit), got {self.batch_size}"
+            )
+        if self.num_workers < 1:
+            raise ValueError(f"num_workers must be >= 1, got {self.num_workers}")
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _validate_worker_config(worker_index: int, num_workers: int) -> None:
-    """Raise ValueError for invalid worker configurations."""
-    if num_workers < 1:
-        raise ValueError(f"num_workers must be >= 1, got {num_workers}")
-    if not (0 <= worker_index < num_workers):
+def _validate_single_worker_for_starter(num_workers: int, mode: str) -> None:
+    """Enforce single-worker requirement for starter canary/pilot modes."""
+    if mode in ("canary", "pilot") and num_workers != 1:
         raise ValueError(
-            f"worker_index must satisfy 0 <= worker_index < num_workers, "
-            f"got worker_index={worker_index}, num_workers={num_workers}"
+            f"Starter canary/pilot ingestion requires exactly 1 worker (num_workers=1), "
+            f"got {num_workers}. Multi-worker sharding for Starter is not implemented. "
+            "Set num_workers=1 to proceed."
+        )
+
+
+def _check_starter_full_mode(mode: str) -> None:
+    """Raise StarterFullModeError unconditionally when full mode attempted on Starter."""
+    if mode == "full" and get_plan() == "starter":
+        raise StarterFullModeError(
+            "Full-corpus ingestion is permanently blocked on Pinecone Starter plan. "
+            "PINECONE_PLAN=starter (default). No flag or environment variable can override this."
         )
 
 
@@ -99,12 +123,14 @@ def _stream_shard(
 ) -> Iterator[tuple[int, dict]]:
     """Stream the deterministic, non-overlapping partition for this worker.
 
-    Partitioning: contiguous blocks via HuggingFace IterableDataset.shard()
-    so each worker processes a disjoint contiguous slice of the dataset.
-    Global row indices use the un-sharded position so checkpoints are stable
-    across worker-count changes (checked at resume time).
+    Uses local_row as the stable position within this worker's partition.
+    Worker identity is encoded in make_point_id via the physical_shard field.
     """
-    _validate_worker_config(worker_index, num_workers)
+    if num_workers != 1:
+        raise ValueError(
+            f"Multi-worker sharding is not yet safe for Starter ingestion. "
+            f"num_workers must be 1, got {num_workers}."
+        )
 
     from datasets import load_dataset
 
@@ -116,28 +142,25 @@ def _stream_shard(
         revision=dataset_revision,
     )
 
-    if num_workers > 1:
-        ds = ds.shard(num_shards=num_workers, index=worker_index, contiguous=True)
-
-    # Global row index: for contiguous sharding, first row for worker i in a
-    # dataset of N rows is approximately i * (N / num_workers).  Since we
-    # don't know N upfront in streaming mode, we use a local counter and
-    # encode the worker identity in the stable point ID via make_point_id.
     local_row = 0
     emitted = 0
 
     for record in ds:
-        # Global stable identifier: (worker_index, local_row) pair encodes
-        # the exact position without needing global row count upfront.
-        global_row_id = worker_index * 10_000_000 + local_row
-        if global_row_id < start_row:
+        if local_row < start_row:
             local_row += 1
             continue
-        yield global_row_id, record
+        yield local_row, record
         local_row += 1
         emitted += 1
         if max_rows is not None and emitted >= max_rows:
             break
+
+
+def _estimate_batch_bytes(records: list[dict]) -> int:
+    """Estimate serialised UTF-8 bytes of the records list."""
+    import json as _json
+
+    return len(_json.dumps(records).encode("utf-8"))
 
 
 def ingest_shard(
@@ -146,18 +169,34 @@ def ingest_shard(
     shard_idx: int,
     cfg: IngestionConfig,
     store: PineconeStore,
-    dedup_en: ContentDeduplicator,  # global English dedup (shared across configs)
-    dedup_lang: ContentDeduplicator,  # per-language dedup
+    dedup_en: ContentDeduplicator,
+    dedup_lang: ContentDeduplicator,
     run_id: str,
     num_workers: int | None = None,
+    budget_guard: BudgetGuard | None = None,
 ) -> ShardStats:
     """Ingest one worker partition. Resumes from checkpoint if one exists.
 
-    shard_idx is the worker_index (0-based). num_workers defaults to cfg.num_workers.
-    Raises ValueError if worker config is invalid.
+    Crash-consistency lifecycle per batch:
+      1. Build records
+      2. Check budgets (raises before any API call)
+      3. Call Pinecone.upsert_records — retries on transient error
+      4. On success: commit dedup hashes → commit budget → save checkpoint
     """
+    # Fail closed for Starter full mode before any external call
+    _check_starter_full_mode(cfg.mode)
+
     effective_num_workers = num_workers if num_workers is not None else cfg.num_workers
-    _validate_worker_config(shard_idx, effective_num_workers)
+    _validate_single_worker_for_starter(effective_num_workers, cfg.mode)
+
+    if effective_num_workers != 1:
+        raise ValueError(
+            f"num_workers must be 1 for this implementation; got {effective_num_workers}"
+        )
+    if shard_idx != 0:
+        raise ValueError(f"shard_idx must be 0 for single-worker ingestion; got {shard_idx}")
+
+    guard = budget_guard or make_default_guard()
     stats = ShardStats(config_language=config_language, split=split, shard=shard_idx)
     t0 = time.monotonic()
 
@@ -201,6 +240,7 @@ def ingest_shard(
                 started_at=_now_iso(),
                 updated_at=_now_iso(),
                 mode=cfg.mode,
+                num_workers=effective_num_workers,
             )
             compatible, mismatches = existing_ckpt.is_compatible(probe)
             if not compatible:
@@ -225,48 +265,11 @@ def ingest_shard(
         except (json.JSONDecodeError, TypeError) as e:
             logger.warning("Corrupt checkpoint %s, starting fresh: %s", ckpt_path, e)
 
-    max_rows = cfg.pilot_rows_per_shard if cfg.mode == "pilot" else None
+    max_rows = cfg.pilot_rows_per_shard if cfg.mode in ("pilot", "canary") else None
 
-    pending: list[tuple[PassageOccurrence, Chunk, str]] = []
+    # pending: list of (occ, chunk, point_id, token_length)
+    pending: list[tuple[PassageOccurrence, Chunk, str, int]] = []
     last_row_seen = start_row - 1
-
-    def flush(last_row: int) -> None:
-        if not pending:
-            return
-        records = []
-        for occ, chunk, point_id in pending:
-            records.append(
-                {
-                    "id": point_id,
-                    TEXT_RECORD_FIELD: chunk.text,
-                    "language": occ.passage_language,
-                    "content_hash": occ.content_hash,
-                    "chunk_strategy": cfg.chunk_strategy,
-                    "chunk_strategy_version": cfg.chunk_strategy_version,
-                    "chunk_ordinal": chunk.chunk_ordinal,
-                    "source_split": split,
-                    "index_manifest_id": f"{cfg.mode}-{run_id[:8]}",
-                }
-            )
-
-        for attempt in range(cfg.max_retries + 1):
-            try:
-                store.upsert_records(records, namespace=cfg.pinecone_namespace, context=cfg.mode)
-                stats.indexed_points += len(records)
-                _save_ckpt(last_row)
-                return
-            except Exception as e:
-                if attempt < cfg.max_retries:
-                    wait = cfg.retry_backoff_base**attempt
-                    logger.warning(
-                        "Upsert attempt %d failed, retrying in %.1fs: %s", attempt + 1, wait, e
-                    )
-                    stats.retried_batches += 1
-                    time.sleep(wait)
-                else:
-                    stats.failed_batches += 1
-                    logger.error("Upsert permanently failed: %s", e)
-                    raise
 
     def _save_ckpt(last_row: int) -> None:
         ckpt = IngestCheckpoint(
@@ -292,8 +295,102 @@ def ingest_shard(
             started_at=existing_ckpt.started_at if existing_ckpt else _now_iso(),
             updated_at=_now_iso(),
             mode=cfg.mode,
+            num_workers=effective_num_workers,
         )
         ckpt.save(ckpt_path)
+
+    def flush(last_row: int) -> None:
+        nonlocal pending
+        if not pending:
+            return
+
+        records = []
+        for occ, chunk, point_id, token_length in pending:
+            rec = build_record(
+                record_id=point_id,
+                chunk_text=chunk.text,
+                language=occ.passage_language,
+                config_language=occ.config_language,
+                dataset_revision=cfg.dataset_revision or "unknown",
+                split=split,
+                physical_shard=str(shard_idx),
+                local_source_row=occ.source_row,
+                passage_position=occ.passage_position,
+                parent_passage_id=occ.content_hash,
+                content_hash=occ.content_hash,
+                chunk_strategy=cfg.chunk_strategy,
+                chunk_strategy_version=cfg.chunk_strategy_version,
+                chunk_ordinal=chunk.chunk_ordinal,
+                chunk_total=chunk.chunk_total,
+                token_length=token_length,
+                tokenizer_fingerprint=cfg.tokenizer_fingerprint,
+                manifest_id=f"{cfg.mode}-{run_id[:8]}",
+            )
+            validate_record(rec)
+            records.append(rec)
+
+        # Enforce per-request limits before any provider call
+        if len(records) > 96:
+            raise RuntimeError(
+                f"Batch has {len(records)} records, exceeding Pinecone's 96-record limit. "
+                "This is a bug in the batch accumulation logic."
+            )
+        req_bytes = _estimate_batch_bytes(records)
+        if req_bytes > MAX_REQUEST_BYTES:
+            raise RuntimeError(
+                f"Serialised request size {req_bytes} bytes exceeds safe ceiling "
+                f"{MAX_REQUEST_BYTES} bytes."
+            )
+
+        # Aggregate token count for budget check
+        total_tokens = sum(tok for _, _, _, tok in pending)
+        primary_lang = pending[0][0].passage_language if pending else config_language
+
+        # Budget check BEFORE provider call (includes retries)
+        guard.check_upsert(
+            language=primary_lang,
+            record_count=len(records),
+            token_count=total_tokens,
+            byte_count=req_bytes,
+        )
+
+        for attempt in range(cfg.max_retries + 1):
+            try:
+                store.upsert_records(records, namespace=cfg.pinecone_namespace, context=cfg.mode)
+                break
+            except Exception as e:
+                if attempt < cfg.max_retries:
+                    wait = cfg.retry_backoff_base**attempt
+                    logger.warning(
+                        "Upsert attempt %d failed, retrying in %.1fs: %s", attempt + 1, wait, e
+                    )
+                    stats.retried_batches += 1
+                    time.sleep(wait)
+                else:
+                    stats.failed_batches += 1
+                    logger.error("Upsert permanently failed: %s", e)
+                    raise
+
+        # ── ONLY after successful Pinecone acknowledgement ──────────────────
+        stats.indexed_points += len(records)
+
+        # Commit dedup hashes to SQLite (in-memory buffer → DB)
+        for occ, chunk, point_id, _ in pending:
+            dedup = dedup_en if occ.is_original_english else dedup_lang
+            dedup.mark_seen(occ.content_hash, point_id)
+        dedup_en.flush()
+        dedup_lang.flush()
+
+        # Commit budget usage
+        guard.commit_upsert(
+            language=primary_lang,
+            record_count=len(records),
+            token_count=total_tokens,
+            byte_count=req_bytes,
+        )
+
+        # Save checkpoint (after dedup + budget committed)
+        _save_ckpt(last_row)
 
     for row_idx, record in _stream_shard(
         config_language,
@@ -322,8 +419,9 @@ def ingest_shard(
             dedup = dedup_en if occ.is_original_english else dedup_lang
             if dedup.is_duplicate(occ.content_hash):
                 stats.duplicate_occurrences += 1
-                dedup.mark_seen(occ.content_hash, occ.content_hash)
                 continue
+            # Mark in dedup's pending buffer (not DB) to prevent intra-run duplicates.
+            # DB commit happens after Pinecone ack in flush().
             dedup.mark_seen(occ.content_hash, occ.content_hash)
 
             chunks = chunker.chunk(occ.normalized_text, occ.content_hash)
@@ -336,18 +434,22 @@ def ingest_shard(
                     chunk_strategy_version=f"{cfg.chunk_strategy}_{cfg.chunk_strategy_version}",
                     chunk_ordinal=chunk.chunk_ordinal,
                 )
-                pending.append((occ, chunk, point_id))
+                # Token length: use chunk char length as approximate if tokenizer not set
+                token_length = (
+                    chunk.token_length
+                    if chunk.token_length is not None
+                    else max(1, len(chunk.text) // 4)
+                )
+                pending.append((occ, chunk, point_id, token_length))
 
-        if len(pending) >= cfg.batch_size:
-            flush(last_row_seen)
-            pending.clear()
+                # Flush immediately when batch is full (ensures no batch exceeds 96)
+                if len(pending) >= cfg.batch_size:
+                    flush(last_row_seen)
+                    pending.clear()
 
     if pending:
         flush(last_row_seen)
         pending.clear()
-
-    dedup_en.flush()
-    dedup_lang.flush()
 
     if ckpt_path.exists():
         final_ckpt = IngestCheckpoint.load(ckpt_path)

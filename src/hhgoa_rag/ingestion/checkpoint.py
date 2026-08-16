@@ -1,8 +1,13 @@
 """Crash-consistent checkpoint state for resumable ingestion.
 
 Checkpoints are written atomically (temp file + rename) so a crash mid-write
-never leaves a partially-valid checkpoint. A resume refuses if any key schema
-field (dataset, model, index, chunk strategy) differs from the checkpoint.
+never leaves a partially-valid checkpoint.  A resume refuses if any key schema
+field (dataset, model, index, chunk strategy, num_workers) differs from the
+checkpoint.
+
+Backward-incompatibility rule: checkpoints that predate the num_workers field
+are rejected as incompatible.  Fail closed rather than silently accept unknown
+sharding assumptions.
 """
 
 from __future__ import annotations
@@ -11,6 +16,21 @@ import json
 import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+_REQUIRED_FIELDS = {
+    "run_id",
+    "dataset_repo",
+    "config_language",
+    "split",
+    "source_shard",
+    "chunk_strategy",
+    "chunk_strategy_version",
+    "embed_model",
+    "pinecone_index",
+    "pinecone_namespace",
+    "schema_fingerprint",
+    "num_workers",
+}
 
 
 @dataclass
@@ -23,11 +43,11 @@ class IngestCheckpoint:
     source_shard: int
     chunk_strategy: str
     chunk_strategy_version: str
-    embed_model: str  # Pinecone integrated embed model (e.g. multilingual-e5-large)
-    pinecone_index: str  # Pinecone index name
-    pinecone_namespace: str  # Namespace for this run (smoke / pilot_<lang> / full)
-    schema_fingerprint: str  # hash of index config
-    last_acknowledged_row: int  # last row safely upserted to Pinecone
+    embed_model: str
+    pinecone_index: str
+    pinecone_namespace: str
+    schema_fingerprint: str
+    last_acknowledged_row: int
     cumulative_source_rows: int
     cumulative_valid_occurrences: int
     cumulative_duplicate_occurrences: int
@@ -36,8 +56,9 @@ class IngestCheckpoint:
     cumulative_indexed_points: int
     started_at: str
     updated_at: str
-    mode: str  # "pilot" or "full"
-    status: str = "running"  # "running" | "complete" | "failed"
+    mode: str
+    num_workers: int  # must be stored and validated; no default — absence fails closed
+    status: str = "running"
     warnings: list[str] = field(default_factory=list)
 
     def is_compatible(self, other: IngestCheckpoint) -> tuple[bool, list[str]]:
@@ -55,6 +76,7 @@ class IngestCheckpoint:
             "pinecone_index",
             "pinecone_namespace",
             "schema_fingerprint",
+            "num_workers",
         ):
             if getattr(self, attr) != getattr(other, attr):
                 mismatches.append(
@@ -73,6 +95,13 @@ class IngestCheckpoint:
     def load(cls, path: Path) -> IngestCheckpoint:
         with open(path) as f:
             data = json.load(f)
+        missing = _REQUIRED_FIELDS - set(data.keys())
+        if missing:
+            raise RuntimeError(
+                f"Checkpoint {path} is missing required fields: {sorted(missing)}. "
+                "This checkpoint is from an older format and cannot be safely resumed. "
+                "Start a new ingestion run."
+            )
         return cls(**data)
 
     @classmethod
