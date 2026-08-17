@@ -123,20 +123,23 @@ FORBIDDEN_FIELDS = {"query", "Answer", "Eng_Query", "Eng_Answer", "query_type", 
 SCOPE_CANARY_300 = "canary-300"
 SCOPE_PILOT_10000 = "pilot-10000"
 SCOPE_PILOT_39000 = "pilot-39000"
-VALID_PREP_SCOPES = (SCOPE_CANARY_300, SCOPE_PILOT_10000, SCOPE_PILOT_39000)
+SCOPE_PILOT_100000 = "pilot-100000"
+VALID_PREP_SCOPES = (SCOPE_CANARY_300, SCOPE_PILOT_10000, SCOPE_PILOT_39000, SCOPE_PILOT_100000)
 
 _SCOPE_QUOTAS: dict[str, dict[str, int]] = {
     SCOPE_CANARY_300: {"en": 100, "hi": 100, "bn": 100},
     SCOPE_PILOT_10000: {"en": 3334, "hi": 3333, "bn": 3333},
     SCOPE_PILOT_39000: {"en": 13000, "hi": 13000, "bn": 13000},
+    SCOPE_PILOT_100000: {"en": 33334, "hi": 33333, "bn": 33333},
 }
 
-# Maximum source rows to read per Parquet config.  Pilot-39000 needs a larger
-# window to fill 13,000 per-language quotas after deduplication.
+# All pilot scopes use the same 5,000-row boundary so the stable key sort produces
+# the same candidate ordering and each larger scope is a true superset of smaller ones.
 _SCOPE_MAX_ROWS: dict[str, int] = {
     SCOPE_CANARY_300: 5000,
     SCOPE_PILOT_10000: 5000,
     SCOPE_PILOT_39000: 5000,
+    SCOPE_PILOT_100000: 5000,
 }
 
 # Budget ceilings per scope.  ready_for_write is False when any ceiling is exceeded.
@@ -155,6 +158,11 @@ _SCOPE_BUDGET: dict[str, dict[str, int]] = {
         "max_records": 39_000,
         "max_tokens": 15_000_000,
         "max_bytes": int(6 * 1024**3),
+    },
+    SCOPE_PILOT_100000: {
+        "max_records": 100_000,
+        "max_tokens": 40_000_000,
+        "max_bytes": int(16 * 1024**3),
     },
 }
 

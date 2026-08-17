@@ -56,7 +56,7 @@ Usage:
     > artifacts/logs/index_canary.log 2>&1 &
 
 Hard limits:
-  - Scope is fixed: canary-300, pilot-10000, or pilot-39000. No arbitrary totals.
+  - Scope is fixed: canary-300, pilot-10000, pilot-39000, or pilot-100000. No arbitrary totals.
   - Batch size capped at canonical maximum of 96.
   - Token rate: 225,000 passage tokens/minute ceiling (configurable downward).
   - Pinecone hard limit: 250,000 passage tokens/minute.
@@ -125,7 +125,11 @@ logger = logging.getLogger("index_canary")
 SCOPE_CANARY_300 = "canary-300"
 SCOPE_PILOT_10000 = "pilot-10000"
 SCOPE_PILOT_39000 = "pilot-39000"
-VALID_SCOPES = (SCOPE_CANARY_300, SCOPE_PILOT_10000, SCOPE_PILOT_39000)
+SCOPE_PILOT_100000 = "pilot-100000"
+VALID_SCOPES = (SCOPE_CANARY_300, SCOPE_PILOT_10000, SCOPE_PILOT_39000, SCOPE_PILOT_100000)
+
+# Scopes that perform append-only expansion and require --base-manifest.
+_APPEND_ONLY_SCOPES = (SCOPE_PILOT_39000, SCOPE_PILOT_100000)
 
 # Fixed scope expectations — no arbitrary totals permitted.
 _SCOPE_EXPECTED: dict[str, dict] = {
@@ -140,10 +144,18 @@ _SCOPE_EXPECTED: dict[str, dict] = {
     SCOPE_PILOT_39000: {
         "total": 39_000,
         "per_lang": {"en": 13000, "hi": 13000, "bn": 13000},
-        # Records appended on top of the verified 10,000 base.
+        "base_scope": SCOPE_PILOT_10000,
         "base_total": 10_000,
         "new_total": 29_000,
         "new_per_lang": {"en": 9666, "hi": 9667, "bn": 9667},
+    },
+    SCOPE_PILOT_100000: {
+        "total": 100_000,
+        "per_lang": {"en": 33334, "hi": 33333, "bn": 33333},
+        "base_scope": SCOPE_PILOT_39000,
+        "base_total": 39_000,
+        "new_total": 61_000,
+        "new_per_lang": {"en": 20334, "hi": 20333, "bn": 20333},
     },
 }
 
@@ -1036,18 +1048,20 @@ def main() -> None:
 
 def _load_base_manifest_records(
     base_manifest_path: Path,
+    base_scope: str,
 ) -> tuple[dict, set[str]]:
-    """Load the verified 10,000 base manifest and return (manifest, base_id_set).
+    """Load the verified base manifest and return (manifest, base_id_set).
 
-    Validates that the base manifest is a valid pilot-10000 manifest.
+    Validates that the base manifest is a valid manifest for base_scope.
     """
-    base_manifest = _load_manifest(base_manifest_path, scope=SCOPE_PILOT_10000)
+    base_manifest = _load_manifest(base_manifest_path, scope=base_scope)
     base_record_path = _resolve_record_path(base_manifest, base_manifest_path)
+    expected_base_count = _SCOPE_EXPECTED[base_scope]["total"]
     if not base_record_path.exists():
         raise CanaryError(
             f"Base manifest record file not found: {base_record_path}",
             category="BaseMissingRecordFile",
-            safe_next_action="Ensure the base 10,000 records JSONL exists alongside the base manifest.",
+            safe_next_action=f"Ensure the base {expected_base_count:,} records JSONL exists alongside the base manifest.",
         )
     base_ids: set[str] = set()
     import json as _json
@@ -1058,9 +1072,9 @@ def _load_base_manifest_records(
             if line:
                 rec = _json.loads(line)
                 base_ids.add(rec["id"])
-    if len(base_ids) != _SCOPE_EXPECTED[SCOPE_PILOT_10000]["total"]:
+    if len(base_ids) != expected_base_count:
         raise CanaryError(
-            f"Base manifest records file has {len(base_ids)} unique IDs, expected 10,000.",
+            f"Base manifest records file has {len(base_ids)} unique IDs, expected {expected_base_count:,}.",
             category="BaseMissingRecordFile",
             safe_next_action="Regenerate the base manifest.",
         )
@@ -1099,10 +1113,10 @@ def _prove_append_only_ownership(
     missing_base = base_ids - target_ids
     if missing_base:
         raise CanaryError(
-            f"Append-only proof FAILED: {len(missing_base)} base IDs are NOT in the target 39k set. "
+            f"Append-only proof FAILED: {len(missing_base)} base IDs are NOT in the target {len(target_ids):,} set. "
             "base_10000_ids must be a subset of target_39000_ids.",
             category="AppendOnlyProofFailed",
-            safe_next_action="Regenerate the 39k manifest using the same dataset/tokenizer/seed parameters.",
+            safe_next_action="Regenerate the target manifest using the same dataset/tokenizer/seed parameters.",
         )
 
     new_ids = target_ids - base_ids
@@ -1147,10 +1161,10 @@ def _run(
     scope = args.scope
     expected_total = _SCOPE_EXPECTED[scope]["total"]
 
-    # pilot-39000 requires --base-manifest
-    if scope == SCOPE_PILOT_39000 and getattr(args, "base_manifest", None) is None:
+    # append-only scopes require --base-manifest
+    if scope in _APPEND_ONLY_SCOPES and getattr(args, "base_manifest", None) is None:
         raise CanaryError(
-            "--scope pilot-39000 requires --base-manifest pointing to the verified 10,000 manifest.",
+            f"--scope {scope} requires --base-manifest pointing to the verified base manifest.",
             category="MissingBaseManifest",
             safe_next_action="Pass --base-manifest <path-to-10k-manifest.json>.",
         )
@@ -1184,14 +1198,14 @@ def _run(
     report_data["total_records"] = total_records
     report_data["total_tokens"] = total_tokens
 
-    # ── Step 2b: pilot-39000 append-only ownership proof (offline) ───────────
-    # For pilot-39000 we build batches only from the 29,000 NEW records.
-    # The base 10,000 IDs must already be in Pinecone and are never re-upserted.
+    # ── Step 2b: append-only ownership proof (offline) ──────────────────────
+    # Only the new records beyond the base are submitted; base IDs never re-upserted.
     base_ids: set[str] = set()
-    if scope == SCOPE_PILOT_39000:
-        scope_config = _SCOPE_EXPECTED[SCOPE_PILOT_39000]
+    if scope in _APPEND_ONLY_SCOPES:
+        scope_config = _SCOPE_EXPECTED[scope]
+        base_scope = scope_config["base_scope"]
         base_manifest_path: Path = args.base_manifest  # type: ignore[assignment]
-        _base_manifest, base_ids = _load_base_manifest_records(base_manifest_path)
+        _base_manifest, base_ids = _load_base_manifest_records(base_manifest_path, base_scope)
         target_ids = {r["id"] for r in records}
         new_records = _prove_append_only_ownership(base_ids, target_ids, scope_config, records)
         logger.info(
@@ -1204,7 +1218,7 @@ def _run(
             f"PASS — base={len(base_ids)}, target={len(target_ids)}, new={len(new_records)}"
         )
         # Override records to only the new ones for batch construction.
-        # expected_total for reconciliation stays 39,000 (the full namespace target).
+        # expected_total for reconciliation stays at the full namespace target.
         records_to_index = new_records
         new_tokens = sum(r.get("token_length", 0) for r in new_records)
         report_data["new_records"] = len(new_records)
@@ -1283,12 +1297,12 @@ def _run(
         print(f"  Scope               : {scope}")
         print(f"  Manifest ID         : {manifest_id}")
         print(f"  Index               : {CANONICAL_INDEX_NAME} / {CANONICAL_NAMESPACE}")
-        if scope == SCOPE_PILOT_39000:
+        if scope in _APPEND_ONLY_SCOPES:
             print(f"  Full target records : {total_records:,}")
             print(f"  Existing base       : {len(base_ids):,}")
             print(f"  Planned new writes  : {indexing_count:,}")
             print(f"  New tokens          : {indexing_tokens:,}")
-            new_pl = _SCOPE_EXPECTED[SCOPE_PILOT_39000]["new_per_lang"]
+            new_pl = _SCOPE_EXPECTED[scope]["new_per_lang"]
             print(f"  Missing EN/HI/BN    : {new_pl['en']}/{new_pl['hi']}/{new_pl['bn']}")
         else:
             print(f"  Records             : {total_records}")
@@ -1386,12 +1400,12 @@ def _run(
     is_resume_run = bool(args.resume and completed_digests)
     expected_id_set_all = {r["id"] for r in records}
 
-    if scope == SCOPE_PILOT_39000:
-        # ── Pilot-39000 preflight: verify base is live, target ⊇ live ──────
-        # All live IDs must ⊆ target_39k.  Base IDs must all be present.
+    if scope in _APPEND_ONLY_SCOPES:
+        # ── Append-only preflight: verify base is live, target ⊇ live ────
+        # All live IDs must ⊆ target set.  Base IDs must all be present.
         # On a fresh run, live == base exactly.
         # On resume, live == base ∪ {ids from completed batches}.
-        target_id_set_all = expected_id_set_all  # 39k IDs
+        target_id_set_all = expected_id_set_all  # full target IDs
         indexing_id_set = {r["id"] for r in records_to_index}  # 29k new IDs
 
         try:
@@ -1426,23 +1440,23 @@ def _run(
             report_data["preflight_status"] = "FAILED: Stats/enumeration count mismatch"
             raise CanaryError(msg, category="PreflightEnumerationAmbiguous")
 
-        # All live IDs must belong to the target 39k set.
+        # All live IDs must belong to the target set.
         outside_target = current_id_set - target_id_set_all
         if outside_target:
             msg = (
-                f"Pilot-39000 preflight FAILED: namespace contains {len(outside_target)} IDs "
-                "that are NOT in the target 39k set. Refusing to write. "
+                f"Append-only preflight FAILED: namespace contains {len(outside_target)} IDs "
+                f"that are NOT in the target {len(target_id_set_all):,} set. Refusing to write. "
                 "Do not delete or clear automatically."
             )
             logger.error(msg)
             report_data["preflight_status"] = (
-                f"FAILED: {len(outside_target)} IDs outside target 39k set"
+                f"FAILED: {len(outside_target)} IDs outside target set"
             )
             raise CanaryError(
                 msg,
                 category="PilotOwnershipFailure",
                 safe_next_action=(
-                    "Verify namespace contents. All IDs must belong to the 39k target manifest."
+                    f"Verify namespace contents. All IDs must belong to the target {len(target_id_set_all):,} manifest."
                 ),
             )
 
@@ -1450,8 +1464,8 @@ def _run(
         missing_base = base_ids - current_id_set
         if missing_base:
             msg = (
-                f"Pilot-39000 preflight FAILED: {len(missing_base)} base IDs are NOT in the "
-                "live namespace. The verified 10,000 base must be present before expansion."
+                f"Append-only preflight FAILED: {len(missing_base)} base IDs are NOT in the "
+                f"live namespace. The verified base must be present before expansion."
             )
             logger.error(msg)
             report_data["preflight_status"] = (
@@ -1508,14 +1522,14 @@ def _run(
                 )
 
         logger.info(
-            "Pilot-39000 preflight PASSED: live=%d (base=%d, extra=%d), "
-            "all live IDs ⊆ target 39k, base fully present.",
+            "Append-only preflight PASSED: live=%d (base=%d, extra=%d), "
+            "all live IDs ⊆ target, base fully present.",
             len(current_id_set),
             len(base_ids),
             len(current_id_set) - len(base_ids),
         )
         report_data["preflight_status"] = (
-            f"PASSED (pilot-39000: live={len(current_id_set)}, base={len(base_ids)}, "
+            f"PASSED ({scope}: live={len(current_id_set)}, base={len(base_ids)}, "
             f"new_pending={len(indexing_id_set) - len(current_id_set - base_ids)})"
         )
 
