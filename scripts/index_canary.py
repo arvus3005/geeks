@@ -11,6 +11,9 @@ Live mode requires ALL of:
 Scopes:
   --scope canary-300   (default) 300 records: 100 EN / 100 HI / 100 BN
   --scope pilot-10000  10,000 records: 3334 EN / 3333 HI / 3333 BN
+  --scope pilot-39000  Append-only expansion to 39,000 total (13,000 EN/HI/BN each).
+                       Requires --base-manifest pointing to the verified 10,000 manifest.
+                       Submits only the 29,000 missing IDs; never re-upserts existing ones.
 
 Usage:
   # Dry run (safe, no credentials needed):
@@ -29,6 +32,14 @@ Usage:
       --manifest artifacts/prepared/<id>_manifest.json \\
       --execute --resume --concurrency 4
 
+  # Live pilot-39000 append-only expansion:
+  CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> \\
+    uv run python scripts/index_canary.py \\
+      --scope pilot-39000 \\
+      --manifest artifacts/prepared/pilot-39000-canonical/<id>_manifest.json \\
+      --base-manifest artifacts/prepared/pilot-10000-canonical/<id>_manifest.json \\
+      --execute --resume --concurrency 4
+
   # Resume after interruption:
   CONFIRM_PINECONE_WRITE=1 PINECONE_API_KEY=<key> \\
     uv run python scripts/index_canary.py \\
@@ -45,7 +56,7 @@ Usage:
     > artifacts/logs/index_canary.log 2>&1 &
 
 Hard limits:
-  - Scope is fixed: canary-300 or pilot-10000. No arbitrary totals.
+  - Scope is fixed: canary-300, pilot-10000, or pilot-39000. No arbitrary totals.
   - Batch size capped at canonical maximum of 96.
   - Token rate: 225,000 passage tokens/minute ceiling (configurable downward).
   - Pinecone hard limit: 250,000 passage tokens/minute.
@@ -113,7 +124,8 @@ logger = logging.getLogger("index_canary")
 
 SCOPE_CANARY_300 = "canary-300"
 SCOPE_PILOT_10000 = "pilot-10000"
-VALID_SCOPES = (SCOPE_CANARY_300, SCOPE_PILOT_10000)
+SCOPE_PILOT_39000 = "pilot-39000"
+VALID_SCOPES = (SCOPE_CANARY_300, SCOPE_PILOT_10000, SCOPE_PILOT_39000)
 
 # Fixed scope expectations — no arbitrary totals permitted.
 _SCOPE_EXPECTED: dict[str, dict] = {
@@ -124,6 +136,14 @@ _SCOPE_EXPECTED: dict[str, dict] = {
     SCOPE_PILOT_10000: {
         "total": 10_000,
         "per_lang": {"en": 3334, "hi": 3333, "bn": 3333},
+    },
+    SCOPE_PILOT_39000: {
+        "total": 39_000,
+        "per_lang": {"en": 13000, "hi": 13000, "bn": 13000},
+        # Records appended on top of the verified 10,000 base.
+        "base_total": 10_000,
+        "new_total": 29_000,
+        "new_per_lang": {"en": 9666, "hi": 9667, "bn": 9667},
     },
 }
 
@@ -840,6 +860,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--manifest", type=Path, required=True, help="Path to the _manifest.json")
     p.add_argument(
+        "--base-manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Path to the verified base manifest (required for --scope pilot-39000). "
+            "Must point to the authoritative pilot-10000 _manifest.json."
+        ),
+    )
+    p.add_argument(
         "--execute",
         action="store_true",
         help="Perform live Pinecone writes (also requires CONFIRM_PINECONE_WRITE=1 and PINECONE_API_KEY)",
@@ -1005,6 +1034,103 @@ def main() -> None:
         sys.exit(_exit_code)
 
 
+def _load_base_manifest_records(
+    base_manifest_path: Path,
+) -> tuple[dict, set[str]]:
+    """Load the verified 10,000 base manifest and return (manifest, base_id_set).
+
+    Validates that the base manifest is a valid pilot-10000 manifest.
+    """
+    base_manifest = _load_manifest(base_manifest_path, scope=SCOPE_PILOT_10000)
+    base_record_path = _resolve_record_path(base_manifest, base_manifest_path)
+    if not base_record_path.exists():
+        raise CanaryError(
+            f"Base manifest record file not found: {base_record_path}",
+            category="BaseMissingRecordFile",
+            safe_next_action="Ensure the base 10,000 records JSONL exists alongside the base manifest.",
+        )
+    base_ids: set[str] = set()
+    import json as _json
+
+    with open(base_record_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rec = _json.loads(line)
+                base_ids.add(rec["id"])
+    if len(base_ids) != _SCOPE_EXPECTED[SCOPE_PILOT_10000]["total"]:
+        raise CanaryError(
+            f"Base manifest records file has {len(base_ids)} unique IDs, expected 10,000.",
+            category="BaseMissingRecordFile",
+            safe_next_action="Regenerate the base manifest.",
+        )
+    return base_manifest, base_ids
+
+
+def _prove_append_only_ownership(
+    base_ids: set[str],
+    target_ids: set[str],
+    scope_config: dict,
+    target_records: list[dict],
+) -> list[dict]:
+    """Prove the append-only invariants and return the list of new records.
+
+    Raises CanaryError with a clear category if any invariant fails.
+    Returns the 29,000 new records (not in base).
+    """
+    from collections import Counter
+
+    base_total = scope_config["base_total"]
+    new_total = scope_config["new_total"]
+    new_per_lang_expected = scope_config["new_per_lang"]
+    target_total = scope_config["total"]
+
+    if len(base_ids) != base_total:
+        raise CanaryError(
+            f"Base ID set has {len(base_ids)} unique IDs; expected exactly {base_total}.",
+            category="AppendOnlyProofFailed",
+        )
+    if len(target_ids) != target_total:
+        raise CanaryError(
+            f"Target ID set has {len(target_ids)} unique IDs; expected exactly {target_total}.",
+            category="AppendOnlyProofFailed",
+        )
+
+    missing_base = base_ids - target_ids
+    if missing_base:
+        raise CanaryError(
+            f"Append-only proof FAILED: {len(missing_base)} base IDs are NOT in the target 39k set. "
+            "base_10000_ids must be a subset of target_39000_ids.",
+            category="AppendOnlyProofFailed",
+            safe_next_action="Regenerate the 39k manifest using the same dataset/tokenizer/seed parameters.",
+        )
+
+    new_ids = target_ids - base_ids
+    if len(new_ids) != new_total:
+        raise CanaryError(
+            f"Expected exactly {new_total} new IDs (target - base); got {len(new_ids)}.",
+            category="AppendOnlyProofFailed",
+        )
+
+    new_records = [r for r in target_records if r["id"] in new_ids]
+    if len(new_records) != new_total:
+        raise CanaryError(
+            f"Filtered new records count {len(new_records)} != expected {new_total}.",
+            category="AppendOnlyProofFailed",
+        )
+
+    new_lang_counts = Counter(r["language"] for r in new_records)
+    for lang, expected_count in new_per_lang_expected.items():
+        actual = new_lang_counts.get(lang, 0)
+        if actual != expected_count:
+            raise CanaryError(
+                f"Missing-record language quota failed: {lang} has {actual}, expected {expected_count}.",
+                category="AppendOnlyProofFailed",
+            )
+
+    return new_records
+
+
 def _run(
     args: argparse.Namespace,
     live_mode: bool,
@@ -1020,6 +1146,14 @@ def _run(
     checkpoint_dir = args.checkpoint_dir
     scope = args.scope
     expected_total = _SCOPE_EXPECTED[scope]["total"]
+
+    # pilot-39000 requires --base-manifest
+    if scope == SCOPE_PILOT_39000 and getattr(args, "base_manifest", None) is None:
+        raise CanaryError(
+            "--scope pilot-39000 requires --base-manifest pointing to the verified 10,000 manifest.",
+            category="MissingBaseManifest",
+            safe_next_action="Pass --base-manifest <path-to-10k-manifest.json>.",
+        )
 
     # ── Step 1: Load and validate manifest ───────────────────────────────────
     logger.info("Loading manifest: %s", manifest_path)
@@ -1050,8 +1184,36 @@ def _run(
     report_data["total_records"] = total_records
     report_data["total_tokens"] = total_tokens
 
+    # ── Step 2b: pilot-39000 append-only ownership proof (offline) ───────────
+    # For pilot-39000 we build batches only from the 29,000 NEW records.
+    # The base 10,000 IDs must already be in Pinecone and are never re-upserted.
+    base_ids: set[str] = set()
+    if scope == SCOPE_PILOT_39000:
+        scope_config = _SCOPE_EXPECTED[SCOPE_PILOT_39000]
+        base_manifest_path: Path = args.base_manifest  # type: ignore[assignment]
+        _base_manifest, base_ids = _load_base_manifest_records(base_manifest_path)
+        target_ids = {r["id"] for r in records}
+        new_records = _prove_append_only_ownership(base_ids, target_ids, scope_config, records)
+        logger.info(
+            "Append-only proof PASSED: base=%d, target=%d, new=%d",
+            len(base_ids),
+            len(target_ids),
+            len(new_records),
+        )
+        report_data["append_only_proof"] = (
+            f"PASS — base={len(base_ids)}, target={len(target_ids)}, new={len(new_records)}"
+        )
+        # Override records to only the new ones for batch construction.
+        # expected_total for reconciliation stays 39,000 (the full namespace target).
+        records_to_index = new_records
+        new_tokens = sum(r.get("token_length", 0) for r in new_records)
+        report_data["new_records"] = len(new_records)
+        report_data["new_tokens"] = new_tokens
+    else:
+        records_to_index = records
+
     # ── Step 3: Build batches ─────────────────────────────────────────────────
-    batches = _build_batches(records, batch_size)
+    batches = _build_batches(records_to_index, batch_size)
     total_batches = len(batches)
     batch_digests = [
         _batch_digest(manifest_checksum, i, [r["id"] for r in b]) for i, b in enumerate(batches)
@@ -1113,13 +1275,24 @@ def _run(
     if not live_mode:
         # Dry-run: print plan and exit.
         pending = sum(1 for d in batch_digests if d not in completed_digests)
+        indexing_count = len(records_to_index)
+        indexing_tokens = sum(r.get("token_length", 0) for r in records_to_index)
         print("\n" + "=" * 60)
         print("CANARY INDEX DRY-RUN PLAN (no Pinecone calls)")
         print("=" * 60)
+        print(f"  Scope               : {scope}")
         print(f"  Manifest ID         : {manifest_id}")
         print(f"  Index               : {CANONICAL_INDEX_NAME} / {CANONICAL_NAMESPACE}")
-        print(f"  Records             : {total_records}")
-        print(f"  Total tokens        : {total_tokens:,}")
+        if scope == SCOPE_PILOT_39000:
+            print(f"  Full target records : {total_records:,}")
+            print(f"  Existing base       : {len(base_ids):,}")
+            print(f"  Planned new writes  : {indexing_count:,}")
+            print(f"  New tokens          : {indexing_tokens:,}")
+            new_pl = _SCOPE_EXPECTED[SCOPE_PILOT_39000]["new_per_lang"]
+            print(f"  Missing EN/HI/BN    : {new_pl['en']}/{new_pl['hi']}/{new_pl['bn']}")
+        else:
+            print(f"  Records             : {total_records}")
+            print(f"  Total tokens        : {total_tokens:,}")
         print(f"  Batch size          : {batch_size}")
         print(f"  Concurrency         : {concurrency}")
         print(f"  Total batches       : {total_batches}")
@@ -1213,7 +1386,140 @@ def _run(
     is_resume_run = bool(args.resume and completed_digests)
     expected_id_set_all = {r["id"] for r in records}
 
-    if scope == SCOPE_PILOT_10000:
+    if scope == SCOPE_PILOT_39000:
+        # ── Pilot-39000 preflight: verify base is live, target ⊇ live ──────
+        # All live IDs must ⊆ target_39k.  Base IDs must all be present.
+        # On a fresh run, live == base exactly.
+        # On resume, live == base ∪ {ids from completed batches}.
+        target_id_set_all = expected_id_set_all  # 39k IDs
+        indexing_id_set = {r["id"] for r in records_to_index}  # 29k new IDs
+
+        try:
+            current_namespace_ids = store.list_vector_ids(namespace=CANONICAL_NAMESPACE)
+        except Exception as exc:
+            logger.error("Pilot-39000 preflight ID enumeration failed: %s", exc)
+            report_data["preflight_status"] = f"FAILED: ID enumeration error {exc}"
+            raise CanaryError(
+                f"Pilot-39000 preflight ID enumeration failed: {exc}",
+                category="PreflightProviderFailure",
+                safe_next_action="Verify Pinecone connectivity and retry.",
+            ) from exc
+
+        current_id_set = set(current_namespace_ids)
+        enumerated_count = len(current_namespace_ids)
+
+        if enumerated_count != len(current_id_set):
+            msg = (
+                f"Pilot-39000 preflight: enumeration returned {enumerated_count} IDs but only "
+                f"{len(current_id_set)} are unique — pagination ambiguity."
+            )
+            logger.error(msg)
+            report_data["preflight_status"] = "FAILED: Duplicate IDs in enumeration"
+            raise CanaryError(msg, category="PreflightEnumerationAmbiguous")
+
+        if preflight_count != enumerated_count:
+            msg = (
+                f"Pilot-39000 preflight: stats reports {preflight_count} vectors but enumeration "
+                f"returned {enumerated_count} IDs — count mismatch."
+            )
+            logger.error(msg)
+            report_data["preflight_status"] = "FAILED: Stats/enumeration count mismatch"
+            raise CanaryError(msg, category="PreflightEnumerationAmbiguous")
+
+        # All live IDs must belong to the target 39k set.
+        outside_target = current_id_set - target_id_set_all
+        if outside_target:
+            msg = (
+                f"Pilot-39000 preflight FAILED: namespace contains {len(outside_target)} IDs "
+                "that are NOT in the target 39k set. Refusing to write. "
+                "Do not delete or clear automatically."
+            )
+            logger.error(msg)
+            report_data["preflight_status"] = (
+                f"FAILED: {len(outside_target)} IDs outside target 39k set"
+            )
+            raise CanaryError(
+                msg,
+                category="PilotOwnershipFailure",
+                safe_next_action=(
+                    "Verify namespace contents. All IDs must belong to the 39k target manifest."
+                ),
+            )
+
+        # All base IDs must be present in live namespace.
+        missing_base = base_ids - current_id_set
+        if missing_base:
+            msg = (
+                f"Pilot-39000 preflight FAILED: {len(missing_base)} base IDs are NOT in the "
+                "live namespace. The verified 10,000 base must be present before expansion."
+            )
+            logger.error(msg)
+            report_data["preflight_status"] = (
+                f"FAILED: {len(missing_base)} base IDs missing from namespace"
+            )
+            raise CanaryError(
+                msg,
+                category="PilotOwnershipFailure",
+                safe_next_action="Verify the base 10,000 pilot is fully indexed before expanding.",
+            )
+
+        # On a fresh run, live must equal base exactly (no extra new IDs yet).
+        if not is_resume_run:
+            extra_new = current_id_set - base_ids
+            if extra_new:
+                msg = (
+                    f"Pilot-39000 fresh preflight: namespace has {len(extra_new)} IDs beyond "
+                    "the base 10k that are not from a checkpoint. Use --resume to continue "
+                    "a prior partial run, or verify namespace integrity."
+                )
+                logger.error(msg)
+                report_data["preflight_status"] = (
+                    f"FAILED: {len(extra_new)} unexpected extra IDs on fresh run"
+                )
+                raise CanaryError(
+                    msg,
+                    category="PilotOwnershipFailure",
+                    safe_next_action="Use --resume to continue, or verify namespace contents.",
+                )
+
+        # On resume, live should equal base ∪ completed-batch IDs.
+        if is_resume_run:
+            completed_ids = {
+                r["id"]
+                for i, b in enumerate(batches)
+                if batch_digests[i] in completed_digests
+                for r in b
+            }
+            expected_live = base_ids | completed_ids
+            unexpected_live = current_id_set - expected_live
+            if unexpected_live:
+                msg = (
+                    f"Pilot-39000 resume preflight: namespace contains {len(unexpected_live)} IDs "
+                    "not accounted for by base + checkpoint. Refusing to write."
+                )
+                logger.error(msg)
+                report_data["preflight_status"] = (
+                    f"FAILED: {len(unexpected_live)} unexpected IDs on resume"
+                )
+                raise CanaryError(
+                    msg,
+                    category="PilotOwnershipFailure",
+                    safe_next_action="Verify namespace contents against the checkpoint.",
+                )
+
+        logger.info(
+            "Pilot-39000 preflight PASSED: live=%d (base=%d, extra=%d), "
+            "all live IDs ⊆ target 39k, base fully present.",
+            len(current_id_set),
+            len(base_ids),
+            len(current_id_set) - len(base_ids),
+        )
+        report_data["preflight_status"] = (
+            f"PASSED (pilot-39000: live={len(current_id_set)}, base={len(base_ids)}, "
+            f"new_pending={len(indexing_id_set) - len(current_id_set - base_ids)})"
+        )
+
+    elif scope == SCOPE_PILOT_10000:
         # ── Pilot-10000 preflight: ownership verification ────────────────────
         # All current namespace IDs MUST belong to the pilot-10000 expected set.
         # Re-upserting existing canary vectors is acceptable; any unrelated ID fails.
@@ -1630,6 +1936,8 @@ def _run(
         count_result = f"PASS — count={final_count}"
     report_data["count_reconciliation"] = count_result
 
+    _indexing_record_count = len(records_to_index)
+
     def _finalize(
         status: str,
         exact_id_result: str,
@@ -1639,7 +1947,7 @@ def _run(
         duration = (
             datetime.fromisoformat(end_time) - datetime.fromisoformat(start_time)
         ).total_seconds()
-        rps = round(total_records / max(duration, 0.001), 2) if duration > 0 else 0
+        rps = round(_indexing_record_count / max(duration, 0.001), 2) if duration > 0 else 0
         tpm = round(tokens_submitted / max(duration / 60, 0.001), 0) if duration > 0 else 0
         report_data.update(
             {

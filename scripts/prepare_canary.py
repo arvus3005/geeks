@@ -28,10 +28,22 @@ Output (both Git-ignored):
   artifacts/prepared/<manifest_id>_records.jsonl
   artifacts/prepared/<manifest_id>_manifest.json
 
+Scopes:
+  --scope canary-300   (default) 300 records: 100 EN / 100 HI / 100 BN
+  --scope pilot-10000  10,000 records: 3,334 EN / 3,333 HI / 3,333 BN
+  --scope pilot-39000  39,000 records: 13,000 EN / 13,000 HI / 13,000 BN
+
 Usage:
   uv run python scripts/prepare_canary.py \\
       --dataset-revision <full-commit-sha> \\
       --tokenizer-revision <full-commit-sha> \\
+      --seed 42
+
+  uv run python scripts/prepare_canary.py \\
+      --scope pilot-39000 \\
+      --dataset-revision <full-commit-sha> \\
+      --tokenizer-revision <full-commit-sha> \\
+      --output-dir artifacts/prepared/pilot-39000-canonical \\
       --seed 42
 
   uv run python scripts/prepare_canary.py --help
@@ -107,6 +119,45 @@ DEFAULT_CHUNK_STRATEGY = "sentence_aware"
 # Forbidden fields that must never appear in prepared records
 FORBIDDEN_FIELDS = {"query", "Answer", "Eng_Query", "Eng_Answer", "query_type", "is_selected"}
 
+# Fixed scope definitions — quotas and row budgets.  No arbitrary totals permitted.
+SCOPE_CANARY_300 = "canary-300"
+SCOPE_PILOT_10000 = "pilot-10000"
+SCOPE_PILOT_39000 = "pilot-39000"
+VALID_PREP_SCOPES = (SCOPE_CANARY_300, SCOPE_PILOT_10000, SCOPE_PILOT_39000)
+
+_SCOPE_QUOTAS: dict[str, dict[str, int]] = {
+    SCOPE_CANARY_300: {"en": 100, "hi": 100, "bn": 100},
+    SCOPE_PILOT_10000: {"en": 3334, "hi": 3333, "bn": 3333},
+    SCOPE_PILOT_39000: {"en": 13000, "hi": 13000, "bn": 13000},
+}
+
+# Maximum source rows to read per Parquet config.  Pilot-39000 needs a larger
+# window to fill 13,000 per-language quotas after deduplication.
+_SCOPE_MAX_ROWS: dict[str, int] = {
+    SCOPE_CANARY_300: 5000,
+    SCOPE_PILOT_10000: 5000,
+    SCOPE_PILOT_39000: 20000,
+}
+
+# Budget ceilings per scope.  ready_for_write is False when any ceiling is exceeded.
+_SCOPE_BUDGET: dict[str, dict[str, int]] = {
+    SCOPE_CANARY_300: {
+        "max_records": 10_000,
+        "max_tokens": 4_000_000,
+        "max_bytes": int(1.5 * 1024**3),
+    },
+    SCOPE_PILOT_10000: {
+        "max_records": 10_000,
+        "max_tokens": 4_000_000,
+        "max_bytes": int(1.5 * 1024**3),
+    },
+    SCOPE_PILOT_39000: {
+        "max_records": 39_000,
+        "max_tokens": 15_000_000,
+        "max_bytes": int(6 * 1024**3),
+    },
+}
+
 # Default quotas for the initial English/Hindi/Bengali canary
 DEFAULT_QUOTAS = {"en": 100, "hi": 100, "bn": 100}
 
@@ -136,6 +187,16 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=__doc__,
     )
     p.add_argument(
+        "--scope",
+        choices=list(VALID_PREP_SCOPES),
+        default=None,
+        help=(
+            "Fixed preparation scope. Sets quotas and row budget automatically. "
+            f"Choices: {list(VALID_PREP_SCOPES)}. "
+            "When omitted, quotas come from --en-quota/--hi-quota/--bn-quota (default 100/100/100)."
+        ),
+    )
+    p.add_argument(
         "--dataset-revision",
         default=None,
         help=(
@@ -146,14 +207,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--split", default="train", choices=["train", "validation"])
     p.add_argument("--seed", type=int, default=42, help="Deterministic selection seed")
-    p.add_argument("--en-quota", type=int, default=100)
-    p.add_argument("--hi-quota", type=int, default=100)
-    p.add_argument("--bn-quota", type=int, default=100)
+    p.add_argument(
+        "--en-quota", type=int, default=None, help="Override EN quota (ignored when --scope is set)"
+    )
+    p.add_argument(
+        "--hi-quota", type=int, default=None, help="Override HI quota (ignored when --scope is set)"
+    )
+    p.add_argument(
+        "--bn-quota", type=int, default=None, help="Override BN quota (ignored when --scope is set)"
+    )
     p.add_argument(
         "--max-rows-per-config",
         type=int,
-        default=5000,
-        help="Max source rows to scan per Parquet file (cap for streaming)",
+        default=None,
+        help="Max source rows to scan per Parquet file (default: scope-determined, or 5000 for no-scope)",
     )
     p.add_argument(
         "--output-dir",
@@ -755,7 +822,25 @@ def main() -> None:
     args = _build_parser().parse_args()
 
     chunk_strategy = args.chunk_strategy
-    quotas = {"en": args.en_quota, "hi": args.hi_quota, "bn": args.bn_quota}
+
+    # Resolve quotas and row budget from scope (if given) or individual flags.
+    if args.scope is not None:
+        scope = args.scope
+        quotas = dict(_SCOPE_QUOTAS[scope])
+        max_rows = _SCOPE_MAX_ROWS[scope]
+        budget = _SCOPE_BUDGET[scope]
+    else:
+        scope = SCOPE_CANARY_300  # default mode for budget purposes
+        en = args.en_quota if args.en_quota is not None else 100
+        hi = args.hi_quota if args.hi_quota is not None else 100
+        bn = args.bn_quota if args.bn_quota is not None else 100
+        quotas = {"en": en, "hi": hi, "bn": bn}
+        max_rows = args.max_rows_per_config if args.max_rows_per_config is not None else 5000
+        budget = _SCOPE_BUDGET[SCOPE_CANARY_300]
+
+    if args.max_rows_per_config is not None and args.scope is not None:
+        # Explicit override always wins
+        max_rows = args.max_rows_per_config
 
     # Step 1: Resolve dataset revision to a full immutable SHA
     dataset_revision = _resolve_dataset_revision(args.dataset_revision)
@@ -837,7 +922,7 @@ def main() -> None:
             config_lang,
             args.split,
             dataset_revision,
-            args.max_rows_per_config,
+            max_rows,
         )
 
         _validate_language_metadata(rows, config_lang, parquet_path)
@@ -1000,9 +1085,9 @@ def main() -> None:
     projected_indexed_bytes = int(total_records * (DENSE_VECTOR_BYTES + avg_payload_bytes) * 1.3)
 
     starter_budget_ok = (
-        total_records <= 10_000
-        and total_tokens <= 4_000_000
-        and projected_indexed_bytes <= int(1.5 * 1024 * 1024 * 1024)
+        total_records <= budget["max_records"]
+        and total_tokens <= budget["max_tokens"]
+        and projected_indexed_bytes <= budget["max_bytes"]
     )
 
     num_planned_requests, max_records_per_request, max_serialized_request_bytes = (
@@ -1092,9 +1177,9 @@ def main() -> None:
         "maximum_records_in_a_request": max_records_per_request,
         "maximum_serialized_request_bytes": max_serialized_request_bytes,
         "starter_budget_projections": {
-            "records_ok": total_records <= 10_000,
-            "tokens_ok": total_tokens <= 4_000_000,
-            "storage_ok": projected_indexed_bytes <= int(1.5 * 1024 * 1024 * 1024),
+            "records_ok": total_records <= budget["max_records"],
+            "tokens_ok": total_tokens <= budget["max_tokens"],
+            "storage_ok": projected_indexed_bytes <= budget["max_bytes"],
             "total_ok": starter_budget_ok,
         },
         "ready_for_write": ready_for_write,
