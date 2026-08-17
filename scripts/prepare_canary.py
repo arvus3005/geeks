@@ -136,7 +136,7 @@ _SCOPE_QUOTAS: dict[str, dict[str, int]] = {
 _SCOPE_MAX_ROWS: dict[str, int] = {
     SCOPE_CANARY_300: 5000,
     SCOPE_PILOT_10000: 5000,
-    SCOPE_PILOT_39000: 20000,
+    SCOPE_PILOT_39000: 5000,
 }
 
 # Budget ceilings per scope.  ready_for_write is False when any ceiling is exceeded.

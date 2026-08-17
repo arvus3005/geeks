@@ -745,7 +745,7 @@ def test_prepare_canary_has_pilot_39000_scope() -> None:
 def test_prepare_canary_39000_max_rows() -> None:
     from scripts.prepare_canary import _SCOPE_MAX_ROWS, SCOPE_PILOT_39000
 
-    assert _SCOPE_MAX_ROWS[SCOPE_PILOT_39000] == 20000
+    assert _SCOPE_MAX_ROWS[SCOPE_PILOT_39000] == 5000
 
 
 def test_prepare_canary_39000_budget() -> None:
