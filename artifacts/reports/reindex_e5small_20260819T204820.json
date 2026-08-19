@@ -1,0 +1,14 @@
+{
+  "source": "msmarco-xi/pilot_v1",
+  "dest": "msmarco-xi-e5small/pilot_v1",
+  "dest_dim": 384,
+  "total_ids": 57240,
+  "total_upserted": 57240,
+  "executed": true,
+  "workers": 8,
+  "fetch_s_total": 2650.9,
+  "embed_s_total": 2468.5,
+  "upsert_s_total": 821.1,
+  "wall_clock_s": 749.4,
+  "generated_at": "2026-08-19T20:48:20.471475+00:00"
+}

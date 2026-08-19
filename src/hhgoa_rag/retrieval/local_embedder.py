@@ -52,6 +52,14 @@ ONNX_FILE = "onnx/model_int8.onnx"
 EMBED_DIM = 384
 _CACHE_DIR = ".cache/huggingface"
 _XLMR_BOS, _XLMR_EOS = 0, 2  # <s>, </s> — XLM-RoBERTa SentencePiece special tokens
+# XLM-RoBERTa's "fairseq offset": ids 0-3 are reserved for <s>/<pad>/</s>/<unk>
+# ahead of the raw SentencePiece vocabulary, so every piece id from
+# SentencePieceProcessor.encode() must be shifted by +1 to land on the
+# correct row of the model's embedding table. Verified against
+# transformers.AutoTokenizer's reference output — omitting this offset
+# still produces syntactically valid ids (just off by one row each), so it
+# fails silently: no error, no crash, just semantically scrambled vectors.
+_FAIRSEQ_OFFSET = 1
 
 _session = None
 _sp = None
@@ -103,7 +111,7 @@ def _embed(text: str) -> list[float]:
     _lazy_load()
     assert _session is not None and _sp is not None
 
-    ids = [_XLMR_BOS, *_sp.encode(text), _XLMR_EOS]
+    ids = [_XLMR_BOS, *(p + _FAIRSEQ_OFFSET for p in _sp.encode(text)), _XLMR_EOS]
     input_ids = np.array([ids], dtype=np.int64)
     attention_mask = np.ones_like(input_ids)
     feed = {"input_ids": input_ids, "attention_mask": attention_mask}
@@ -148,7 +156,10 @@ def embed_passages_batch(texts: list[str], batch_size: int = 32) -> list[list[fl
     out: list[list[float]] = []
     for start in range(0, len(texts), batch_size):
         chunk = texts[start : start + batch_size]
-        encoded = [[_XLMR_BOS, *_sp.encode(f"passage: {t}"), _XLMR_EOS] for t in chunk]
+        encoded = [
+            [_XLMR_BOS, *(p + _FAIRSEQ_OFFSET for p in _sp.encode(f"passage: {t}")), _XLMR_EOS]
+            for t in chunk
+        ]
         max_len = max(len(e) for e in encoded)
 
         input_ids = np.zeros((len(chunk), max_len), dtype=np.int64)
