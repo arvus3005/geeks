@@ -1,8 +1,13 @@
 """FastAPI application with Pinecone lifespan resource management.
 
-PineconeStore is created once on startup using the integrated multilingual
-embedding model. No local model is loaded; Pinecone handles embedding
-server-side. The store is reused across all requests.
+Query embedding is computed locally (see retrieval/local_embedder.py) and
+searched via raw index.query(vector=...) — not Pinecone's server-side
+integrated embedding, which the account's monthly quota exhausted. The
+serving index (msmarco-xi-e5small) therefore holds raw vectors with no
+embed config attached, so startup validates dimension/metric directly
+rather than the integrated-embedding contract in pinecone_lifecycle.py
+(that contract still applies to the original e5-large canary/pilot
+ingestion pipeline, which is unrelated to this serving path).
 """
 
 from __future__ import annotations
@@ -33,8 +38,8 @@ async def lifespan(app: FastAPI):
 
         from pinecone import Pinecone
 
-        from hhgoa_rag.pinecone_lifecycle import validate_index
         from hhgoa_rag.pinecone_store import PineconeStore
+        from hhgoa_rag.retrieval.local_embedder import EMBED_DIM
 
         pc = Pinecone(api_key=settings.pinecone_api_key)
         index = pc.Index(settings.pinecone_index)
@@ -45,11 +50,19 @@ async def lifespan(app: FastAPI):
             search_timeout=settings.pinecone_search_timeout_ms / 1000,
         )
 
-        # Validate index config against all canonical contract fields
-        errors = validate_index(
-            pc,
-            settings.pinecone_index,
-        )
+        # Raw-vector index: validate dimension/metric only, not the
+        # integrated-embedding contract (see module docstring).
+        errors: list[str] = []
+        try:
+            info = pc.describe_index(settings.pinecone_index)
+            if info.dimension != EMBED_DIM:
+                errors.append(
+                    f"dimension mismatch: expected {EMBED_DIM}, got {info.dimension}"
+                )
+            if info.metric != "cosine":
+                errors.append(f"metric mismatch: expected 'cosine', got {info.metric!r}")
+        except Exception as e:
+            errors.append(f"Could not describe index '{settings.pinecone_index}': {e}")
         if errors:
             resources.mark_not_ready(f"index_config_errors: {errors}")
             logger.warning("Pinecone index config errors: %s", errors)

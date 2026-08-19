@@ -1,3 +1,4 @@
+import logging
 from typing import Literal
 
 from fastapi import APIRouter
@@ -8,8 +9,11 @@ from hhgoa_rag.guardrails.input_guards import check_input
 from hhgoa_rag.guardrails.output_guards import verify_grounding
 from hhgoa_rag.observability.timing import RequestTimer
 from hhgoa_rag.pinecone_contract import TEXT_FIELD
-from hhgoa_rag.retrieval.language_routing import get_language_filter
+from hhgoa_rag.retrieval.language_routing import detect_language, get_language_filter
+from hhgoa_rag.retrieval.local_embedder import embed_query
 from hhgoa_rag.schemas.query import Citation, QueryRequest, QueryResponse, TimingsMs
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -82,14 +86,8 @@ async def query_endpoint(req: QueryRequest):
         )
 
     # 2. Language detect
-    detected_lang = "en"
     with timer.stage("language_detect"):
-        try:
-            from langdetect import detect
-
-            detected_lang = detect(req.question)
-        except Exception:
-            detected_lang = req.language_hint or "en"
+        detected_lang = detect_language(req.question)
         lang_filter = get_language_filter(detected_lang, req.language_hint)
 
     # 3. Retrieve — Pinecone handles embedding server-side; no local vector computation
@@ -103,16 +101,19 @@ async def query_endpoint(req: QueryRequest):
         pinecone_filter = {"language": {"$in": lang_filter}}
 
     try:
+        with timer.stage("query_embed"):
+            query_vector = embed_query(req.question)
         with timer.stage("pinecone_retrieve"):
-            hits = resources.pinecone_store.search(
-                query_text=req.question,
+            hits = resources.pinecone_store.search_by_vector(
+                vector=query_vector,
                 top_k=settings.retrieval_top_k,
                 namespace=settings.pinecone_namespace,
                 filter=pinecone_filter,
             )
-    except Exception:
+    except Exception as exc:
+        logger.error("Retrieval failed for request_id=%s: %s", req.request_id, exc)
         return _error_response(
-            req, settings, timer, "index_unavailable", "Vector index unavailable"
+            req, settings, timer, "index_unavailable", f"Vector index unavailable: {exc}"
         )
 
     # Normalise hits to the passage dict format used downstream
@@ -124,7 +125,7 @@ async def query_endpoint(req: QueryRequest):
         }
         for h in hits
     ]
-    retrieval_mode = "pinecone_integrated_embed"
+    retrieval_mode = "local_embed_raw_vector"
 
     # 4. Extract answer
     with timer.stage("answer_extract"):
