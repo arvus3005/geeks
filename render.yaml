@@ -1,0 +1,36 @@
+# Render Blueprint — free tier, no credit card required.
+#
+# region: ohio (Render's US-East region) is chosen deliberately, not
+# arbitrarily — our Pinecone index lives in AWS us-east-1 (Virginia), and a
+# live benchmark showed the Pinecone network round-trip alone accounts for
+# ~280-330ms of a ~400ms P50 (see artifacts/reports/latency_benchmark_*).
+# Render has no Virginia region; Ohio is the closest available, and should
+# collapse that same cross-country hop down to a same-region call.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> connect this repo.
+# Then set PINECONE_API_KEY (and any other secrets) in the dashboard — they
+# are marked sync:false so they are never committed to git.
+
+services:
+  - type: web
+    name: hhgoa-rag
+    runtime: docker
+    plan: free
+    region: ohio
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health/ready
+    autoDeploy: true
+    envVars:
+      - key: PINECONE_API_KEY
+        sync: false
+      - key: PINECONE_INDEX
+        value: msmarco-xi-e5small
+      - key: PINECONE_NAMESPACE
+        value: pilot_v1
+      - key: PINECONE_CLOUD
+        value: aws
+      - key: PINECONE_REGION
+        value: us-east-1
+      - key: SARVAM_API_KEY
+        sync: false
