@@ -21,11 +21,11 @@ dependencies = [
     "structlog==24.4.0",
     "prometheus-client==0.21.1",
     "unicodedata2==15.1.0",
-    "langdetect==1.0.9",
     "pyyaml>=6.0",
     "transformers>=4.40.0,<5",
     "tokenizers>=0.19.0",
     "sentencepiece>=0.2.0",
+    "onnxruntime>=1.29.0",
 ]
 
 [tool.hatch.build.targets.wheel]
