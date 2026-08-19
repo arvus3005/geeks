@@ -84,7 +84,7 @@ def parse_record(
             )
         else:
             norm = normalize_text(eng_p)
-            if not is_valid_passage(norm):
+            if len(norm) < 10:
                 rejected.append(
                     RejectedRecord(
                         config_language=config_language,
@@ -109,7 +109,7 @@ def parse_record(
                         passage_language="en",
                         raw_text=eng_p,
                         normalized_text=norm,
-                        content_hash=content_hash(eng_p),
+                        content_hash=content_hash(norm),
                         is_original_english=True,
                     )
                 )
@@ -130,7 +130,7 @@ def parse_record(
             )
         else:
             norm = normalize_text(trans_p)
-            if not is_valid_passage(norm):
+            if len(norm) < 10:
                 rejected.append(
                     RejectedRecord(
                         config_language=config_language,
@@ -155,7 +155,7 @@ def parse_record(
                         passage_language=config_language,
                         raw_text=trans_p,
                         normalized_text=norm,
-                        content_hash=content_hash(trans_p),
+                        content_hash=content_hash(norm),
                         is_original_english=False,
                     )
                 )
