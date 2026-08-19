@@ -77,6 +77,19 @@ async def lifespan(app: FastAPI):
                 resources.mark_not_ready(f"pinecone_probe_failed: {e}")
                 logger.warning("Pinecone probe failed: %s", e)
 
+            # Warm the local embedder here, not on the first real request.
+            # Its first call constructs the ONNX session (measured ~5-9s) —
+            # every process restart (including a redeploy triggered by an
+            # unrelated push, since Render's autoDeploy watches the whole
+            # branch) would otherwise make the next real user pay that cost.
+            try:
+                from hhgoa_rag.retrieval.local_embedder import embed_query
+
+                embed_query("warmup")
+                logger.info("Local embedder warmed at startup")
+            except Exception as e:
+                logger.warning("Local embedder warmup failed (non-fatal): %s", e)
+
         resources.readiness_detail.update(
             {
                 "pinecone_index": settings.pinecone_index,
