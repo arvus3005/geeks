@@ -1,0 +1,764 @@
+{
+  "run_id": "20260819T205335",
+  "target": "deployed:https://hhgoa-rag-d3fw.onrender.com",
+  "generated_at": "2026-08-19T20:53:35.347757+00:00",
+  "n_queries": 32,
+  "n_ok": 32,
+  "n_failed": 0,
+  "decisions": {
+    "allow": 31,
+    "abstain": 1
+  },
+  "total_backend_ms_percentiles": {
+    "p50": 306.98599999959697,
+    "p70": 332.0112910005264,
+    "p95": 410.79241699844715,
+    "p99": 427.0934579981258,
+    "p100": 427.0934579981258,
+    "mean": 325.5423945934126,
+    "count": 32
+  },
+  "stage_percentiles_ms": {
+    "answer_extract": {
+      "p50": 0.05700439214706421,
+      "p70": 0.07014349102973938,
+      "p95": 0.11289864778518677,
+      "p99": 0.12132897973060608,
+      "p100": 0.12132897973060608,
+      "mean": 0.06300426321104169,
+      "count": 32
+    },
+    "evidence_check": {
+      "p50": 0.0,
+      "p70": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "p100": 0.0,
+      "mean": 0.0,
+      "count": 32
+    },
+    "grounding_verify": {
+      "p50": 0.053783878684043884,
+      "p70": 0.06899610161781311,
+      "p95": 0.12052804231643677,
+      "p99": 0.13069994747638702,
+      "p100": 0.13069994747638702,
+      "mean": 0.05768332630395889,
+      "count": 32
+    },
+    "input_guard": {
+      "p50": 0.03345310688018799,
+      "p70": 0.03984197974205017,
+      "p95": 0.05226396024227142,
+      "p99": 0.05294196307659149,
+      "p100": 0.05294196307659149,
+      "mean": 0.034901255276054144,
+      "count": 32
+    },
+    "language_detect": {
+      "p50": 0.005530193448066711,
+      "p70": 0.0058300793170928955,
+      "p95": 0.007510185241699219,
+      "p99": 0.015310943126678467,
+      "p100": 0.015310943126678467,
+      "mean": 0.005591427907347679,
+      "count": 32
+    },
+    "pinecone_retrieve": {
+      "p50": 33.529872074723244,
+      "p70": 36.095842719078064,
+      "p95": 71.62043638527393,
+      "p99": 93.66346895694733,
+      "p100": 93.66346895694733,
+      "mean": 40.5739217530936,
+      "count": 32
+    },
+    "query_embed": {
+      "p50": 7.3812175542116165,
+      "p70": 8.188612759113312,
+      "p95": 15.913331881165504,
+      "p99": 116.84731021523476,
+      "p100": 116.84731021523476,
+      "mean": 11.297694640234113,
+      "count": 32
+    },
+    "rerank": {
+      "p50": 0.0,
+      "p70": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "p100": 0.0,
+      "mean": 0.0,
+      "count": 32
+    },
+    "serialize": {
+      "p50": 0.0,
+      "p70": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "p100": 0.0,
+      "mean": 0.0,
+      "count": 32
+    },
+    "total_backend": {
+      "p50": 42.851608246564865,
+      "p70": 47.75509238243103,
+      "p95": 99.97852519154549,
+      "p99": 151.63891203701496,
+      "p100": 151.63891203701496,
+      "mean": 52.89387749508023,
+      "count": 32
+    },
+    "wall_clock_incl_network": {
+      "p50": 306.98599999959697,
+      "p70": 332.0112910005264,
+      "p95": 410.79241699844715,
+      "p99": 427.0934579981258,
+      "p100": 427.0934579981258,
+      "mean": 325.5423945934126,
+      "count": 32
+    }
+  },
+  "results": [
+    {
+      "query": "कॉर्पोरेशन क्या है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 353.54391699729604,
+      "stages_ms": {
+        "input_guard": 0.051664188504219055,
+        "language_detect": 0.007510185241699219,
+        "query_embed": 5.4464805871248245,
+        "pinecone_retrieve": 93.66346895694733,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06999261677265167,
+        "grounding_verify": 0.07218308746814728,
+        "serialize": 0.0,
+        "total_backend": 99.97852519154549,
+        "wall_clock_incl_network": 353.54391699729604
+      }
+    },
+    {
+      "query": ". what is a corporation?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 300.80924999856506,
+      "stages_ms": {
+        "input_guard": 0.019378960132598877,
+        "language_detect": 0.0049620866775512695,
+        "query_embed": 5.708146840333939,
+        "pinecone_retrieve": 30.39289452135563,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.03488175570964813,
+        "grounding_verify": 0.028561800718307495,
+        "serialize": 0.0,
+        "total_backend": 36.91900335252285,
+        "wall_clock_incl_network": 300.80924999856506
+      }
+    },
+    {
+      "query": "रेचल कार्सन ने क्यों एक दायित्व बर्दाश्त करने के लिए लिखा",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 364.6795420027047,
+      "stages_ms": {
+        "input_guard": 0.05124323070049286,
+        "language_detect": 0.00363960862159729,
+        "query_embed": 8.364902809262276,
+        "pinecone_retrieve": 31.86057321727276,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07855333387851715,
+        "grounding_verify": 0.12052804231643677,
+        "serialize": 0.0,
+        "total_backend": 41.18267819285393,
+        "wall_clock_incl_network": 364.6795420027047
+      }
+    },
+    {
+      "query": "why did rachel carson write an obligation to endure",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 388.8263749977341,
+      "stages_ms": {
+        "input_guard": 0.036971643567085266,
+        "language_detect": 0.005530193448066711,
+        "query_embed": 8.03542323410511,
+        "pinecone_retrieve": 33.91464799642563,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04673190414905548,
+        "grounding_verify": 0.054502859711647034,
+        "serialize": 0.0,
+        "total_backend": 42.851608246564865,
+        "wall_clock_incl_network": 388.8263749977341
+      }
+    },
+    {
+      "query": "पोटेशियम में कम खाद्य पदार्थों का चार्ट।",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 427.0934579981258,
+      "stages_ms": {
+        "input_guard": 0.042421743273735046,
+        "language_detect": 0.005090609192848206,
+        "query_embed": 11.737283319234848,
+        "pinecone_retrieve": 70.19254006445408,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06543658673763275,
+        "grounding_verify": 0.06899610161781311,
+        "serialize": 0.0,
+        "total_backend": 82.90605805814266,
+        "wall_clock_incl_network": 427.0934579981258
+      }
+    },
+    {
+      "query": "chart for foods low in potassium.",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 410.79241699844715,
+      "stages_ms": {
+        "input_guard": 0.05294196307659149,
+        "language_detect": 0.005690380930900574,
+        "query_embed": 15.023332089185715,
+        "pinecone_retrieve": 31.296655535697937,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.03703311085700989,
+        "grounding_verify": 0.053783878684043884,
+        "serialize": 0.0,
+        "total_backend": 49.24042709171772,
+        "wall_clock_incl_network": 410.79241699844715
+      }
+    },
+    {
+      "query": "मालवाहक जहाज़ के नीचे की तरफ",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 408.0072079996171,
+      "stages_ms": {
+        "input_guard": 0.03345310688018799,
+        "language_detect": 0.015310943126678467,
+        "query_embed": 116.84731021523476,
+        "pinecone_retrieve": 33.529872074723244,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06664358079433441,
+        "grounding_verify": 0.07198378443717957,
+        "serialize": 0.0,
+        "total_backend": 151.63891203701496,
+        "wall_clock_incl_network": 408.0072079996171
+      }
+    },
+    {
+      "query": "bottom front of a cargo ship",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 366.09254199720453,
+      "stages_ms": {
+        "input_guard": 0.028891488909721375,
+        "language_detect": 0.005559995770454407,
+        "query_embed": 9.31713730096817,
+        "pinecone_retrieve": 35.185741260647774,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05313195288181305,
+        "grounding_verify": 0.04463456571102142,
+        "serialize": 0.0,
+        "total_backend": 45.54571583867073,
+        "wall_clock_incl_network": 366.09254199720453
+      }
+    },
+    {
+      "query": "ईमानदारी या सच्चाई की परिभाषा",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 304.2925000008836,
+      "stages_ms": {
+        "input_guard": 0.03423169255256653,
+        "language_detect": 0.0047925859689712524,
+        "query_embed": 5.8126915246248245,
+        "pinecone_retrieve": 35.450078547000885,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04427507519721985,
+        "grounding_verify": 0.06342492997646332,
+        "serialize": 0.0,
+        "total_backend": 42.17698238790035,
+        "wall_clock_incl_network": 304.2925000008836
+      }
+    },
+    {
+      "query": "honesty or integrity definition",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 301.10904200046207,
+      "stages_ms": {
+        "input_guard": 0.02845190465450287,
+        "language_detect": 0.005688518285751343,
+        "query_embed": 5.48471137881279,
+        "pinecone_retrieve": 29.836399480700493,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.0430326908826828,
+        "grounding_verify": 0.06122514605522156,
+        "serialize": 0.0,
+        "total_backend": 36.33267618715763,
+        "wall_clock_incl_network": 301.10904200046207
+      }
+    },
+    {
+      "query": "लिंकन में अब वायुमंडलीय दबाव क्या है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 359.2644169984851,
+      "stages_ms": {
+        "input_guard": 0.029802322387695312,
+        "language_detect": 0.0038798898458480835,
+        "query_embed": 7.227107882499695,
+        "pinecone_retrieve": 43.06689091026783,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07014349102973938,
+        "grounding_verify": 0.07273629307746887,
+        "serialize": 0.0,
+        "total_backend": 51.123593002557755,
+        "wall_clock_incl_network": 359.2644169984851
+      }
+    },
+    {
+      "query": "what is barometric pressure in lincoln ne now?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 306.98599999959697,
+      "stages_ms": {
+        "input_guard": 0.037962570786476135,
+        "language_detect": 0.0056996941566467285,
+        "query_embed": 8.188612759113312,
+        "pinecone_retrieve": 38.578275591135025,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07625669240951538,
+        "grounding_verify": 0.04550255835056305,
+        "serialize": 0.0,
+        "total_backend": 47.75509238243103,
+        "wall_clock_incl_network": 306.98599999959697
+      }
+    },
+    {
+      "query": "स्ट्रूथर्स शहर स्कूल जिला राज्य संख्या",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 330.83670899941353,
+      "stages_ms": {
+        "input_guard": 0.046543776988983154,
+        "language_detect": 0.005668029189109802,
+        "query_embed": 7.3812175542116165,
+        "pinecone_retrieve": 68.7190517783165,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.09025633335113525,
+        "grounding_verify": 0.09834952652454376,
+        "serialize": 0.0,
+        "total_backend": 77.07813382148743,
+        "wall_clock_incl_network": 330.83670899941353
+      }
+    },
+    {
+      "query": "struthers city school district state number",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 296.83754099824,
+      "stages_ms": {
+        "input_guard": 0.03219209611415863,
+        "language_detect": 0.004809349775314331,
+        "query_embed": 6.694430485367775,
+        "pinecone_retrieve": 30.62915988266468,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04906207323074341,
+        "grounding_verify": 0.03664381802082062,
+        "serialize": 0.0,
+        "total_backend": 38.23220543563366,
+        "wall_clock_incl_network": 296.83754099824
+      }
+    },
+    {
+      "query": "क्या चिकित्सीय मारिजुआना मदत करता है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 311.25654200150166,
+      "stages_ms": {
+        "input_guard": 0.03984197974205017,
+        "language_detect": 0.004170462489128113,
+        "query_embed": 9.902320802211761,
+        "pinecone_retrieve": 34.741513431072235,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.08492358028888702,
+        "grounding_verify": 0.07431395351886749,
+        "serialize": 0.0,
+        "total_backend": 45.64607888460159,
+        "wall_clock_incl_network": 311.25654200150166
+      }
+    },
+    {
+      "query": "does medical marijuana help with ptsd",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 338.1227499994566,
+      "stages_ms": {
+        "input_guard": 0.032704323530197144,
+        "language_detect": 0.005949288606643677,
+        "query_embed": 6.816549226641655,
+        "pinecone_retrieve": 66.7562372982502,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.08424557745456696,
+        "grounding_verify": 0.05721487104892731,
+        "serialize": 0.0,
+        "total_backend": 74.63213428854942,
+        "wall_clock_incl_network": 338.1227499994566
+      }
+    },
+    {
+      "query": "কর্পোরেশন কী?",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 299.9757090001367,
+      "stages_ms": {
+        "input_guard": 0.0254213809967041,
+        "language_detect": 0.00539049506187439,
+        "query_embed": 6.547370925545692,
+        "pinecone_retrieve": 32.23416581749916,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.11289864778518677,
+        "grounding_verify": 0.07614493370056152,
+        "serialize": 0.0,
+        "total_backend": 39.923543110489845,
+        "wall_clock_incl_network": 299.9757090001367
+      }
+    },
+    {
+      "query": ". what is a corporation?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 298.48191600103746,
+      "stages_ms": {
+        "input_guard": 0.018952414393424988,
+        "language_detect": 0.004287809133529663,
+        "query_embed": 5.5681876838207245,
+        "pinecone_retrieve": 32.17560239136219,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05076080560684204,
+        "grounding_verify": 0.04108063876628876,
+        "serialize": 0.0,
+        "total_backend": 38.53895142674446,
+        "wall_clock_incl_network": 298.48191600103746
+      }
+    },
+    {
+      "query": "র‍্যাচেল কারসন কেন একটি বাধ্যবাধকতা সহ্য করার জন্য লিখেছিলেন",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 308.7729170001694,
+      "stages_ms": {
+        "input_guard": 0.05226396024227142,
+        "language_detect": 0.006299465894699097,
+        "query_embed": 15.913331881165504,
+        "pinecone_retrieve": 30.7824295014143,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05700439214706421,
+        "grounding_verify": 0.04469230771064758,
+        "serialize": 0.0,
+        "total_backend": 47.633472830057144,
+        "wall_clock_incl_network": 308.7729170001694
+      }
+    },
+    {
+      "query": "why did rachel carson write an obligation to endure",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 329.8678339997423,
+      "stages_ms": {
+        "input_guard": 0.028662383556365967,
+        "language_detect": 0.004800036549568176,
+        "query_embed": 7.967185229063034,
+        "pinecone_retrieve": 71.62043638527393,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.042164698243141174,
+        "grounding_verify": 0.038392841815948486,
+        "serialize": 0.0,
+        "total_backend": 80.34037984907627,
+        "wall_clock_incl_network": 329.8678339997423
+      }
+    },
+    {
+      "query": "পটাসিয়াম কম থাকা খাবারের তালিকা।",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 306.48800000199117,
+      "stages_ms": {
+        "input_guard": 0.03464333713054657,
+        "language_detect": 0.00471062958240509,
+        "query_embed": 9.538918733596802,
+        "pinecone_retrieve": 30.92249296605587,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.10618753731250763,
+        "grounding_verify": 0.08072517812252045,
+        "serialize": 0.0,
+        "total_backend": 41.51233658194542,
+        "wall_clock_incl_network": 306.48800000199117
+      }
+    },
+    {
+      "query": "chart for foods low in potassium.",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 303.618333000486,
+      "stages_ms": {
+        "input_guard": 0.031732022762298584,
+        "language_detect": 0.005880370736122131,
+        "query_embed": 8.2431361079216,
+        "pinecone_retrieve": 29.797056689858437,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04541315138339996,
+        "grounding_verify": 0.0352226197719574,
+        "serialize": 0.0,
+        "total_backend": 39.06767815351486,
+        "wall_clock_incl_network": 303.618333000486
+      }
+    },
+    {
+      "query": "একটি পণ্যবাহী জাহাজের নীচের সামনের অংশ",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 332.0112910005264,
+      "stages_ms": {
+        "input_guard": 0.042263418436050415,
+        "language_detect": 0.0058300793170928955,
+        "query_embed": 8.168479427695274,
+        "pinecone_retrieve": 67.6723625510931,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05075335502624512,
+        "grounding_verify": 0.046622008085250854,
+        "serialize": 0.0,
+        "total_backend": 76.83038711547852,
+        "wall_clock_incl_network": 332.0112910005264
+      }
+    },
+    {
+      "query": "bottom front of a cargo ship",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 302.53774999800953,
+      "stages_ms": {
+        "input_guard": 0.025952234864234924,
+        "language_detect": 0.004811212420463562,
+        "query_embed": 6.0281287878751755,
+        "pinecone_retrieve": 30.69613315165043,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06158463656902313,
+        "grounding_verify": 0.05348213016986847,
+        "serialize": 0.0,
+        "total_backend": 37.786392495036125,
+        "wall_clock_incl_network": 302.53774999800953
+      }
+    },
+    {
+      "query": "সততা বা সততার সংজ্ঞা",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 310.29341699832,
+      "stages_ms": {
+        "input_guard": 0.02884306013584137,
+        "language_detect": 0.006070360541343689,
+        "query_embed": 7.788904011249542,
+        "pinecone_retrieve": 36.095842719078064,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05504302680492401,
+        "grounding_verify": 0.04264526069164276,
+        "serialize": 0.0,
+        "total_backend": 44.96712610125542,
+        "wall_clock_incl_network": 310.29341699832
+      }
+    },
+    {
+      "query": "honesty or integrity definition",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 296.16400000304566,
+      "stages_ms": {
+        "input_guard": 0.020112842321395874,
+        "language_detect": 0.004161149263381958,
+        "query_embed": 5.210135132074356,
+        "pinecone_retrieve": 38.92379812896252,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04646182060241699,
+        "grounding_verify": 0.04424154758453369,
+        "serialize": 0.0,
+        "total_backend": 44.91495154798031,
+        "wall_clock_incl_network": 296.16400000304566
+      }
+    },
+    {
+      "query": "লিঙ্কনে এখন ব্যারোমেট্রিক চাপ কত?",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 293.9909579981759,
+      "stages_ms": {
+        "input_guard": 0.02968311309814453,
+        "language_detect": 0.004598870873451233,
+        "query_embed": 6.920997053384781,
+        "pinecone_retrieve": 32.68936648964882,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.048024579882621765,
+        "grounding_verify": 0.03978423774242401,
+        "serialize": 0.0,
+        "total_backend": 40.513815358281136,
+        "wall_clock_incl_network": 293.9909579981759
+      }
+    },
+    {
+      "query": "what is barometric pressure in lincoln ne now?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 291.39362500063726,
+      "stages_ms": {
+        "input_guard": 0.026423484086990356,
+        "language_detect": 0.004468485713005066,
+        "query_embed": 6.8205576390028,
+        "pinecone_retrieve": 29.71120923757553,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04033185541629791,
+        "grounding_verify": 0.033561140298843384,
+        "serialize": 0.0,
+        "total_backend": 37.243157625198364,
+        "wall_clock_incl_network": 291.39362500063726
+      }
+    },
+    {
+      "query": "স্ট্রুথার্স শহর বিদ্যালয় জেলা রাজ্য নম্বর",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 295.06291699726717,
+      "stages_ms": {
+        "input_guard": 0.0432431697845459,
+        "language_detect": 0.006200745701789856,
+        "query_embed": 7.2218552231788635,
+        "pinecone_retrieve": 34.04364362359047,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.12132897973060608,
+        "grounding_verify": 0.13069994747638702,
+        "serialize": 0.0,
+        "total_backend": 42.47366264462471,
+        "wall_clock_incl_network": 295.06291699726717
+      }
+    },
+    {
+      "query": "struthers city school district state number",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 294.6788750014093,
+      "stages_ms": {
+        "input_guard": 0.03526359796524048,
+        "language_detect": 0.005980953574180603,
+        "query_embed": 7.076796144247055,
+        "pinecone_retrieve": 31.066257506608963,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04604272544384003,
+        "grounding_verify": 0.04824250936508179,
+        "serialize": 0.0,
+        "total_backend": 39.17366452515125,
+        "wall_clock_incl_network": 294.6788750014093
+      }
+    },
+    {
+      "query": "চিকিৎসা গাঁজা মাদকের সঙ্গে সাহায্য করে কিনা?",
+      "language": "bn",
+      "decision": "abstain",
+      "reason_code": "ungrounded",
+      "total_backend_ms": 291.8952920008451,
+      "stages_ms": {
+        "input_guard": 0.044053420424461365,
+        "language_detect": 0.0050924718379974365,
+        "query_embed": 7.513387128710747,
+        "pinecone_retrieve": 32.47312270104885,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07816404104232788,
+        "grounding_verify": 0.004751607775688171,
+        "serialize": 0.0,
+        "total_backend": 40.85041582584381,
+        "wall_clock_incl_network": 291.8952920008451
+      }
+    },
+    {
+      "query": "does medical marijuana help with ptsd",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 293.5735829996702,
+      "stages_ms": {
+        "input_guard": 0.030629336833953857,
+        "language_detect": 0.006390735507011414,
+        "query_embed": 7.011199370026588,
+        "pinecone_retrieve": 29.647575691342354,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.059371814131736755,
+        "grounding_verify": 0.06099231541156769,
+        "serialize": 0.0,
+        "total_backend": 37.59432025253773,
+        "wall_clock_incl_network": 293.5735829996702
+      }
+    }
+  ]
+}
