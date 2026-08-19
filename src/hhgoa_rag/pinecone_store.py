@@ -178,6 +178,44 @@ class PineconeStore:
             for hit in resp.result.hits
         ]
 
+    def search_by_vector(
+        self,
+        vector: list[float],
+        top_k: int,
+        namespace: str,
+        filter: dict[str, Any] | None = None,
+    ) -> list[SearchHit]:
+        """Raw-vector search — bypasses Pinecone's server-side (metered) embedding.
+
+        Callers must embed the query themselves with a model compatible with
+        the index's stored vectors (see retrieval/local_embedder.py). Useful
+        when the integrated-embedding quota is exhausted, since this path
+        makes no embedding-inference call at all.
+        """
+        kwargs: dict[str, Any] = {
+            "namespace": namespace,
+            "vector": vector,
+            "top_k": top_k,
+            "include_metadata": True,
+            "timeout": self._search_timeout,
+        }
+        if filter:
+            kwargs["filter"] = filter
+
+        try:
+            resp = self._index.query(**kwargs)
+        except Exception as e:
+            raise PineconeProviderError(f"Pinecone vector search failed: {e}", cause=e) from e
+
+        return [
+            SearchHit(
+                id=match.id,
+                score=float(match.score),
+                fields=dict(match.metadata) if match.metadata else {},
+            )
+            for match in resp.matches
+        ]
+
     def describe_index_stats(self) -> dict[str, Any]:
         """Return index statistics including per-namespace vector counts."""
         try:
