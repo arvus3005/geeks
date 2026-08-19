@@ -23,10 +23,11 @@ class ContentDeduplicator:
         )
         self._conn.commit()
         self._pending: list[tuple[str, str]] = []
+        self._pending_hashes: set[str] = set()
 
     def is_duplicate(self, content_hash: str) -> bool:
         """Return True if content_hash is committed to DB or reserved in pending buffer."""
-        if any(h == content_hash for h, _ in self._pending):
+        if content_hash in self._pending_hashes:
             return True
         cur = self._conn.execute("SELECT 1 FROM seen_hashes WHERE content_hash=?", (content_hash,))
         return cur.fetchone() is not None
@@ -37,6 +38,7 @@ class ContentDeduplicator:
         Does NOT write to SQLite — caller must call flush() after Pinecone ack.
         """
         self._pending.append((content_hash, passage_id))
+        self._pending_hashes.add(content_hash)
 
     def flush(self) -> None:
         """Commit buffered hashes to SQLite.  Call only after Pinecone acknowledges the batch."""
@@ -44,6 +46,7 @@ class ContentDeduplicator:
             self._conn.executemany("INSERT OR IGNORE INTO seen_hashes VALUES (?,?)", self._pending)
             self._conn.commit()
             self._pending.clear()
+            self._pending_hashes.clear()
 
     def close(self) -> None:
         """Close the connection.  Discards any unacknowledged pending reservations.
@@ -55,4 +58,5 @@ class ContentDeduplicator:
         discarded so the records can be safely replayed on the next run.
         """
         self._pending.clear()
+        self._pending_hashes.clear()
         self._conn.close()
