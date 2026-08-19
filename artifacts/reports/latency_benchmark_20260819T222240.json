@@ -1,0 +1,2124 @@
+{
+  "run_id": "20260819T222240",
+  "target": "deployed:https://hhgoa-rag-d3fw.onrender.com",
+  "generated_at": "2026-08-19T22:22:40.621121+00:00",
+  "n_queries": 100,
+  "n_ok": 100,
+  "n_failed": 0,
+  "decisions": {
+    "allow": 98,
+    "abstain": 2
+  },
+  "total_backend_ms_percentiles": {
+    "p50": 326.3323329993,
+    "p70": 355.6554999995569,
+    "p95": 413.15816700080177,
+    "p99": 511.75549999970826,
+    "p100": 511.75549999970826,
+    "mean": 338.22916790020827,
+    "count": 100
+  },
+  "stage_percentiles_ms": {
+    "answer_extract": {
+      "p50": 0.06364192813634872,
+      "p70": 0.07928209379315376,
+      "p95": 0.1230929046869278,
+      "p99": 15.812895260751247,
+      "p100": 15.812895260751247,
+      "mean": 0.22643616423010826,
+      "count": 100
+    },
+    "evidence_check": {
+      "p50": 0.0,
+      "p70": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "p100": 0.0,
+      "mean": 0.0,
+      "count": 100
+    },
+    "grounding_verify": {
+      "p50": 0.06458163261413574,
+      "p70": 0.07478194311261177,
+      "p95": 0.12155389413237572,
+      "p99": 0.1520039513707161,
+      "p100": 0.1520039513707161,
+      "mean": 0.06707011256366968,
+      "count": 100
+    },
+    "input_guard": {
+      "p50": 0.03359094262123108,
+      "p70": 0.041171908378601074,
+      "p95": 0.06513111293315887,
+      "p99": 0.08367188274860382,
+      "p100": 0.08367188274860382,
+      "mean": 0.03762858919799328,
+      "count": 100
+    },
+    "language_detect": {
+      "p50": 0.005459878593683243,
+      "p70": 0.006050337105989456,
+      "p95": 0.008629634976387024,
+      "p99": 0.05053076893091202,
+      "p100": 0.05053076893091202,
+      "mean": 0.00597026664763689,
+      "count": 100
+    },
+    "pinecone_retrieve": {
+      "p50": 31.145907938480377,
+      "p70": 59.58207417279482,
+      "p95": 96.44333086907864,
+      "p99": 127.95669911429286,
+      "p100": 127.95669911429286,
+      "mean": 45.067635546438396,
+      "count": 100
+    },
+    "query_embed": {
+      "p50": 7.597249932587147,
+      "p70": 8.82748095318675,
+      "p95": 15.722441952675581,
+      "p99": 52.31319274753332,
+      "p100": 52.31319274753332,
+      "mean": 9.064200446009636,
+      "count": 100
+    },
+    "rerank": {
+      "p50": 0.0,
+      "p70": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "p100": 0.0,
+      "mean": 0.0,
+      "count": 100
+    },
+    "serialize": {
+      "p50": 0.0,
+      "p70": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "p100": 0.0,
+      "mean": 0.0,
+      "count": 100
+    },
+    "total_backend": {
+      "p50": 42.38066216930747,
+      "p70": 72.32832815498114,
+      "p95": 103.44627592712641,
+      "p99": 170.23531766608357,
+      "p100": 170.23531766608357,
+      "mean": 55.32652745489031,
+      "count": 100
+    },
+    "wall_clock_incl_network": {
+      "p50": 326.3323329993,
+      "p70": 355.6554999995569,
+      "p95": 413.15816700080177,
+      "p99": 511.75549999970826,
+      "p100": 511.75549999970826,
+      "mean": 338.22916790020827,
+      "count": 100
+    }
+  },
+  "results": [
+    {
+      "query": "कॉर्पोरेशन क्या है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 393.18120800089673,
+      "stages_ms": {
+        "input_guard": 0.032090116292238235,
+        "language_detect": 0.0058002769947052,
+        "query_embed": 5.948056001216173,
+        "pinecone_retrieve": 123.97691374644637,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06364192813634872,
+        "grounding_verify": 0.06916234269738197,
+        "serialize": 0.0,
+        "total_backend": 130.7688821107149,
+        "wall_clock_incl_network": 393.18120800089673
+      }
+    },
+    {
+      "query": ". what is a corporation?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 355.6554999995569,
+      "stages_ms": {
+        "input_guard": 0.024759676307439804,
+        "language_detect": 0.0061998143792152405,
+        "query_embed": 6.075758952647448,
+        "pinecone_retrieve": 77.05951295793056,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04159100353717804,
+        "grounding_verify": 0.03961101174354553,
+        "serialize": 0.0,
+        "total_backend": 83.9443332515657,
+        "wall_clock_incl_network": 355.6554999995569
+      }
+    },
+    {
+      "query": "रेचल कार्सन ने क्यों एक दायित्व बर्दाश्त करने के लिए लिखा",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 357.67349999878206,
+      "stages_ms": {
+        "input_guard": 0.03878073766827583,
+        "language_detect": 0.0035297125577926636,
+        "query_embed": 8.760690223425627,
+        "pinecone_retrieve": 74.5826680213213,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.1116432249546051,
+        "grounding_verify": 0.09855208918452263,
+        "serialize": 0.0,
+        "total_backend": 84.23453103750944,
+        "wall_clock_incl_network": 357.67349999878206
+      }
+    },
+    {
+      "query": "why did rachel carson write an obligation to endure",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 304.7283329979109,
+      "stages_ms": {
+        "input_guard": 0.031670089811086655,
+        "language_detect": 0.005000270903110504,
+        "query_embed": 8.961244951933622,
+        "pinecone_retrieve": 32.30038797482848,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06964104250073433,
+        "grounding_verify": 0.0531710684299469,
+        "serialize": 0.0,
+        "total_backend": 42.09635499864817,
+        "wall_clock_incl_network": 304.7283329979109
+      }
+    },
+    {
+      "query": "पोटेशियम में कम खाद्य पदार्थों का चार्ट।",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 345.17491700171377,
+      "stages_ms": {
+        "input_guard": 0.04587089642882347,
+        "language_detect": 0.005459878593683243,
+        "query_embed": 13.954055961221457,
+        "pinecone_retrieve": 76.66127337142825,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07759174332022667,
+        "grounding_verify": 0.08350284770131111,
+        "serialize": 0.0,
+        "total_backend": 91.83299075812101,
+        "wall_clock_incl_network": 345.17491700171377
+      }
+    },
+    {
+      "query": "chart for foods low in potassium.",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 373.4455000012531,
+      "stages_ms": {
+        "input_guard": 0.03166124224662781,
+        "language_detect": 0.006420072168111801,
+        "query_embed": 9.272693190723658,
+        "pinecone_retrieve": 63.57861869037151,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.03681192174553871,
+        "grounding_verify": 0.02998998388648033,
+        "serialize": 0.0,
+        "total_backend": 73.92549095675349,
+        "wall_clock_incl_network": 373.4455000012531
+      }
+    },
+    {
+      "query": "मालवाहक जहाज़ के नीचे की तरफ",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 411.0654579999391,
+      "stages_ms": {
+        "input_guard": 0.023730099201202393,
+        "language_detect": 0.0037909485399723053,
+        "query_embed": 6.3167461194098,
+        "pinecone_retrieve": 67.61792534962296,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05375128239393234,
+        "grounding_verify": 0.05338108167052269,
+        "serialize": 0.0,
+        "total_backend": 74.74023103713989,
+        "wall_clock_incl_network": 411.0654579999391
+      }
+    },
+    {
+      "query": "bottom front of a cargo ship",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 305.0755840013153,
+      "stages_ms": {
+        "input_guard": 0.02865120768547058,
+        "language_detect": 0.005519948899745941,
+        "query_embed": 6.101670209318399,
+        "pinecone_retrieve": 36.36749414727092,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05197059363126755,
+        "grounding_verify": 0.04730094224214554,
+        "serialize": 0.0,
+        "total_backend": 43.303556740283966,
+        "wall_clock_incl_network": 305.0755840013153
+      }
+    },
+    {
+      "query": "ईमानदारी या सच्चाई की परिभाषा",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 409.8222079992411,
+      "stages_ms": {
+        "input_guard": 0.028490088880062103,
+        "language_detect": 0.0036600977182388306,
+        "query_embed": 6.603702902793884,
+        "pinecone_retrieve": 29.022911563515663,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.051280949264764786,
+        "grounding_verify": 0.050321221351623535,
+        "serialize": 0.0,
+        "total_backend": 36.49053769186139,
+        "wall_clock_incl_network": 409.8222079992411
+      }
+    },
+    {
+      "query": "honesty or integrity definition",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 410.97216599882813,
+      "stages_ms": {
+        "input_guard": 0.018360093235969543,
+        "language_detect": 0.0037597492337226868,
+        "query_embed": 5.0058513879776,
+        "pinecone_retrieve": 65.05724787712097,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05750125274062157,
+        "grounding_verify": 0.04177168011665344,
+        "serialize": 0.0,
+        "total_backend": 70.72810595855117,
+        "wall_clock_incl_network": 410.97216599882813
+      }
+    },
+    {
+      "query": "लिंकन में अब वायुमंडलीय दबाव क्या है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 337.20220800023526,
+      "stages_ms": {
+        "input_guard": 0.04771072417497635,
+        "language_detect": 0.005959998816251755,
+        "query_embed": 10.86179492995143,
+        "pinecone_retrieve": 67.8282999433577,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.0851931981742382,
+        "grounding_verify": 0.10176282376050949,
+        "serialize": 0.0,
+        "total_backend": 79.83040576800704,
+        "wall_clock_incl_network": 337.20220800023526
+      }
+    },
+    {
+      "query": "what is barometric pressure in lincoln ne now?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 379.4967079993512,
+      "stages_ms": {
+        "input_guard": 0.030111055821180344,
+        "language_detect": 0.004389788955450058,
+        "query_embed": 7.886666804552078,
+        "pinecone_retrieve": 66.71428168192506,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.041760969907045364,
+        "grounding_verify": 0.03507127985358238,
+        "serialize": 0.0,
+        "total_backend": 75.41524013504386,
+        "wall_clock_incl_network": 379.4967079993512
+      }
+    },
+    {
+      "query": "स्ट्रूथर्स शहर स्कूल जिला राज्य संख्या",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 407.5747089991637,
+      "stages_ms": {
+        "input_guard": 0.03291107714176178,
+        "language_detect": 0.004130881279706955,
+        "query_embed": 6.833299994468689,
+        "pinecone_retrieve": 74.11189610138535,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.10341312736272812,
+        "grounding_verify": 0.1009027473628521,
+        "serialize": 0.0,
+        "total_backend": 81.9577407091856,
+        "wall_clock_incl_network": 407.5747089991637
+      }
+    },
+    {
+      "query": "struthers city school district state number",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 339.7624579993135,
+      "stages_ms": {
+        "input_guard": 0.03565102815628052,
+        "language_detect": 0.0056801363825798035,
+        "query_embed": 6.955502089112997,
+        "pinecone_retrieve": 71.2423799559474,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04930095747113228,
+        "grounding_verify": 0.03968086093664169,
+        "serialize": 0.0,
+        "total_backend": 79.06051492318511,
+        "wall_clock_incl_network": 339.7624579993135
+      }
+    },
+    {
+      "query": "क्या चिकित्सीय मारिजुआना मदत करता है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 376.88770800014026,
+      "stages_ms": {
+        "input_guard": 0.030830036848783493,
+        "language_detect": 0.0038999132812023163,
+        "query_embed": 7.50354677438736,
+        "pinecone_retrieve": 67.07662111148238,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.0819019041955471,
+        "grounding_verify": 0.09789178147912025,
+        "serialize": 0.0,
+        "total_backend": 75.47240098938346,
+        "wall_clock_incl_network": 376.88770800014026
+      }
+    },
+    {
+      "query": "does medical marijuana help with ptsd",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 409.1452920001757,
+      "stages_ms": {
+        "input_guard": 0.022390857338905334,
+        "language_detect": 0.00454997643828392,
+        "query_embed": 5.682868883013725,
+        "pinecone_retrieve": 97.83388813957572,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.043070875108242035,
+        "grounding_verify": 0.0909930095076561,
+        "serialize": 0.0,
+        "total_backend": 104.34065805748105,
+        "wall_clock_incl_network": 409.1452920001757
+      }
+    },
+    {
+      "query": "फ्रैंक गिफोर्ड ने कितनी महिलाओं से शादी की",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 325.8961249994172,
+      "stages_ms": {
+        "input_guard": 0.033350661396980286,
+        "language_detect": 0.003550201654434204,
+        "query_embed": 6.7698475904762745,
+        "pinecone_retrieve": 66.39203289523721,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07437216117978096,
+        "grounding_verify": 0.07774168625473976,
+        "serialize": 0.0,
+        "total_backend": 73.98786302655935,
+        "wall_clock_incl_network": 325.8961249994172
+      }
+    },
+    {
+      "query": "how many women did frank gifford marry",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 390.4379580017121,
+      "stages_ms": {
+        "input_guard": 0.03641098737716675,
+        "language_detect": 0.00612996518611908,
+        "query_embed": 6.388087756931782,
+        "pinecone_retrieve": 26.730551850050688,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.0389711931347847,
+        "grounding_verify": 0.045321881771087646,
+        "serialize": 0.0,
+        "total_backend": 34.13268597796559,
+        "wall_clock_incl_network": 390.4379580017121
+      }
+    },
+    {
+      "query": "कितनी ट्रम्प प्रशासन की जांच चल रही हैं",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 297.80933299844037,
+      "stages_ms": {
+        "input_guard": 0.031049828976392746,
+        "language_detect": 0.0034100376069545746,
+        "query_embed": 6.108640227466822,
+        "pinecone_retrieve": 29.72060116007924,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.08383207023143768,
+        "grounding_verify": 0.07099099457263947,
+        "serialize": 0.0,
+        "total_backend": 36.787775345146656,
+        "wall_clock_incl_network": 297.80933299844037
+      }
+    },
+    {
+      "query": "how many ongoing trump administration investigations",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 355.2706250011397,
+      "stages_ms": {
+        "input_guard": 0.053841155022382736,
+        "language_detect": 0.004431232810020447,
+        "query_embed": 6.1540319584310055,
+        "pinecone_retrieve": 96.44333086907864,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04678172990679741,
+        "grounding_verify": 0.04559103399515152,
+        "serialize": 0.0,
+        "total_backend": 103.44627592712641,
+        "wall_clock_incl_network": 355.2706250011397
+      }
+    },
+    {
+      "query": "वॉव पर अनुयायियों को कैसे इकट्ठा किया जाए, इसका मार्गदर्शक",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 371.5191670016793,
+      "stages_ms": {
+        "input_guard": 0.061382073909044266,
+        "language_detect": 0.005499925464391708,
+        "query_embed": 15.069535933434963,
+        "pinecone_retrieve": 65.68593392148614,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.13426318764686584,
+        "grounding_verify": 0.09518209844827652,
+        "serialize": 0.0,
+        "total_backend": 81.99291210621595,
+        "wall_clock_incl_network": 371.5191670016793
+      }
+    },
+    {
+      "query": "guide to how to collect followers on wow",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 410.83966600126587,
+      "stages_ms": {
+        "input_guard": 0.02596108242869377,
+        "language_detect": 0.004580244421958923,
+        "query_embed": 6.186242680996656,
+        "pinecone_retrieve": 35.34619836136699,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.034951139241456985,
+        "grounding_verify": 0.07745204493403435,
+        "serialize": 0.0,
+        "total_backend": 42.38066216930747,
+        "wall_clock_incl_network": 410.83966600126587
+      }
+    },
+    {
+      "query": "ज़ेल्स कितने समय तक दूर रहना पड़ता है",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 301.96370799967553,
+      "stages_ms": {
+        "input_guard": 0.04847114905714989,
+        "language_detect": 0.006800983101129532,
+        "query_embed": 8.44422122463584,
+        "pinecone_retrieve": 29.433892108500004,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.09656185284256935,
+        "grounding_verify": 0.09290175512433052,
+        "serialize": 0.0,
+        "total_backend": 39.17581820860505,
+        "wall_clock_incl_network": 301.96370799967553
+      }
+    },
+    {
+      "query": "how long is zales layaway",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 348.22545800125226,
+      "stages_ms": {
+        "input_guard": 0.030640047043561935,
+        "language_detect": 0.006380025297403336,
+        "query_embed": 7.699951995164156,
+        "pinecone_retrieve": 81.30929479375482,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04199100658297539,
+        "grounding_verify": 0.03546103835105896,
+        "serialize": 0.0,
+        "total_backend": 89.99564172700047,
+        "wall_clock_incl_network": 348.22545800125226
+      }
+    },
+    {
+      "query": "प्रदूषण के कारण मानव आबादी कैसे बढ़ती है",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 322.1105840020755,
+      "stages_ms": {
+        "input_guard": 0.031081028282642365,
+        "language_detect": 0.0035599805414676666,
+        "query_embed": 7.440235000103712,
+        "pinecone_retrieve": 31.01496398448944,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05767215043306351,
+        "grounding_verify": 0.05620112642645836,
+        "serialize": 0.0,
+        "total_backend": 39.399233646690845,
+        "wall_clock_incl_network": 322.1105840020755
+      }
+    },
+    {
+      "query": "how does pollution increase human population",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 316.47820900252555,
+      "stages_ms": {
+        "input_guard": 0.02828100696206093,
+        "language_detect": 0.005919951945543289,
+        "query_embed": 5.719489883631468,
+        "pinecone_retrieve": 53.97096602246165,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.044520944356918335,
+        "grounding_verify": 0.043070875108242035,
+        "serialize": 0.0,
+        "total_backend": 60.5983710847795,
+        "wall_clock_incl_network": 316.47820900252555
+      }
+    },
+    {
+      "query": "एन.एच.एल. प्लेऑफ़ सीडिंग कैसे काम करती है",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 347.39895800157683,
+      "stages_ms": {
+        "input_guard": 0.03338092938065529,
+        "language_detect": 0.00363960862159729,
+        "query_embed": 7.979359943419695,
+        "pinecone_retrieve": 67.47573101893067,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06991112604737282,
+        "grounding_verify": 0.05867192521691322,
+        "serialize": 0.0,
+        "total_backend": 76.33965415880084,
+        "wall_clock_incl_network": 347.39895800157683
+      }
+    },
+    {
+      "query": "how does nhl playoff seeding work",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 326.3323329993,
+      "stages_ms": {
+        "input_guard": 0.026531051844358444,
+        "language_detect": 0.003769993782043457,
+        "query_embed": 6.401487626135349,
+        "pinecone_retrieve": 67.43370974436402,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.1129726879298687,
+        "grounding_verify": 0.059721991419792175,
+        "serialize": 0.0,
+        "total_backend": 74.76684311404824,
+        "wall_clock_incl_network": 326.3323329993
+      }
+    },
+    {
+      "query": "क्या गंदगी के कारण दाद होता है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 298.86058299962315,
+      "stages_ms": {
+        "input_guard": 0.02942001447081566,
+        "language_detect": 0.003310851752758026,
+        "query_embed": 6.459548603743315,
+        "pinecone_retrieve": 32.027960289269686,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.10547274723649025,
+        "grounding_verify": 0.08703209459781647,
+        "serialize": 0.0,
+        "total_backend": 39.43568468093872,
+        "wall_clock_incl_network": 298.86058299962315
+      }
+    },
+    {
+      "query": "does filth cause ringworm?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 301.68708299970604,
+      "stages_ms": {
+        "input_guard": 0.03139069303870201,
+        "language_detect": 0.006409827619791031,
+        "query_embed": 6.580602843314409,
+        "pinecone_retrieve": 30.460788868367672,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.043280888348817825,
+        "grounding_verify": 0.044100917875766754,
+        "serialize": 0.0,
+        "total_backend": 38.04878890514374,
+        "wall_clock_incl_network": 301.68708299970604
+      }
+    },
+    {
+      "query": "एक ताज को फिर से बनाने की कीमत कितनी होती है",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 403.3906250006112,
+      "stages_ms": {
+        "input_guard": 0.04319101572036743,
+        "language_detect": 0.005210749804973602,
+        "query_embed": 8.380220271646976,
+        "pinecone_retrieve": 30.715996865183115,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.09262189269065857,
+        "grounding_verify": 0.09663216769695282,
+        "serialize": 0.0,
+        "total_backend": 40.20763514563441,
+        "wall_clock_incl_network": 403.3906250006112
+      }
+    },
+    {
+      "query": "how much does it cost to recement a crown",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 409.4434580001689,
+      "stages_ms": {
+        "input_guard": 0.03251107409596443,
+        "language_detect": 0.004330184310674667,
+        "query_embed": 6.855071056634188,
+        "pinecone_retrieve": 37.0130711235106,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.03773113712668419,
+        "grounding_verify": 0.03520119935274124,
+        "serialize": 0.0,
+        "total_backend": 44.79277599602938,
+        "wall_clock_incl_network": 409.4434580001689
+      }
+    },
+    {
+      "query": "बैरल ओ स्लाइम क्या है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 295.8361250020971,
+      "stages_ms": {
+        "input_guard": 0.03200117498636246,
+        "language_detect": 0.005260109901428223,
+        "query_embed": 7.365293800830841,
+        "pinecone_retrieve": 35.208994057029486,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.09331200271844864,
+        "grounding_verify": 0.0790320336818695,
+        "serialize": 0.0,
+        "total_backend": 43.50348189473152,
+        "wall_clock_incl_network": 295.8361250020971
+      }
+    },
+    {
+      "query": "what is barrel o slime?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 318.42216700169956,
+      "stages_ms": {
+        "input_guard": 0.025789719074964523,
+        "language_detect": 0.004860106855630875,
+        "query_embed": 6.011238321661949,
+        "pinecone_retrieve": 27.9852538369596,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.0387607142329216,
+        "grounding_verify": 0.03344099968671799,
+        "serialize": 0.0,
+        "total_backend": 34.89462612196803,
+        "wall_clock_incl_network": 318.42216700169956
+      }
+    },
+    {
+      "query": "बाज़ कितनी तेजी से यात्रा करता है",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 331.28866700280923,
+      "stages_ms": {
+        "input_guard": 0.041171908378601074,
+        "language_detect": 0.006069894880056381,
+        "query_embed": 7.854505907744169,
+        "pinecone_retrieve": 69.87949414178729,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.08431170135736465,
+        "grounding_verify": 0.06911205127835274,
+        "serialize": 0.0,
+        "total_backend": 78.92187219113111,
+        "wall_clock_incl_network": 331.28866700280923
+      }
+    },
+    {
+      "query": "how fast does an eagle travel",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 291.0492079972755,
+      "stages_ms": {
+        "input_guard": 0.03016134724020958,
+        "language_detect": 0.005890149623155594,
+        "query_embed": 7.494977209717035,
+        "pinecone_retrieve": 29.190165922045708,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04359101876616478,
+        "grounding_verify": 0.04189135506749153,
+        "serialize": 0.0,
+        "total_backend": 37.69878996536136,
+        "wall_clock_incl_network": 291.0492079972755
+      }
+    },
+    {
+      "query": "स्टबहब टोल फ्री नंबर",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 330.39829199697124,
+      "stages_ms": {
+        "input_guard": 0.027971342206001282,
+        "language_detect": 0.004849862307310104,
+        "query_embed": 10.692731011658907,
+        "pinecone_retrieve": 65.70424418896437,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07342174649238586,
+        "grounding_verify": 0.07226085290312767,
+        "serialize": 0.0,
+        "total_backend": 77.49616401270032,
+        "wall_clock_incl_network": 330.39829199697124
+      }
+    },
+    {
+      "query": "stubhub toll free number",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 374.4437919995107,
+      "stages_ms": {
+        "input_guard": 0.025011133402585983,
+        "language_detect": 0.005339737981557846,
+        "query_embed": 9.408426936715841,
+        "pinecone_retrieve": 32.5957452878356,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.039830803871154785,
+        "grounding_verify": 0.039490871131420135,
+        "serialize": 0.0,
+        "total_backend": 42.94449696317315,
+        "wall_clock_incl_network": 374.4437919995107
+      }
+    },
+    {
+      "query": "सौर शहर के पैनल कितना कि.डब्ल्यू उत्पादन करते हैं",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 350.6573750019015,
+      "stages_ms": {
+        "input_guard": 0.04685111343860626,
+        "language_detect": 0.004370231181383133,
+        "query_embed": 14.067948795855045,
+        "pinecone_retrieve": 29.714650008827448,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.08763186633586884,
+        "grounding_verify": 0.07266178727149963,
+        "serialize": 0.0,
+        "total_backend": 44.85761793330312,
+        "wall_clock_incl_network": 350.6573750019015
+      }
+    },
+    {
+      "query": "how many kw do solar city panels produce",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 340.2450419998786,
+      "stages_ms": {
+        "input_guard": 0.03543077036738396,
+        "language_detect": 0.005661044269800186,
+        "query_embed": 9.990301914513111,
+        "pinecone_retrieve": 72.52692384645343,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06534066051244736,
+        "grounding_verify": 0.06041117012500763,
+        "serialize": 0.0,
+        "total_backend": 83.5846639238298,
+        "wall_clock_incl_network": 340.2450419998786
+      }
+    },
+    {
+      "query": "पहली रक्षा नाक फ़िल्टर बिक्री संख्या",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 438.26808300218545,
+      "stages_ms": {
+        "input_guard": 0.06513111293315887,
+        "language_detect": 0.004299916326999664,
+        "query_embed": 6.656794808804989,
+        "pinecone_retrieve": 69.64733777567744,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06173178553581238,
+        "grounding_verify": 0.06402190774679184,
+        "serialize": 0.0,
+        "total_backend": 77.20704656094313,
+        "wall_clock_incl_network": 438.26808300218545
+      }
+    },
+    {
+      "query": "first defense nasal filter sales numbers",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 358.7540420012374,
+      "stages_ms": {
+        "input_guard": 0.03538094460964203,
+        "language_detect": 0.0056498683989048,
+        "query_embed": 7.315902039408684,
+        "pinecone_retrieve": 28.90748856589198,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.048001762479543686,
+        "grounding_verify": 0.049591064453125,
+        "serialize": 0.0,
+        "total_backend": 37.247388157993555,
+        "wall_clock_incl_network": 358.7540420012374
+      }
+    },
+    {
+      "query": "विंडोज 8 पर स्पष्ट डेस्कटॉप आइकन कैसे प्राप्त करें",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 300.10883300201385,
+      "stages_ms": {
+        "input_guard": 0.05370192229747772,
+        "language_detect": 0.004629604518413544,
+        "query_embed": 7.589018903672695,
+        "pinecone_retrieve": 28.02692586556077,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.09062234312295914,
+        "grounding_verify": 0.07201079279184341,
+        "serialize": 0.0,
+        "total_backend": 36.77148511633277,
+        "wall_clock_incl_network": 300.10883300201385
+      }
+    },
+    {
+      "query": "how to get clear desktop icon on windows 8",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 287.55220899984124,
+      "stages_ms": {
+        "input_guard": 0.03209104761481285,
+        "language_detect": 0.00433996319770813,
+        "query_embed": 6.694065872579813,
+        "pinecone_retrieve": 28.265710920095444,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.11036312207579613,
+        "grounding_verify": 0.1066429540514946,
+        "serialize": 0.0,
+        "total_backend": 36.04886634275317,
+        "wall_clock_incl_network": 287.55220899984124
+      }
+    },
+    {
+      "query": "क्या डेल्टा बैंगलोर के लिए उड़ान भरता है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 384.5172500004992,
+      "stages_ms": {
+        "input_guard": 0.037351157516241074,
+        "language_detect": 0.005121342837810516,
+        "query_embed": 8.17929394543171,
+        "pinecone_retrieve": 29.697629157453775,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.1230929046869278,
+        "grounding_verify": 0.13260310515761375,
+        "serialize": 0.0,
+        "total_backend": 39.10464607179165,
+        "wall_clock_incl_network": 384.5172500004992
+      }
+    },
+    {
+      "query": "does delta fly to bangalore",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 296.59045899825287,
+      "stages_ms": {
+        "input_guard": 0.02594105899333954,
+        "language_detect": 0.004849862307310104,
+        "query_embed": 6.118010729551315,
+        "pinecone_retrieve": 27.162373065948486,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05981186404824257,
+        "grounding_verify": 0.060741789638996124,
+        "serialize": 0.0,
+        "total_backend": 34.237508662045,
+        "wall_clock_incl_network": 296.59045899825287
+      }
+    },
+    {
+      "query": "कैंटालूप को कितने समय तक परिपक्व होना है",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 420.3179590003856,
+      "stages_ms": {
+        "input_guard": 0.03690086305141449,
+        "language_detect": 0.004229601472616196,
+        "query_embed": 9.959221817553043,
+        "pinecone_retrieve": 77.55652628839016,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.09195227175951004,
+        "grounding_verify": 0.12155389413237572,
+        "serialize": 0.0,
+        "total_backend": 88.60213635489345,
+        "wall_clock_incl_network": 420.3179590003856
+      }
+    },
+    {
+      "query": "how long for cantaloupe to mature",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 289.4590000032622,
+      "stages_ms": {
+        "input_guard": 0.024881213903427124,
+        "language_detect": 0.004159752279520035,
+        "query_embed": 6.842410191893578,
+        "pinecone_retrieve": 30.643384903669357,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.0642724335193634,
+        "grounding_verify": 0.03961101174354553,
+        "serialize": 0.0,
+        "total_backend": 38.37721794843674,
+        "wall_clock_incl_network": 289.4590000032622
+      }
+    },
+    {
+      "query": "परिवर्तक को परीक्षण पाइप से बदलने की लागत",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 289.7242090002692,
+      "stages_ms": {
+        "input_guard": 0.06617186591029167,
+        "language_detect": 0.005469657480716705,
+        "query_embed": 7.7833449468016624,
+        "pinecone_retrieve": 30.42754903435707,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.09275227785110474,
+        "grounding_verify": 0.07887231186032295,
+        "serialize": 0.0,
+        "total_backend": 39.12604693323374,
+        "wall_clock_incl_network": 289.7242090002692
+      }
+    },
+    {
+      "query": "cost to replace converter with test pipe",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 326.76304100095876,
+      "stages_ms": {
+        "input_guard": 0.03313086926937103,
+        "language_detect": 0.0050798989832401276,
+        "query_embed": 6.659855134785175,
+        "pinecone_retrieve": 67.89357215166092,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.048051122575998306,
+        "grounding_verify": 0.051451846957206726,
+        "serialize": 0.0,
+        "total_backend": 75.49130218103528,
+        "wall_clock_incl_network": 326.76304100095876
+      }
+    },
+    {
+      "query": "কর্পোরেশন কী?",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 302.0825000021432,
+      "stages_ms": {
+        "input_guard": 0.02870103344321251,
+        "language_detect": 0.005950219929218292,
+        "query_embed": 7.640080992132425,
+        "pinecone_retrieve": 30.7152159512043,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07730210199952126,
+        "grounding_verify": 0.12030312791466713,
+        "serialize": 0.0,
+        "total_backend": 39.54211808741093,
+        "wall_clock_incl_network": 302.0825000021432
+      }
+    },
+    {
+      "query": ". what is a corporation?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 326.9599160012149,
+      "stages_ms": {
+        "input_guard": 0.03254087641835213,
+        "language_detect": 0.006259884685277939,
+        "query_embed": 8.954985998570919,
+        "pinecone_retrieve": 33.39813696220517,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04392117261886597,
+        "grounding_verify": 0.04175212234258652,
+        "serialize": 0.0,
+        "total_backend": 43.389559257775545,
+        "wall_clock_incl_network": 326.9599160012149
+      }
+    },
+    {
+      "query": "র‍্যাচেল কারসন কেন একটি বাধ্যবাধকতা সহ্য করার জন্য লিখেছিলেন",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 492.83295900022495,
+      "stages_ms": {
+        "input_guard": 0.08342228829860687,
+        "language_detect": 0.010449904948472977,
+        "query_embed": 52.31319274753332,
+        "pinecone_retrieve": 116.62148078903556,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06352085620164871,
+        "grounding_verify": 0.06479118019342422,
+        "serialize": 0.0,
+        "total_backend": 170.23531766608357,
+        "wall_clock_incl_network": 492.83295900022495
+      }
+    },
+    {
+      "query": "why did rachel carson write an obligation to endure",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 327.3435420014721,
+      "stages_ms": {
+        "input_guard": 0.031581148505210876,
+        "language_detect": 0.0048102810978889465,
+        "query_embed": 7.597249932587147,
+        "pinecone_retrieve": 29.05338304117322,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05033193156123161,
+        "grounding_verify": 0.05131121724843979,
+        "serialize": 0.0,
+        "total_backend": 37.56270604208112,
+        "wall_clock_incl_network": 327.3435420014721
+      }
+    },
+    {
+      "query": "পটাসিয়াম কম থাকা খাবারের তালিকা।",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 287.01462499884656,
+      "stages_ms": {
+        "input_guard": 0.030731316655874252,
+        "language_detect": 0.004169996827840805,
+        "query_embed": 6.664805114269257,
+        "pinecone_retrieve": 26.96822816506028,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07141195237636566,
+        "grounding_verify": 0.0692722387611866,
+        "serialize": 0.0,
+        "total_backend": 34.55472690984607,
+        "wall_clock_incl_network": 287.01462499884656
+      }
+    },
+    {
+      "query": "chart for foods low in potassium.",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 327.1337090009183,
+      "stages_ms": {
+        "input_guard": 0.027490779757499695,
+        "language_detect": 0.0045602209866046906,
+        "query_embed": 7.45769590139389,
+        "pinecone_retrieve": 30.620743986219168,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.040072016417980194,
+        "grounding_verify": 0.03654090687632561,
+        "serialize": 0.0,
+        "total_backend": 38.9380119740963,
+        "wall_clock_incl_network": 327.1337090009183
+      }
+    },
+    {
+      "query": "একটি পণ্যবাহী জাহাজের নীচের সামনের অংশ",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 290.6753339993884,
+      "stages_ms": {
+        "input_guard": 0.039571430534124374,
+        "language_detect": 0.005610287189483643,
+        "query_embed": 9.503880050033331,
+        "pinecone_retrieve": 28.2318820245564,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04054093733429909,
+        "grounding_verify": 0.04047108814120293,
+        "serialize": 0.0,
+        "total_backend": 38.71304588392377,
+        "wall_clock_incl_network": 290.6753339993884
+      }
+    },
+    {
+      "query": "bottom front of a cargo ship",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 322.24499999938416,
+      "stages_ms": {
+        "input_guard": 0.024070963263511658,
+        "language_detect": 0.0044512562453746796,
+        "query_embed": 5.776042118668556,
+        "pinecone_retrieve": 41.69084411114454,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.056551769375801086,
+        "grounding_verify": 0.07910234853625298,
+        "serialize": 0.0,
+        "total_backend": 48.410460352897644,
+        "wall_clock_incl_network": 322.24499999938416
+      }
+    },
+    {
+      "query": "সততা বা সততার সংজ্ঞা",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 332.82404100100393,
+      "stages_ms": {
+        "input_guard": 0.03270106390118599,
+        "language_detect": 0.006990041583776474,
+        "query_embed": 7.825345266610384,
+        "pinecone_retrieve": 70.47203928232193,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.052720773965120316,
+        "grounding_verify": 0.06552180275321007,
+        "serialize": 0.0,
+        "total_backend": 79.36362316831946,
+        "wall_clock_incl_network": 332.82404100100393
+      }
+    },
+    {
+      "query": "honesty or integrity definition",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 292.3949159994663,
+      "stages_ms": {
+        "input_guard": 0.02886122092604637,
+        "language_detect": 0.005239620804786682,
+        "query_embed": 5.931435618549585,
+        "pinecone_retrieve": 29.684340115636587,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.03870110958814621,
+        "grounding_verify": 0.04132091999053955,
+        "serialize": 0.0,
+        "total_backend": 36.589520052075386,
+        "wall_clock_incl_network": 292.3949159994663
+      }
+    },
+    {
+      "query": "লিঙ্কনে এখন ব্যারোমেট্রিক চাপ কত?",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 398.0012909996731,
+      "stages_ms": {
+        "input_guard": 0.046561937779188156,
+        "language_detect": 0.005990266799926758,
+        "query_embed": 7.873367052525282,
+        "pinecone_retrieve": 27.64252619817853,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.060762278735637665,
+        "grounding_verify": 0.05228118970990181,
+        "serialize": 0.0,
+        "total_backend": 36.5388891659677,
+        "wall_clock_incl_network": 398.0012909996731
+      }
+    },
+    {
+      "query": "what is barometric pressure in lincoln ne now?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 288.89208400141797,
+      "stages_ms": {
+        "input_guard": 0.03359094262123108,
+        "language_detect": 0.004460103809833527,
+        "query_embed": 7.575739175081253,
+        "pinecone_retrieve": 28.307753149420023,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04162220284342766,
+        "grounding_verify": 0.058412086218595505,
+        "serialize": 0.0,
+        "total_backend": 36.86846699565649,
+        "wall_clock_incl_network": 288.89208400141797
+      }
+    },
+    {
+      "query": "স্ট্রুথার্স শহর বিদ্যালয় জেলা রাজ্য নম্বর",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 326.91166600125143,
+      "stages_ms": {
+        "input_guard": 0.052451156079769135,
+        "language_detect": 0.008420087397098541,
+        "query_embed": 7.749444339424372,
+        "pinecone_retrieve": 28.688672930002213,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.11514313519001007,
+        "grounding_verify": 0.1027621328830719,
+        "serialize": 0.0,
+        "total_backend": 37.61835815384984,
+        "wall_clock_incl_network": 326.91166600125143
+      }
+    },
+    {
+      "query": "struthers city school district state number",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 295.9654590013088,
+      "stages_ms": {
+        "input_guard": 0.02741115167737007,
+        "language_detect": 0.004020053893327713,
+        "query_embed": 5.980866961181164,
+        "pinecone_retrieve": 28.110526967793703,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04337076097726822,
+        "grounding_verify": 0.045421067625284195,
+        "serialize": 0.0,
+        "total_backend": 34.94027676060796,
+        "wall_clock_incl_network": 295.9654590013088
+      }
+    },
+    {
+      "query": "চিকিৎসা গাঁজা মাদকের সঙ্গে সাহায্য করে কিনা?",
+      "language": "bn",
+      "decision": "abstain",
+      "reason_code": "ungrounded",
+      "total_backend_ms": 374.525667000853,
+      "stages_ms": {
+        "input_guard": 0.04869094118475914,
+        "language_detect": 0.006690621376037598,
+        "query_embed": 10.939826723188162,
+        "pinecone_retrieve": 32.6380361802876,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.11307327076792717,
+        "grounding_verify": 0.004909932613372803,
+        "serialize": 0.0,
+        "total_backend": 44.72310282289982,
+        "wall_clock_incl_network": 374.525667000853
+      }
+    },
+    {
+      "query": "does medical marijuana help with ptsd",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 355.30233299868996,
+      "stages_ms": {
+        "input_guard": 0.02343999221920967,
+        "language_detect": 0.0051800161600112915,
+        "query_embed": 6.79625803604722,
+        "pinecone_retrieve": 59.58207417279482,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06130104884505272,
+        "grounding_verify": 0.06480095908045769,
+        "serialize": 0.0,
+        "total_backend": 67.27031478658319,
+        "wall_clock_incl_network": 355.30233299868996
+      }
+    },
+    {
+      "query": "ফ্র্যাঙ্ক গিফোর্ড কতজন মহিলাকে বিয়ে করেছিলেন",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 333.0378329992527,
+      "stages_ms": {
+        "input_guard": 0.05326187238097191,
+        "language_detect": 0.005469657480716705,
+        "query_embed": 10.465885046869516,
+        "pinecone_retrieve": 64.51660301536322,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07303198799490929,
+        "grounding_verify": 0.06157206371426582,
+        "serialize": 0.0,
+        "total_backend": 76.08973700553179,
+        "wall_clock_incl_network": 333.0378329992527
+      }
+    },
+    {
+      "query": "how many women did frank gifford marry",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 377.31074999828706,
+      "stages_ms": {
+        "input_guard": 0.041250139474868774,
+        "language_detect": 0.007309950888156891,
+        "query_embed": 9.0437070466578,
+        "pinecone_retrieve": 30.438418965786695,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.038261059671640396,
+        "grounding_verify": 0.038800761103630066,
+        "serialize": 0.0,
+        "total_backend": 40.75247002765536,
+        "wall_clock_incl_network": 377.31074999828706
+      }
+    },
+    {
+      "query": "ট্রাম্প প্রশাসনের কতগুলি তদন্ত চলছে।",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 298.95925000164425,
+      "stages_ms": {
+        "input_guard": 0.033161137253046036,
+        "language_detect": 0.0042603351175785065,
+        "query_embed": 6.5739029087126255,
+        "pinecone_retrieve": 30.00120772048831,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07630186155438423,
+        "grounding_verify": 0.0726417638361454,
+        "serialize": 0.0,
+        "total_backend": 37.51474432647228,
+        "wall_clock_incl_network": 298.95925000164425
+      }
+    },
+    {
+      "query": "how many ongoing trump administration investigations",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 289.6592500001134,
+      "stages_ms": {
+        "input_guard": 0.030001159757375717,
+        "language_detect": 0.004530884325504303,
+        "query_embed": 7.818755228072405,
+        "pinecone_retrieve": 29.512724839150906,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06803218275308609,
+        "grounding_verify": 0.0700121745467186,
+        "serialize": 0.0,
+        "total_backend": 38.38601801544428,
+        "wall_clock_incl_network": 289.6592500001134
+      }
+    },
+    {
+      "query": "ওয়াও-তে অনুসারীদের কীভাবে সংগ্রহ করতে হয় তার নির্দেশিকা",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 330.60070799911045,
+      "stages_ms": {
+        "input_guard": 0.08367188274860382,
+        "language_detect": 0.010639894753694534,
+        "query_embed": 17.289533745497465,
+        "pinecone_retrieve": 54.85918000340462,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06039207801222801,
+        "grounding_verify": 0.06458163261413574,
+        "serialize": 0.0,
+        "total_backend": 73.598962277174,
+        "wall_clock_incl_network": 330.60070799911045
+      }
+    },
+    {
+      "query": "guide to how to collect followers on wow",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 308.3077499977662,
+      "stages_ms": {
+        "input_guard": 0.04674075171351433,
+        "language_detect": 0.008330214768648148,
+        "query_embed": 15.722441952675581,
+        "pinecone_retrieve": 28.142408933490515,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05391240119934082,
+        "grounding_verify": 0.04800083115696907,
+        "serialize": 0.0,
+        "total_backend": 45.12432403862476,
+        "wall_clock_incl_network": 308.3077499977662
+      }
+    },
+    {
+      "query": "জেলস কতদিন অবসর নেয়।",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 356.4154160012549,
+      "stages_ms": {
+        "input_guard": 0.03624102100729942,
+        "language_detect": 0.007010065019130707,
+        "query_embed": 11.618804652243853,
+        "pinecone_retrieve": 31.382863875478506,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.11621322482824326,
+        "grounding_verify": 0.1392839476466179,
+        "serialize": 0.0,
+        "total_backend": 44.350274838507175,
+        "wall_clock_incl_network": 356.4154160012549
+      }
+    },
+    {
+      "query": "how long is zales layaway",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 363.7131249997765,
+      "stages_ms": {
+        "input_guard": 0.04599103704094887,
+        "language_detect": 0.009090173989534378,
+        "query_embed": 10.483165737241507,
+        "pinecone_retrieve": 29.60440795868635,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.0469014048576355,
+        "grounding_verify": 0.04058098420500755,
+        "serialize": 0.0,
+        "total_backend": 41.30431404337287,
+        "wall_clock_incl_network": 363.7131249997765
+      }
+    },
+    {
+      "query": "দূষণ কীভাবে মানুষের জনসংখ্যা বৃদ্ধি করে।",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 511.75549999970826,
+      "stages_ms": {
+        "input_guard": 0.05299225449562073,
+        "language_detect": 0.0070999376475811005,
+        "query_embed": 13.917794916778803,
+        "pinecone_retrieve": 127.95669911429286,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.11493312194943428,
+        "grounding_verify": 0.11077290400862694,
+        "serialize": 0.0,
+        "total_backend": 143.37605284526944,
+        "wall_clock_incl_network": 511.75549999970826
+      }
+    },
+    {
+      "query": "how does pollution increase human population",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 291.1136670009,
+      "stages_ms": {
+        "input_guard": 0.06026122719049454,
+        "language_detect": 0.008629634976387024,
+        "query_embed": 8.573854807764292,
+        "pinecone_retrieve": 28.55859976261854,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.07928209379315376,
+        "grounding_verify": 0.06740214303135872,
+        "serialize": 0.0,
+        "total_backend": 38.58934296295047,
+        "wall_clock_incl_network": 291.1136670009
+      }
+    },
+    {
+      "query": "এনএইচএল প্লে-অফ সিডিং কিভাবে কাজ করে",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 324.60645800165366,
+      "stages_ms": {
+        "input_guard": 0.03981078043580055,
+        "language_detect": 0.005481299012899399,
+        "query_embed": 9.91587108001113,
+        "pinecone_retrieve": 28.94025994464755,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.16699498519301414,
+        "grounding_verify": 0.143363606184721,
+        "serialize": 0.0,
+        "total_backend": 40.19535519182682,
+        "wall_clock_incl_network": 324.60645800165366
+      }
+    },
+    {
+      "query": "how does nhl playoff seeding work",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 290.01558299933095,
+      "stages_ms": {
+        "input_guard": 0.06517115980386734,
+        "language_detect": 0.006101094186306,
+        "query_embed": 7.163918111473322,
+        "pinecone_retrieve": 29.89075519144535,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06559165194630623,
+        "grounding_verify": 0.07545202970504761,
+        "serialize": 0.0,
+        "total_backend": 38.08852983638644,
+        "wall_clock_incl_network": 290.01558299933095
+      }
+    },
+    {
+      "query": "কি ময়লা আজবাত সৃষ্টি করে?",
+      "language": "bn",
+      "decision": "abstain",
+      "reason_code": "ungrounded",
+      "total_backend_ms": 294.4535829992674,
+      "stages_ms": {
+        "input_guard": 0.03409106284379959,
+        "language_detect": 0.005170237272977829,
+        "query_embed": 7.220339961349964,
+        "pinecone_retrieve": 28.34062371402979,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.0875331461429596,
+        "grounding_verify": 0.0032400712370872498,
+        "serialize": 0.0,
+        "total_backend": 36.53808915987611,
+        "wall_clock_incl_network": 294.4535829992674
+      }
+    },
+    {
+      "query": "does filth cause ringworm?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 319.04949999807286,
+      "stages_ms": {
+        "input_guard": 0.03800075501203537,
+        "language_detect": 0.006780028343200684,
+        "query_embed": 10.48343488946557,
+        "pinecone_retrieve": 39.43662624806166,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06437161937355995,
+        "grounding_verify": 0.0658310018479824,
+        "serialize": 0.0,
+        "total_backend": 51.17930332198739,
+        "wall_clock_incl_network": 319.04949999807286
+      }
+    },
+    {
+      "query": "একটি মুকুট পুনর্বার লাগানোর খরচ কত",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 325.5075000015495,
+      "stages_ms": {
+        "input_guard": 0.04342198371887207,
+        "language_detect": 0.005760230123996735,
+        "query_embed": 42.42593329399824,
+        "pinecone_retrieve": 28.499558102339506,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.14477409422397614,
+        "grounding_verify": 0.1520039513707161,
+        "serialize": 0.0,
+        "total_backend": 72.32832815498114,
+        "wall_clock_incl_network": 325.5075000015495
+      }
+    },
+    {
+      "query": "how much does it cost to recement a crown",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 296.007709002879,
+      "stages_ms": {
+        "input_guard": 0.04999106749892235,
+        "language_detect": 0.0050300732254981995,
+        "query_embed": 8.201315067708492,
+        "pinecone_retrieve": 28.518158942461014,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05243206396698952,
+        "grounding_verify": 0.04641106352210045,
+        "serialize": 0.0,
+        "total_backend": 37.76541166007519,
+        "wall_clock_incl_network": 296.007709002879
+      }
+    },
+    {
+      "query": "ব্যারেল ও স্লাইম কী?",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 315.8242079989577,
+      "stages_ms": {
+        "input_guard": 0.0451207160949707,
+        "language_detect": 0.008081085979938507,
+        "query_embed": 7.171668112277985,
+        "pinecone_retrieve": 30.062079429626465,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06808200851082802,
+        "grounding_verify": 0.06706221029162407,
+        "serialize": 0.0,
+        "total_backend": 38.40129775926471,
+        "wall_clock_incl_network": 315.8242079989577
+      }
+    },
+    {
+      "query": "what is barrel o slime?",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 309.00454099901253,
+      "stages_ms": {
+        "input_guard": 0.021350104361772537,
+        "language_detect": 0.004079658538103104,
+        "query_embed": 7.054126355797052,
+        "pinecone_retrieve": 31.145907938480377,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.03773067146539688,
+        "grounding_verify": 0.07163174450397491,
+        "serialize": 0.0,
+        "total_backend": 39.02634419500828,
+        "wall_clock_incl_network": 309.00454099901253
+      }
+    },
+    {
+      "query": "একটি ঈগল কত দ্রুত ভ্রমণ করে।",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 314.70524999895133,
+      "stages_ms": {
+        "input_guard": 0.036051031202077866,
+        "language_detect": 0.006050337105989456,
+        "query_embed": 8.82748095318675,
+        "pinecone_retrieve": 31.048284843564034,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05636224523186684,
+        "grounding_verify": 0.05262112244963646,
+        "serialize": 0.0,
+        "total_backend": 41.011217050254345,
+        "wall_clock_incl_network": 314.70524999895133
+      }
+    },
+    {
+      "query": "how fast does an eagle travel",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 302.7341249980964,
+      "stages_ms": {
+        "input_guard": 0.030670780688524246,
+        "language_detect": 0.005249865353107452,
+        "query_embed": 6.884900853037834,
+        "pinecone_retrieve": 41.40519676730037,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05318177863955498,
+        "grounding_verify": 0.05449075251817703,
+        "serialize": 0.0,
+        "total_backend": 49.46126928552985,
+        "wall_clock_incl_network": 302.7341249980964
+      }
+    },
+    {
+      "query": "স্টাবহাব টোল ফ্রি নম্বর",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 305.1097909992677,
+      "stages_ms": {
+        "input_guard": 0.025470741093158722,
+        "language_detect": 0.00449037179350853,
+        "query_embed": 6.633983924984932,
+        "pinecone_retrieve": 32.43302134796977,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.08769193664193153,
+        "grounding_verify": 0.08664187043905258,
+        "serialize": 0.0,
+        "total_backend": 40.04968097433448,
+        "wall_clock_incl_network": 305.1097909992677
+      }
+    },
+    {
+      "query": "stubhub toll free number",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 305.35724999936065,
+      "stages_ms": {
+        "input_guard": 0.02437131479382515,
+        "language_detect": 0.0050603412091732025,
+        "query_embed": 6.19580177590251,
+        "pinecone_retrieve": 28.769925236701965,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04325108602643013,
+        "grounding_verify": 0.07478194311261177,
+        "serialize": 0.0,
+        "total_backend": 35.90159211307764,
+        "wall_clock_incl_network": 305.35724999936065
+      }
+    },
+    {
+      "query": "সৌর শহরের প্যানেলগুলি কতগুলি কিলোওয়াট উৎপাদন করে।",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 325.7764580012008,
+      "stages_ms": {
+        "input_guard": 0.05034217610955238,
+        "language_detect": 0.005760230123996735,
+        "query_embed": 19.37321899458766,
+        "pinecone_retrieve": 29.114255215972662,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 15.812895260751247,
+        "grounding_verify": 0.0903918407857418,
+        "serialize": 0.0,
+        "total_backend": 65.42295776307583,
+        "wall_clock_incl_network": 325.7764580012008
+      }
+    },
+    {
+      "query": "how many kw do solar city panels produce",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 297.48141600066447,
+      "stages_ms": {
+        "input_guard": 0.04868209362030029,
+        "language_detect": 0.05053076893091202,
+        "query_embed": 8.889252785593271,
+        "pinecone_retrieve": 30.860160943120718,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06591202691197395,
+        "grounding_verify": 0.061421189457178116,
+        "serialize": 0.0,
+        "total_backend": 40.90849310159683,
+        "wall_clock_incl_network": 297.48141600066447
+      }
+    },
+    {
+      "query": "প্রথম প্রতিরক্ষা নাসার ফিল্টার বিক্রয় সংখ্যা",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 402.4341670010472,
+      "stages_ms": {
+        "input_guard": 0.039711128920316696,
+        "language_detect": 0.005370937287807465,
+        "query_embed": 8.747559040784836,
+        "pinecone_retrieve": 30.174541752785444,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06583193317055702,
+        "grounding_verify": 0.06413226947188377,
+        "serialize": 0.0,
+        "total_backend": 39.88535702228546,
+        "wall_clock_incl_network": 402.4341670010472
+      }
+    },
+    {
+      "query": "first defense nasal filter sales numbers",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 305.5427500003134,
+      "stages_ms": {
+        "input_guard": 0.026979949325323105,
+        "language_detect": 0.007359776645898819,
+        "query_embed": 5.99436741322279,
+        "pinecone_retrieve": 45.36916082724929,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.047490932047367096,
+        "grounding_verify": 0.04581175744533539,
+        "serialize": 0.0,
+        "total_backend": 52.34555387869477,
+        "wall_clock_incl_network": 305.5427500003134
+      }
+    },
+    {
+      "query": "উইণ্ডোজ ৮-এ কিভাবে ডেস্কটপ আইকনটি পরিষ্কার করতে হয়",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 303.2877080004255,
+      "stages_ms": {
+        "input_guard": 0.053620897233486176,
+        "language_detect": 0.00686105340719223,
+        "query_embed": 11.72883715480566,
+        "pinecone_retrieve": 28.91313936561346,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.10798312723636627,
+        "grounding_verify": 0.11234264820814133,
+        "serialize": 0.0,
+        "total_backend": 41.825488675385714,
+        "wall_clock_incl_network": 303.2877080004255
+      }
+    },
+    {
+      "query": "how to get clear desktop icon on windows 8",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 413.15816700080177,
+      "stages_ms": {
+        "input_guard": 0.034951139241456985,
+        "language_detect": 0.005939975380897522,
+        "query_embed": 7.147008087486029,
+        "pinecone_retrieve": 26.992708910256624,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06931181997060776,
+        "grounding_verify": 0.06530201062560081,
+        "serialize": 0.0,
+        "total_backend": 35.1344533264637,
+        "wall_clock_incl_network": 413.15816700080177
+      }
+    },
+    {
+      "query": "ডুবলুমধ্য বাঁক বাঁগালোরে উড়ে যায়",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 294.1112920016167,
+      "stages_ms": {
+        "input_guard": 0.03657117486000061,
+        "language_detect": 0.006389804184436798,
+        "query_embed": 9.972841944545507,
+        "pinecone_retrieve": 31.930058263242245,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.09877234697341919,
+        "grounding_verify": 0.11908309534192085,
+        "serialize": 0.0,
+        "total_backend": 43.10667188838124,
+        "wall_clock_incl_network": 294.1112920016167
+      }
+    },
+    {
+      "query": "does delta fly to bangalore",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 319.29795799806016,
+      "stages_ms": {
+        "input_guard": 0.035431236028671265,
+        "language_detect": 0.007269904017448425,
+        "query_embed": 7.233039941638708,
+        "pinecone_retrieve": 36.9893410243094,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.0597718171775341,
+        "grounding_verify": 0.07052207365632057,
+        "serialize": 0.0,
+        "total_backend": 45.37126095965505,
+        "wall_clock_incl_network": 319.29795799806016
+      }
+    },
+    {
+      "query": "কতদিন করে ক্যান্টালুপ পাকাবে।",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 298.30408400084707,
+      "stages_ms": {
+        "input_guard": 0.03533065319061279,
+        "language_detect": 0.005470123142004013,
+        "query_embed": 8.87548178434372,
+        "pinecone_retrieve": 29.18317588046193,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06529083475470543,
+        "grounding_verify": 0.0659511424601078,
+        "serialize": 0.0,
+        "total_backend": 39.10770593211055,
+        "wall_clock_incl_network": 298.30408400084707
+      }
+    },
+    {
+      "query": "how long for cantaloupe to mature",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 292.4777919979533,
+      "stages_ms": {
+        "input_guard": 0.02506095916032791,
+        "language_detect": 0.0041299499571323395,
+        "query_embed": 6.716026924550533,
+        "pinecone_retrieve": 27.741177938878536,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.0494709238409996,
+        "grounding_verify": 0.046181026846170425,
+        "serialize": 0.0,
+        "total_backend": 35.37911921739578,
+        "wall_clock_incl_network": 292.4777919979533
+      }
+    },
+    {
+      "query": "পরীক্ষামূলক পাইপ দিয়ে রূপান্তরক প্রতিস্থাপন করার খরচ",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 303.8596669975959,
+      "stages_ms": {
+        "input_guard": 0.05173077806830406,
+        "language_detect": 0.007309950888156891,
+        "query_embed": 8.774450980126858,
+        "pinecone_retrieve": 30.70877632126212,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06165122613310814,
+        "grounding_verify": 0.058412086218595505,
+        "serialize": 0.0,
+        "total_backend": 40.60472594574094,
+        "wall_clock_incl_network": 303.8596669975959
+      }
+    },
+    {
+      "query": "cost to replace converter with test pipe",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 293.9084589997947,
+      "stages_ms": {
+        "input_guard": 0.039901118725538254,
+        "language_detect": 0.006860122084617615,
+        "query_embed": 8.657056838274002,
+        "pinecone_retrieve": 29.65634874999523,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.06080185994505882,
+        "grounding_verify": 0.06156181916594505,
+        "serialize": 0.0,
+        "total_backend": 39.52384693548083,
+        "wall_clock_incl_network": 293.9084589997947
+      }
+    }
+  ]
+}
