@@ -5,7 +5,6 @@ artifacts/
 model_cache/
 .cache/
 # Legacy local vector-store artefacts (unused)
-qdrant_data/
 uv.lock.bak
 .env
 .env.*

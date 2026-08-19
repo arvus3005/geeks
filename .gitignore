@@ -45,6 +45,7 @@ artifacts/prepared/
 artifacts/checkpoints/
 artifacts/dedup/
 artifacts/ledgers/
+artifacts/eval/
 
 # Generated canary execution reports (runtime output — never committed)
 artifacts/reports/canary_index_execution_*.json
@@ -62,7 +63,6 @@ artifacts/reports/chunking_ablation_*.md
 *.checkpoint.json
 
 # Legacy local vector-store artefacts (unused)
-qdrant_data/
 
 # Model cache / tokenizer cache
 model_cache/
