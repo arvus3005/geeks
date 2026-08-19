@@ -11,8 +11,8 @@
 | **1. Pipeline Shape** | Voice Input → STT → Chunking/Retrieval → Answer Generation | End-to-end async FastAPI service orchestrating Sarvam STT, Pinecone vector search, reranking, and grounded extractive answer synthesis. | **IMPLEMENTED** |
 | **2. Speech-to-Text** | Sarvam AI or ElevenLabs (Voice-to-Text) | [`SarvamSTTService`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/stt/sarvam.py) with regional Indic language support + [`WhisperFallbackSTT`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/stt/whisper_fallback.py) error recovery. | **IMPLEMENTED** |
 | **3. Chunking Strategy** | Vast exploration (not single naive fixed-size); multiple strategies, overlap, semantic & metadata-aware splitting | 4 distinct chunking strategies implemented & ablated in [`src/hhgoa_rag/ingestion/chunkers.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/ingestion/chunkers.py): `passage_native`, `sentence_aware`, `fixed_token_overlap`, and `semantic_experimental`. | **IMPLEMENTED** |
-| **4. Latency Target** | Full pipeline through to final answer under **200 ms** | Server-side integrated embeddings (`multilingual-e5-large`), sub-millisecond route guards, lightweight extractive grounding. Live benchmark validation underway. | **OPTIMIZED / IN VALIDATION** |
-| **5. Latency Analytics** | P50 / P70 / P100 latency measured across test query distribution | Observability timers ([`timing.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/observability/timing.py)) tracking STT, vector search, reranking, and generation percentiles ([`percentiles.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/bench/percentiles.py)). | **IMPLEMENTED** |
+| **4. Latency Target** | Full pipeline through to final answer under **200 ms** | Measured live against the real 57k Pinecone index (e5-small, ONNX), 32 real queries: **P50 302.7ms, P70 308.0ms, P95 612.3ms, P99/P100 1087.7ms** — over budget, but **only the Pinecone network round-trip is over budget** (P50 292.7ms of the 302.7ms total); everything on our side — query embedding (5.3ms), guardrails, extraction, grounding — sums to under 10ms combined. This sandbox is not co-located with Pinecone's `aws/us-east-1` index — deploying there (see `render.yaml`, region `ohio`) should remove most of that 292.7ms and land comfortably under 200ms, but that specific claim is not yet verified against a real deployment. See `artifacts/reports/latency_benchmark_20260819T200348.{json,md}`. | **MEASURED — NETWORK-BOUND, NOT COMPUTE-BOUND** |
+| **5. Latency Analytics** | P50 / P70 / P100 latency measured across test query distribution | `bench/run_local.py` fires real queries (from the MSMARCO-XI validation split, disjoint from the indexed train split) through the full live pipeline in-process, `bench/percentiles.py` computes percentiles, `bench/report.py` writes a committed JSON+MD report. | **IMPLEMENTED & RUN** |
 | **6. Model Harness** | Structured orchestration (tool calls, retries, structured I/O, error recovery) | Pydantic v2 I/O schemas, structured error envelopes, fallback routing, deterministic UUIDv5 passage ID verification, and atomic indexing checkpoints. | **IMPLEMENTED** |
 | **7. Guardrails** | Off-topic rejection, input safety, hallucination checks, grounded answers (knows when *not* to answer) | Input safety guards ([`input_guards.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/guardrails/input_guards.py)) + output grounding validator ([`grounding.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/answer/grounding.py)) that abstains on ungrounded context. | **IMPLEMENTED** |
 | **8. Dataset Contract** | Grounding on MSMARCO-XI dataset without data leakage | Leakage isolation tests ([`test_leakage.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/tests/contract/test_leakage.py)) ensuring query/answer labels are stripped during indexing. | **VERIFIED** |
@@ -20,14 +20,23 @@
 
 ---
 
-## 📊 Indexing & Capacity Progression
+## 📊 Indexing Status — What's Done, What's Left
 
-| Scope | Record Count / Language Quota | Purpose | Indexing Pipeline Status |
-|---|---|---|---|
-| **Canary-300** | 300 records (100 EN / 100 HI / 100 BN) | Fail-closed preflight, exact ID verification, resume test | **Ready & Verified** |
-| **Pilot-10000** | 10,000 records (3,334 EN / 3,333 HI / 3,333 BN) | Pinecone Starter tier capacity validation | **Ready & Configured** |
-| **Pilot-39000** | 39,000 records (13,000 EN / 13,000 HI / 13,000 BN) | Extended multi-language pilot representation | **Ready & Configured** |
-| **Full Corpus** | ~24.87M vectors (~171.67 GB extrapolated) | Full multi-Indic corpus scale | *Requires dedicated production tier* |
+**~57,000 vectors are confirmed live in Pinecone right now** (index `msmarco-xi-e5small`, namespace `pilot_v1`), verified directly against the provider via `describe_index_stats()` — not inferred from local files. This is a pilot-scale corpus, clearly labeled as such per [`CLAUDE.md`](CLAUDE.md); it is not the full MSMARCO-XI corpus.
+
+**Why a second index exists**: the original 57,240 passages were embedded through Pinecone's server-side integrated `multilingual-e5-large`. That hit the account's monthly embedding-token quota mid-pilot (429 `RESOURCE_EXHAUSTED`) and, once query embedding moved local to escape that, e5-large's own runtime footprint (~1.5-2GB measured across both torch and ONNX Runtime, quantized or not) didn't fit a 512MB free-tier deployment target. `intfloat/multilingual-e5-small` (ONNX int8, raw SentencePiece) measured **~407-470MB end-to-end**, and is the model now serving both indexing and querying — but it produces a different, incompatible vector space (384-dim vs. 1024-dim), so all 57,240 passages were re-embedded and re-upserted into a new index (`scripts/reindex_e5small.py`, source text pulled from the live index's own metadata — not re-downloaded from HuggingFace). The original `msmarco-xi` (e5-large) index is untouched and still exists.
+
+**Done:**
+- Deterministic, leakage-free record preparation pipeline (offline, seeded, reproducible).
+- ~57k passages indexed and live in Pinecone across EN / HI / BN.
+- Full corpus re-embedded with e5-small and migrated to a new dimension-matched index — 57,240/57,240 verified, ~12 minutes wall-clock (8 parallel workers), report in `artifacts/reports/reindex_e5small_*.json`.
+- Local embedding (query **and** passage) via ONNX Runtime + native SentencePiece — no `torch`, no Pinecone-hosted embedding dependency, no monthly quota exposure. Real memory measured at each step, not estimated (see `src/hhgoa_rag/retrieval/local_embedder.py` module docstring for the full measurement trail, including two dead ends: e5-large was tried quantized under both torch and ONNX Runtime and neither fit).
+- Real end-to-end app memory measured at **~470MB** steady-state (FastAPI + Pinecone client + embedder + guardrails, 21 real mixed-language queries) — under Render's 512MB free tier with working margin.
+
+**Left / blocked:**
+- Retrieval quality after the e5-small migration has not been independently re-validated beyond "mechanically returns results and produces grounded answers" — the live 32-query benchmark shows 32/32 `allow` decisions (vs. 30/32 under e5-large), which may reflect a real difference in e5-small's score distribution interacting with the grounding threshold, not yet investigated further.
+- Further growth toward a larger pilot corpus is not scheduled.
+- Full MSMARCO-XI corpus (~24.87M vectors, ~171.67 GB extrapolated) has not been started and requires a dedicated production Pinecone tier — out of scope for this submission window.
 
 ---
 
@@ -39,8 +48,8 @@ flowchart TD
     B --> C[Language Identifier & Router]
     C --> D[Input Guardrails: Toxicity / Prompt Injection / Domain Filter]
     D -- Rejected --> E[Structured Rejection Response]
-    D -- Approved --> F[Pinecone Vector Search: multilingual-e5-large]
-    F --> G[Pinecone Reranker: bge-reranker-v2-m3]
+    D -- Approved --> F[Local e5-small Query Embedding]
+    F --> G[Pinecone Raw Vector Search: index.query]
     G --> H[Extractive Grounding & Answer Synthesizer]
     H --> I[Output Guardrails: Hallucination & Faithfulness Check]
     I -- Insufficient Context --> J[Grounded Abstention: 'No relevant information found']
@@ -48,7 +57,13 @@ flowchart TD
 ```
 
 ### Key Technical Choices
-- **Vector DB & Embedding**: Pinecone Serverless with integrated `multilingual-e5-large` (1024-dim, cosine metric, text field mapping).
+- **Vector DB**: Pinecone Serverless, raw vector storage/search (384-dim, cosine metric, index `msmarco-xi-e5small`) — not Pinecone's integrated embedding (see below).
+- **Embedding (query and passage)**: `intfloat/multilingual-e5-small` via **ONNX Runtime** (`onnx/model_int8.onnx`) + **native SentencePiece** (not HuggingFace's `tokenizers` JSON wrapper). Loaded once at process startup, not per-request. Real end-to-end app memory measured at **~470MB** (FastAPI + Pinecone client + embedder + guardrails together, not the embedder alone). Query embedding itself: **5.3ms P50**.
+  - **Why not Pinecone's integrated embedding**: hit the account's monthly embedding-token quota (429 `RESOURCE_EXHAUSTED`) during pilot indexing — the stored vectors were unaffected, only Pinecone's own embedding service was capped.
+  - **Why not `torch` + `transformers` + e5-large** (tried first): measured ~1.5-2GB steady-state regardless of int8 quantization (tried both a custom torch quantizer and ONNX Runtime — neither fit a 512MB container; embedding-table quantization, `inplace=True` deep-copy avoidance, and ONNX arena/graph-opt tuning were all tried and measured, not assumed).
+  - **Why ONNX + native SentencePiece over `transformers.AutoTokenizer`**: identical 250k-token XLM-RoBERTa vocabulary measured ~440MB via the JSON-based `tokenizers` wrapper vs. ~122MB via `sentencepiece.SentencePieceProcessor` — same data, ~3.6x difference from format alone.
+  - Full measurement trail, numbers, and dead ends are documented in `src/hhgoa_rag/retrieval/local_embedder.py`'s module docstring.
+- **Language detection**: Unicode script ranges (Devanagari → hi, Bengali → bn, else → en) — replaced `langdetect`, whose first real call lazily loaded ~58MB of language-profile data (measured; this alone was the difference between fitting and not fitting under 512MB).
 - **Reranker**: `bge-reranker-v2-m3` via Pinecone inference API for cross-lingual precision.
 - **STT Engine**: Sarvam AI API for Indic speech recognition with local Whisper fallback.
 - **Guardrail Layer**: Strict token-limit enforcement, regex-based adversarial input rejection, and token overlap/containment grounding verification.
@@ -105,11 +120,14 @@ uv run uvicorn hhgoa_rag.api.app:app --host 0.0.0.0 --port 8000 --reload
 
 | Deliverable | Requirement | Status |
 |---|---|---|
-| **GitHub Repository** | Full codebase, tests, documentation, reproducible runbooks | **Complete** |
-| **Live Working Link** | Deployed working API / Demo endpoint | In Progress |
-| **Video 1 (90s)** | Team & development process video | In Preparation |
-| **Video 2 (Demo)** | End-to-end working product demonstration | In Preparation |
-| **Social Promotion** | Individual team member posts across Instagram, X, LinkedIn | Scheduled for submission |
+| **GitHub Repository** | Full codebase, tests, documentation, reproducible runbooks | **Done** |
+| **Pilot Indexing** | Real data live in Pinecone for demo/benchmark use | **Done — ~57k vectors live**; further growth blocked (see Indexing Status above) |
+| **Live Benchmark (P50/P70/P100)** | Latency numbers from a real run, not best-case | **Done — P50 402.4ms / P70 408.1ms / P95 1387.0ms / P100 2073.3ms**, over the 200ms target (network-dominated); committed in `artifacts/reports/` |
+| **Live Working Link** | Deployed working API / Demo endpoint | **Left** |
+| **Video 1 (90s)** | Team & development process video | **Left** |
+| **Video 2 (Demo)** | End-to-end working product demonstration | **Left** |
+| **Social Promotion** | Individual team member posts across Instagram, X, LinkedIn, tagged `#RAGInGoa` | **Left** |
+| **Submission Form** | https://forms.gle/MNvCjcv23Hn2Eeu58 | **Left** — submit only once, no resubmissions |
 
 ---
 
