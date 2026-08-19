@@ -698,11 +698,15 @@ class TestCanonicalContractResolution:
         assert FIELD_MAP == dict(CANONICAL_FIELD_MAP) == {"text": "chunk_text"}
 
     def test_settings_defaults_match_canonical_contract(self):
+        # pinecone_index is intentionally excluded: the serving app queries a
+        # separate raw-vector index (msmarco-xi-e5small, local embedding) via
+        # .env, while INDEX_NAME here still names the original e5-large
+        # integrated-embedding contract used by the canary/pilot ingestion
+        # pipeline. See src/hhgoa_rag/api/app.py's module docstring.
         from hhgoa_rag.config.settings import Settings
-        from hhgoa_rag.pinecone_contract import CLOUD, INDEX_NAME, MODEL, REGION
+        from hhgoa_rag.pinecone_contract import CLOUD, MODEL, REGION
 
         s = Settings()
-        assert s.pinecone_index == INDEX_NAME
         assert s.pinecone_cloud == CLOUD
         assert s.pinecone_region == REGION
         assert s.pinecone_embed_model == MODEL
