@@ -62,12 +62,17 @@ independent corpus. That assumption is now known wrong in two ways:
 
 **Implication for corpus sizing** (all extrapolated from real per-row
 sampling, not the original README's linear-extrapolation-from-57k guess,
-which is now known to be wrong — see below):
+which is now known to be wrong — see below). Storage is a MEASURED
+per-passage rate (6,601 bytes/passage: passages.jsonl + bm25_tokens.jsonl
++ hnsw.usearch + the compiled bm25/ directory + embeddings.npy, from a
+real finalized 500,212-passage segment), not the earlier percentage-based
+guess this table used to show -- that guess (~75-100GB / ~360-450GB) was
+meaningfully too low and has been corrected here:
 
-| Scope | Unique passages (extrapolated) | Storage (embeddings + HNSW overhead) |
+| Scope | Unique passages (extrapolated) | Storage (measured per-passage rate) |
 |---|---|---|
-| hi + bn + en (current target) | ~25.9M | ~75-100GB |
-| Full 14-language (13 with train+val, Telugu val-only) | ~122.5M | ~360-450GB |
+| hi + bn + en (current target) | ~25.9M | ~131GB (~171GB if exporting embeddings.npy for every segment) |
+| Full 14-language (13 with train+val, Telugu val-only) | ~122.5M | ~620GB (~809GB with embeddings.npy) |
 
 The README's earlier "~24.87M vectors extrapolated" figure for the *full
 14-language* corpus was based on linear-scaling the 57k Pinecone pilot's
@@ -102,11 +107,16 @@ performance work below.
 ## Disk capacity: the real blocker for full 14-language
 
 This machine (a MacBook Pro, Apple M4 Pro, 12 cores) has a single internal
-disk, ~214GB free, no external volumes mounted at time of writing. The user
-has an external SSD but hadn't plugged it in yet as of this doc. **hi+bn+en
-(~75-100GB) fits comfortably. Full 14-language (~360-450GB) does not fit
-without the external SSD.** This is a storage constraint, not a compute
-constraint — see the timing numbers below, which show compute finishing
+disk, ~214-223GB free (fluctuates as segments write), no external volumes
+mounted at time of writing. The user has an external SSD but hadn't
+plugged it in yet as of this doc. **hi+bn+en (~131GB measured) fits, but
+with less headroom than earlier estimates suggested -- roughly 80-90GB of
+slack, not 115-140GB.** If embeddings.npy gets exported for every segment
+(needed for merging), that adds up to ~171GB total, tightening the margin
+further. Full 14-language (~620GB, ~809GB with embeddings.npy) does not
+fit without the external SSD, and by a wider margin than previously
+thought. This is a storage constraint, not a compute constraint — see the
+timing numbers below, which show compute finishing
 well within the 2026-08-22 deadline even for the full scope.
 
 ## Performance journey — what was tried, in order, with real numbers
@@ -219,6 +229,52 @@ wants to re-verify.
 | CoreML via native `coremltools` (ANE+GPU) | 694.7 | 16.7x |
 | MPS fp32, naive | 568.1 | 13.7x |
 | **MPS fp16, sorted, batch=128, deferred sync, inference_mode (FINAL)** | **1434.8** | **34.5x** |
+
+Important caveat on that 1434.8 number: it's the embedding step measured
+**in isolation**, on text that was already parsed and sitting in memory.
+The real end-to-end run (parquet decode + parse_record + SQLite dedup +
+chunking + file writes, all on CPU, sequential with the GPU step, not
+overlapped) only sustained **~700-720 passages/sec** in practice. That gap
+motivated the CPU/GPU overlap attempt below.
+
+### CPU/GPU overlap: tried and reverted
+
+Reasoned that splitting embedding into a non-blocking "submit" phase
+(dispatch all of a pool's GPU batches, return without the `.cpu()` sync
+that forces a wait) and a separate "drain" phase (the actual sync, called
+one pool later) should let CPU parsing of pool N+1 overlap with GPU
+embedding of pool N -- the same "submit before drain" pattern already
+proven correct in the (removed) multiprocessing version, just adapted to
+MPS's async queue instead of separate worker processes. Implemented it
+(`_mps_submit()` / `_mps_drain()`, checkpoint logic adjusted for the
+one-pool lag), verified it was still CORRECT via the same
+interrupt-and-resume test used elsewhere in this doc (exact match: 15,917
+passages, zero duplicates).
+
+**But it measured slower, not faster, in production**: ~505-520
+passages/sec sustained, vs. ~700-720 for the plain synchronous version.
+Reverted immediately (`git checkout -- scripts/build_full_local_index.py`
+before the change was ever committed) rather than debug a regression
+under deadline pressure with an unclear root cause. Two live confounds
+worth knowing about if anyone revisits this:
+
+1. **The comparison itself may have been contaminated.** The overlap
+   version was benchmarked in the same wall-clock window as the still-
+   running production job (both fighting for the same GPU), so its number
+   might be worse than the true isolated cost of the code path.
+2. **After reverting back to the known-good synchronous code, the SAME
+   ~520/sec regression persisted** -- i.e., the previously-fast simple
+   version was ALSO running slow post-revert, strongly suggesting
+   cumulative thermal throttling from ~45+ minutes of near-continuous
+   heavy GPU/CPU load (many restarts, tests, and the overlap experiment
+   itself, all back-to-back with no cooldown) was the real explanation
+   for both "regressions" -- not the overlap code specifically. This was
+   never conclusively separated from a genuine code regression; the user
+   chose to let the run continue rather than spend more wall-clock time
+   on a cooldown-and-retest cycle. **If revisiting the overlap idea**,
+   test it after a real cooldown period (machine fully idle 15-20+
+   minutes) and in isolation (nothing else touching the GPU), not
+   back-to-back with other GPU work the way this session did it.
 
 ## THE UNRESOLVED RISK — read this before treating the output as production-ready
 
@@ -398,6 +454,52 @@ were mapped, from ad-hoc testing) — `CONFIG_TO_PARQUET_PREFIX` in
 `build_full_local_index.py` now has every language so any contributor can
 be assigned any code.
 
+### Non-Apple-Silicon contributors: CPU and CUDA paths
+
+The script originally hard-required MPS (`torch.backends.mps.is_available()`
+or crash) since that was the only path built/tested. Two of the actual
+contributors (Prasun, Souvik) turned out to be on Windows, GPU presence
+unconfirmed at time of writing -- so the script now supports `--device
+{auto,mps,cuda,cpu}` (default `auto`, tries MPS then CUDA then falls back
+to CPU):
+
+- **CPU path** (`_load_cpu_model()` / `_cpu_embed_and_tokenize()`): reuses
+  `hhgoa_rag.retrieval.local_embedder` verbatim -- the exact ONNX int8
+  model the production API already uses for query embedding, cross-platform
+  (onnxruntime + sentencepiece run on Windows/Linux, no torch/CUDA needed),
+  with the same length-sort-before-batching trick that helped on the MPS
+  path applied here too (measured 2.1x on CPU specifically: unsorted
+  41.6/sec -> sorted 87.9/sec, before thread-count tuning -- see the
+  Performance journey section above for the full CPU benchmark trail up to
+  the 230/sec ceiling found on this M4 Pro's 8 P-cores). Contributors on
+  this path don't need `uv sync --extra gpu-index` at all -- base
+  dependencies are enough. **Interesting side effect**: CPU-path shards are
+  actually MORE consistent with the live production query embedder (exact
+  same model) than this machine's own MPS fp16 shards are, inverting the
+  usual "GPU path is better" assumption for this specific project.
+  `manifest.json`'s `embed_backend` field distinguishes `cpu_int8_onnx`
+  from `mps_fp16_transformers`/`cuda_fp16_transformers`, so
+  `merge_local_indexes.py`'s existing smell-test can at least flag someone
+  merging mismatched backends even though it can't block it outright.
+
+- **CUDA path**: same code as MPS (`_load_gpu_model(device)` /
+  `_gpu_embed_and_tokenize(..., device)` now take the device string instead
+  of hardcoding `"mps"`), just targeting `cuda` instead. The fp16 /
+  sorted-batching / `inference_mode()` / deferred-sync approach was tuned
+  and measured on MPS specifically -- untested on any actual NVIDIA GPU as
+  of this writing. `MPS_BATCH=128` is a reasonable starting point, not a
+  verified-optimal one for CUDA; a contributor with an NVIDIA GPU could
+  likely get more by sweeping batch size once real hardware is available
+  to test on.
+
+Both paths were verified via real smoke tests (isolated output directories,
+not the live production run): correct device auto-detection, correct
+`embed_backend` label in `manifest.json`, segments finalize correctly,
+clean leakage boundary. Neither was benchmarked for real throughput on
+non-Apple-Silicon hardware -- there wasn't a Windows/CUDA machine available
+to test on during this session, so the "how long will this take" numbers in
+`docs/FRIEND_INDEXING_GUIDE.md` are deliberately vague for those paths.
+
 ## Immediate next steps for whoever continues this
 
 1. Let the current hi+bn run finish (or check on it — `tail -f
@@ -409,10 +511,18 @@ be assigned any code.
    — it's now known to be roughly right for hi+bn+en alone and a
    significant undercount (by ~5x) for the true full 14-language scope.
 4. If pursuing full 14-language: get the external SSD mounted, verify its
-   free space against the ~360-450GB estimate, and consider whether the
-   CPU/GPU pipeline-overlap optimization (parsing pool N+1 while GPU embeds
-   pool N) is worth implementing given the ~48.6h single-machine estimate
-   at current throughput — mitigated by distributing across contributors'
+   free space against the corrected ~620GB (~809GB with embeddings.npy)
+   estimate -- not the earlier ~360-450GB guess, which was based on a
+   percentage-of-embedding-size approximation rather than a measured
+   per-passage rate. A CPU/GPU pipeline-overlap optimization (parsing pool
+   N+1 while GPU embeds pool N) was attempted and REVERTED after live
+   testing showed it was slower, not faster, than the simple synchronous
+   version (~505-520 texts/sec vs ~700-720) -- see "CPU/GPU overlap: tried
+   and reverted" below before attempting this again. Given the current
+   ~48.6h single-machine full-14-language estimate used ~700 passages/sec,
+   and the run in progress plateaued lower (~520/sec, likely thermal, not
+   yet confirmed to recover) -- treat that hour figure as optimistic, not
+   a floor. Distributing across contributors'
    machines (see "Distributed indexing" above), but still worth knowing
    about if that falls through.
 5. As contributors' shards come back (per `docs/FRIEND_INDEXING_GUIDE.md`),

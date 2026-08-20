@@ -1,25 +1,49 @@
 # Indexing Guide for Contributors
 
-You've been asked to help build part of a large multilingual search index
-for HH Goa 2026 Task 2. This doc is everything you need — no other context
-required. Should take about 15 minutes of setup, then the indexing itself
-runs unattended for several hours.
+Hi — you've been asked to help build part of a large search index for HH
+Goa 2026 Task 2. This document has everything you need. No other context
+is required. Setup takes about 15 minutes. After that, the indexing runs
+by itself for a long time (likely several hours) — you don't need to
+watch it the whole time.
 
-## Before you start — do you have what's needed?
+If anything here doesn't match what you actually see on your screen, stop
+and ask rather than guessing. A quick question now is much cheaper than
+redoing hours of work later.
 
-**You need an Apple Silicon Mac** (M1, M2, M3, or M4 — any variant). This
-uses the Mac's GPU (via `MPS`/Metal) for speed; it will not work correctly
-on Intel Macs, Windows, or Linux. If you don't have Apple Silicon, let the
-person who sent you this know — you can still help in other ways, but not
-this particular task.
+## Step 0: Before you start
+
+**Tell the team which language code(s) you're picking, and wait for a
+thumbs-up before you actually start running anything.** This is the most
+important step. If two people accidentally pick the same language, that
+work is wasted — we need to know who's doing what so nothing overlaps.
+The list of available codes is in Step 4 below.
+
+**This works on Windows and Mac.** The script automatically detects what
+your computer has:
+- An NVIDIA graphics card → uses it (fastest)
+- An Apple Silicon Mac (M1/M2/M3/M4 chip) → uses its built-in GPU (fastest)
+- Neither of the above → uses your regular processor (CPU) instead. This
+  still works completely fine, just slower. There's nothing to configure —
+  the script figures this out on its own when it starts.
+
+You don't need to know which of these applies to you — just run the
+setup steps below and the first few lines of output will tell you what
+was detected.
 
 You'll also want:
-- At least **20-30GB of free disk space** per language you're assigned
-  (see the sizing table below for specifics).
-- A few hours where your Mac can stay on, plugged in, and not go to sleep
-  (see the "keep it running" note below).
+- Your computer plugged into power for the whole run.
+- A few hours where you don't need to shut it down. It's fine to let the
+  screen lock or step away — just don't put it to sleep or shut it off
+  (see "keep it awake" in Step 6).
+- Free disk space — see Step 5.
 
-## 1. Get the code
+## Step 1: Get the code
+
+**On Mac**: open the Terminal app (search for "Terminal" with Spotlight,
+the magnifying glass in your menu bar).
+**On Windows**: open PowerShell (search for "PowerShell" in the Start menu).
+
+Then paste these commands one at a time:
 
 ```bash
 git clone https://github.com/arvus3005/geeks.git
@@ -27,37 +51,51 @@ cd geeks
 git checkout feat/self-hosted-hybrid-retrieval
 ```
 
-## 2. Install `uv` (if you don't have it)
+If `git` isn't installed, your system will likely prompt you to install it
+the first time — say yes. On Windows, if that doesn't happen, download it
+from [git-scm.com](https://git-scm.com/download/win) first.
 
+## Step 2: Install `uv` (a tool this project uses)
+
+**On Mac/Linux:**
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-## 3. Install dependencies, including the GPU extras
+**On Windows (in PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
 
+Close and reopen your terminal afterward so it takes effect.
+
+## Step 3: Install the project's dependencies
+
+If you have an NVIDIA GPU or an Apple Silicon Mac and want to use it:
 ```bash
 uv sync --extra gpu-index
 ```
 
-This installs everything including `torch` (needed for the GPU embedding
-path — it's deliberately kept out of the base install since the production
-API doesn't use it).
+If you're not sure, or you know you're on CPU only, this also works fine
+(smaller download, and the script will use the slower CPU path):
+```bash
+uv sync
+```
 
-## 4. Which language(s) are you indexing?
+Either is fine to start with — if you picked wrong, just re-run whichever
+command you needed later, nothing breaks.
 
-You'll be told which 2-letter language code(s) to run — something like
-`gu` (Gujarati), `ta` (Tamil), `mr` (Marathi), etc. A natural split is 3
-languages per contributor; here's the full list of what's available and
-roughly how big each one is (every language shares the same underlying
-English passage set, so English isn't counted per-language — see the
-"Why this is small" note below):
+## Step 4: Which language(s) are you doing?
 
-| Code | Language | Train split | Validation split |
+Pick from the list below (anything except `hi` and `bn`, which are
+already being handled elsewhere) and **message the team before you start**
+(see Step 0). 2-3 languages per person is reasonable. Every language is
+roughly similar in size to index — more on why at the bottom of this doc.
+
+| Code | Language | Has training data | Has validation data |
 |---|---|---|---|
 | `as` | Assamese | yes | yes |
-| `bn` | Bengali | yes | yes | (already being done — don't pick this one)
 | `gu` | Gujarati | yes | yes |
-| `hi` | Hindi | yes | yes | (already being done — don't pick this one)
 | `kn` | Kannada | yes | yes |
 | `ml` | Malayalam | yes | yes |
 | `mr` | Marathi | yes | yes |
@@ -66,136 +104,179 @@ English passage set, so English isn't counted per-language — see the
 | `pa` | Punjabi | yes | yes |
 | `sa` | Sanskrit | yes | yes |
 | `ta` | Tamil | yes | yes |
-| `te` | Telugu | **no train split** (confirmed missing upstream) | yes |
 | `ur` | Urdu | yes | yes |
+| `te` | Telugu | **no** (missing from the source data — not our bug) | yes |
 
-If you're assigned `te` (Telugu), you'll get much less data than the
-others — that's expected, not a bug on your end; the source dataset simply
-doesn't have a Telugu training split.
+If you pick `te` (Telugu), expect noticeably less output than the others —
+that's expected, not something wrong with your setup.
 
-## 5. Run it
+## Step 5: Disk space and memory
 
-Say you're assigned Gujarati, Tamil, and Marathi:
+**Disk**: budget roughly **120GB for your first language, plus ~60GB for
+each additional one** if you run them together in one command (the shared
+English portion only gets stored once per run, which is why extra
+languages cost less than the first). So: 1 language ≈ 120GB, 2 ≈ 180GB,
+3 ≈ 240GB. This is measured from a real run, not a guess, but still budget
+some extra margin. Check your free space first:
 
+**Mac/Linux:**
 ```bash
-uv run python -m scripts.build_full_local_index --configs gu ta mr
+df -h /
+```
+**Windows (PowerShell):**
+```powershell
+Get-PSDrive C
 ```
 
-Pass all your assigned languages in one command (space-separated) — don't
-run them as separate invocations, since each language's translated
-passages plus one shared English pool all need to land in the same output
-directory (`artifacts/full_local_index/`).
+If you're short on space, tell us before starting rather than after — we
+can adjust how many languages you take on.
 
-**Do not pass `--max-rows-per-config`.** That flag is only for quick smoke
-tests; leaving it off is what gets you the real, full data this project
-needs.
+**Memory (RAM)**: the script saves progress in chunks so it doesn't use
+unlimited memory, but each chunk is held fully in memory while it's being
+built. If your computer has 8GB or 16GB of RAM (common on lower-end
+laptops) rather than 24GB+, flag this to us before starting — we may need
+to give you a smaller chunk-size setting. Check yours:
+- **Mac**: Apple menu → About This Mac → "Memory"
+- **Windows**: Settings → System → About → "Installed RAM"
 
-### What you'll see
+## Step 6: Run it
 
-It logs progress every 2000 source rows, something like:
+Say you're assigned Gujarati and Tamil:
+
+**Mac/Linux** (stays awake automatically while running):
+```bash
+caffeinate -i uv run python -m scripts.build_full_local_index --configs gu ta
+```
+
+**Windows:**
+```powershell
+uv run python -m scripts.build_full_local_index --configs gu ta
+```
+On Windows, also go to Settings → System → Power & battery, and turn off
+automatic sleep for as long as you expect this to run — otherwise Windows
+may sleep the machine partway through.
+
+Swap `gu ta` for whichever codes you were assigned.
+
+**Do not add a `--max-rows-per-config` option.** If you see that flag
+mentioned elsewhere in this project, it's for quick internal tests only —
+leaving it off is what gets you the real, complete data we need.
+
+### What normal output looks like
+
+Right at the start, one line tells you what was detected:
+```
+INFO Auto-detected device: cuda
+```
+(or `mps`, or `cpu` — whichever your computer has). That's just
+informational, no action needed.
+
+Then, every couple thousand rows, a progress line:
 ```
 INFO gu/train: 2000 source rows, 32784 passages indexed so far (47.0s elapsed, 697.0 passages/sec)
 ```
-On an M4 Pro this ran at ~700-715 passages/sec sustained. Other Apple
-Silicon chips (M1/M2/M3, or non-Pro/Max variants) will likely be somewhat
-slower — there's no exact number for your specific hardware yet, but this
-is the ballpark to expect.
+Speed varies a lot by hardware — there's no single "correct" number, just
+watch that it's steadily climbing and not stuck.
 
-### Keep it running
+You'll also see lines mentioning "segment" and "Finalized segment" — the
+script periodically saves a safe checkpoint to disk. This is normal and
+means it's working correctly, not a problem.
 
-This is a multi-hour job (see timing below). Your Mac needs to stay awake
-and not sleep the whole time:
+### It's safe to interrupt and resume
 
+If you need to close the laptop, it crashes, or you stop it for any
+reason: that's fine. Run the **exact same command again** to continue —
+it automatically resumes from the last safe checkpoint instead of
+starting over. You'll lose at most a few minutes of progress, never more.
+
+### How long will this take?
+
+We don't have solid numbers yet for most hardware — watch your own logged
+speed for the first few minutes and use that as your best guide. As a
+rough reference point, one Apple Silicon Mac (M4 Pro) processed about
+500-700 passages per second; a language with training and validation data
+combined has roughly 1.5-2 million passages, so do the math with your own
+observed rate for a real estimate.
+
+## Step 7: When it's finished
+
+You'll see a line starting with `Done.`, and the program will end on its
+own (return you to a normal prompt).
+
+**Your results will be split across many folders**, not one — this is
+intentional (it's how the script keeps memory use safe), so you'll see
+something like `artifacts/full_local_index/gu_train_segment_0000/`,
+`gu_train_segment_0001/`, and so on, one per chunk of progress. That's
+correct — don't worry that it looks fragmented.
+
+Then run this to prepare everything for sending back:
+
+**Mac/Linux:**
 ```bash
-caffeinate -i uv run python -m scripts.build_full_local_index --configs gu ta mr
+for dir in artifacts/full_local_index/*/; do
+  uv run python -m scripts.export_local_index_vectors "$dir"
+done
 ```
 
-(`caffeinate -i` prevents idle sleep for as long as the command runs — safe
-to prefix any of the commands in this doc with it.)
-
-### It's resumable
-
-If it crashes, your laptop restarts, or you need to stop it, just re-run
-the exact same command — it picks up from the last completed checkpoint
-(every ~8,192 passages) instead of starting over. Progress is saved in
-`artifacts/full_index_checkpoints/`.
-
-### Roughly how long will it take?
-
-Nobody has run this exact workload on a non-M4-Pro chip yet, so treat this
-as a rough guide, not a promise — check your own logged rate after the
-first few progress lines and do the math for your assigned languages.
-As a reference point: 3 full languages (train+val) at the M4 Pro's ~700
-passages/sec was projected around 6-10 hours. If your Mac is running
-noticeably slower or faster than ~700 passages/sec once it's warmed up,
-scale that estimate accordingly.
-
-## 6. When it finishes
-
-Two things confirm it's actually done (not just paused):
-- The log prints a final `Done: {...}` line with a `manifest.json` summary.
-- `artifacts/full_index_checkpoints/` has a `status: "complete"` entry for
-  every `(language, split)` pair you ran.
-
-Then export the embedding vectors (needed for merging later — the raw
-vectors aren't stored anywhere else in a portable format):
-
-```bash
-uv run python -m scripts.export_local_index_vectors artifacts/full_local_index
+**Windows (PowerShell):**
+```powershell
+Get-ChildItem artifacts/full_local_index -Directory | ForEach-Object {
+  uv run python -m scripts.export_local_index_vectors $_.FullName
+}
 ```
 
-This creates `artifacts/full_local_index/embeddings.npy` alongside the
-other output files.
+## Step 8: Send your results back
 
-## 7. Send your results back
-
-You need to send back the whole `artifacts/full_local_index/` directory:
-`passages.jsonl`, `bm25_tokens.jsonl`, `hnsw.usearch`, `embeddings.npy`,
-and `manifest.json`. Depending on your language(s), this could be several
-GB to a few tens of GB — check the actual size first:
-
+Check the total size:
 ```bash
 du -sh artifacts/full_local_index/
 ```
+(Windows: `Get-ChildItem artifacts/full_local_index -Recurse | Measure-Object -Property Length -Sum`)
 
-If you're physically together at the hackathon venue: **AirDrop is
-probably fastest** for this size (faster than uploading over shared venue
-WiFi and someone else downloading it). Zip the directory first if AirDrop
-struggles with many small files:
+Compress the whole folder into one file:
 
+**Mac/Linux:**
 ```bash
 cd artifacts
-tar -czf full_local_index_<yourlanguages>.tar.gz full_local_index/
-# e.g. full_local_index_gu_ta_mr.tar.gz
+tar -czf full_local_index_<yourname>_<languages>.tar.gz full_local_index/
+# example: full_local_index_prasun_gu_ta.tar.gz
 ```
 
-If you're not together: cloud storage (Google Drive, Dropbox, WeTransfer)
-works fine for tens of GB — just budget upload time on top of the indexing
-time above.
+**Windows (PowerShell):**
+```powershell
+cd artifacts
+Compress-Archive -Path full_local_index -DestinationPath full_local_index_<yourname>_<languages>.zip
+```
 
-**Rename the tarball/folder to include your language codes** before
-sending — with several people sending files back, an unlabeled
-`full_local_index.tar.gz` is not identifiable.
+**Always include your name and language codes in the filename** — with
+multiple people sending files, an unlabeled file is impossible to identify.
 
-## Why this whole thing is smaller than you'd expect
+How to send it:
+- **In person together**: a shared drive, cable transfer, or local network
+  transfer is usually much faster than uploading over shared WiFi.
+- **Remote**: Google Drive, Dropbox, or WeTransfer all handle files this
+  size fine — just budget extra time for the upload.
 
-Every MSMARCO-XI language is a translation of the *same* underlying
-English query/passage set — not independent corpora. So your English
-passages, whatever language you're assigned, will very likely be
-duplicates of what everyone else's runs also produce (this is expected and
-correct — the merge step on the receiving end deduplicates it, so it's
-only stored once in the final combined index; don't worry about it on your
-end, just send everything you produced).
+## Why this ends up smaller than it looks
+
+Every language in this dataset is a translation of the *same* original
+set of English questions and passages — it's one shared dataset translated
+many ways, not many separate ones. So the English portion of your results
+will almost certainly overlap with what everyone else produces too. That's
+expected — when everything gets combined at the end, duplicate English is
+automatically merged down to one copy. You don't need to do anything
+differently because of this; just send us everything your run produces.
 
 ## If something looks wrong
 
-- **"MPS not available on this machine"**: you're not on Apple Silicon, or
-  your macOS/PyTorch version doesn't support it. This script won't work
-  for you as-is — flag it rather than trying to force it through.
-- **A parquet download fails or times out**: the dataset (`ai4bharat/MSMARCO-XI`
-  on HuggingFace) is public and needs no login, but large files (~3-4GB
-  each) over a slow connection can be flaky. Just re-run the same command;
-  HuggingFace's download cache resumes partial downloads.
-- **Anything else**: don't try to work around it silently — flag it back
-  with the exact error message. This is exactly the kind of thing worth
-  a quick message rather than guessing.
+- **Script says it can't find a GPU when you're sure you have one**: it
+  will still work — it just falls back to CPU (slower, not broken). Tell
+  us anyway so we can look into why it wasn't detected.
+- **A download fails, times out, or seems stuck**: the dataset files are a
+  few GB each, so a slow connection can make this take a while or
+  occasionally fail partway. Run the exact same command again — it
+  resumes downloads instead of starting over.
+- **Anything else you're not sure about**: don't guess or try to force
+  past it. Send us the exact error message (copy-paste the text) and
+  which step you were on — that's much faster for us to help with than a
+  description of what happened.
