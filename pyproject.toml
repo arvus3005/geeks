@@ -30,6 +30,16 @@ dependencies = [
     "usearch>=2.26.0",
 ]
 
+[project.optional-dependencies]
+# ONLY for scripts/build_full_local_index.py's MPS embedding path (offline
+# bulk indexing on a local Apple Silicon machine). NEVER add torch to the
+# base `dependencies` above -- the production API deliberately avoids torch
+# (measured ~1.5-2GB footprint, doesn't fit the 512MB Render deployment
+# target; see src/hhgoa_rag/retrieval/local_embedder.py's module docstring).
+gpu-index = [
+    "torch>=2.0",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/hhgoa_rag"]
 
