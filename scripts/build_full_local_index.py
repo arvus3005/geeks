@@ -88,12 +88,20 @@ SPLITS = ["train", "validation"]
 # NOTE: "te" (Telugu) has NO train split on this dataset revision (confirmed:
 # 404 on train/teltrain.parquet) -- validation-only. Not in scope for phase 1.
 CONFIG_TO_PARQUET_PREFIX = {
-    "hi": "hin",
+    "as": "asm",
     "bn": "ben",
     "gu": "guj",
-    "ta": "tam",
+    "hi": "hin",
+    "kn": "kan",
+    "ml": "mal",
     "mr": "mar",
-    "te": "tel",
+    "ne": "nep",
+    "or": "ori",
+    "pa": "pan",
+    "sa": "san",
+    "ta": "tam",
+    "te": "tel",  # validation only -- no train split exists upstream
+    "ur": "urd",
 }
 
 

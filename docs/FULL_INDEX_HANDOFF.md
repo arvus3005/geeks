@@ -339,6 +339,65 @@ script or embedding approach changes again, clear `artifacts/full_local_index/`,
 restart clean, the same way this run itself started clean after an earlier
 CPU-based partial run was discarded for exactly this reason).
 
+## Distributed indexing across multiple machines
+
+Since compute (not disk) was the binding constraint for a single machine's
+full-14-language scope (~48.6h estimated at ~700 passages/sec — see
+Timing above), and since indexing is trivially parallel across languages
+(each `--configs X` run is independent), the plan is to have contributors
+run `build_full_local_index.py` on their own Apple Silicon Macs for a
+subset of the remaining languages, then merge everyone's output centrally.
+The full contributor-facing walkthrough is `docs/FRIEND_INDEXING_GUIDE.md`
+— written to be handed to someone with zero context on this project.
+
+Two new scripts support this:
+
+- **`scripts/export_local_index_vectors.py`**: usearch's HNSW format
+  doesn't support merging two independently-built indexes, and
+  `passages.jsonl` never stored the embedding vectors themselves (only
+  text + metadata) — so there was no portable way to combine shards
+  without re-embedding everything from scratch. This script reads a
+  shard's `hnsw.usearch`, exports all vectors as `embeddings.npy` (shape
+  `[N, 384]`, row `i` = passage `key` `i`). **Important implementation
+  detail found while writing this**: `Index.vectors` (the naive "give me
+  everything" property) is NOT returned in key order — usearch stores
+  vectors by internal HNSW graph position, not insertion/key order,
+  confirmed empirically (shuffled-key test: `idx.vectors[i]` did not match
+  `key=i`'s original vector). `Index.get(keys_array)` IS correctly ordered
+  by whatever keys you pass it, and is vectorized/fast (1000-vector batch
+  retrieval measured at <1ms) — use `get()`, not `.vectors`, for any
+  key-ordered export.
+
+- **`scripts/merge_local_indexes.py`**: takes N shard directories, dedupes
+  by `(passage_language, content_hash)` across all of them (not
+  `content_hash` alone — this keeps English's cross-shard dedup working
+  correctly, since every shard's English is expected to be identical, per
+  the shared-English-pool finding above, while not accidentally colliding
+  translated passages from different languages, though real hash
+  collisions between different-language text are effectively impossible
+  anyway; the tuple key is just a free extra safety margin), rebuilds one
+  combined HNSW index and one combined BM25 index. **Verified correct** by
+  merging two identical copies of the 11,950-passage smoke-test shard:
+  correctly deduped to exactly 11,950 (not 23,900), per-language counts
+  matched (en=3984, hi=3982, bn=3984), both HNSW and BM25 rebuilt
+  successfully.
+
+**Not verified, deliberately, by the tooling**: that every contributor
+actually used the identical embedding backend/precision. `merge_local_indexes.py`
+prints each shard's `manifest.json` `embed_backend` field as a smell test,
+but a match there is not proof — someone could still run a stale or
+modified script version. **Whoever runs the merge should manually confirm**
+every contributor was on the same commit of `build_full_local_index.py`
+before trusting the merged output's retrieval quality (on top of the
+already-flagged fp16-MPS vs int8-ONNX risk above, which applies identically
+regardless of how many machines contributed).
+
+**Language code → parquet filename mapping was extended** to cover all 14
+`INDIC_LANGUAGE_CODES` (previously only `hi`, `bn`, `gu`, `ta`, `mr`, `te`
+were mapped, from ad-hoc testing) — `CONFIG_TO_PARQUET_PREFIX` in
+`build_full_local_index.py` now has every language so any contributor can
+be assigned any code.
+
 ## Immediate next steps for whoever continues this
 
 1. Let the current hi+bn run finish (or check on it — `tail -f
@@ -352,9 +411,17 @@ CPU-based partial run was discarded for exactly this reason).
 4. If pursuing full 14-language: get the external SSD mounted, verify its
    free space against the ~360-450GB estimate, and consider whether the
    CPU/GPU pipeline-overlap optimization (parsing pool N+1 while GPU embeds
-   pool N) is worth implementing given the ~48.6h estimate at current
-   throughput — that's tight against most reasonable deadlines without it.
-5. Wire a config flag to actually let the live API query this local
+   pool N) is worth implementing given the ~48.6h single-machine estimate
+   at current throughput — mitigated by distributing across contributors'
+   machines (see "Distributed indexing" above), but still worth knowing
+   about if that falls through.
+5. As contributors' shards come back (per `docs/FRIEND_INDEXING_GUIDE.md`),
+   run `scripts/merge_local_indexes.py --shards <dir1> <dir2> ... --output-dir
+   artifacts/merged_local_index` to combine them. Confirm every shard's
+   `manifest.json` reports the same `embed_backend` before trusting the
+   result (see "Distributed indexing" above for why this matters and isn't
+   automatically enforced).
+6. Wire a config flag to actually let the live API query this local
    hybrid index instead of (or alongside) Pinecone — not done yet, per the
    existing README's "Self-Hosted Hybrid Retrieval" section, which predates
    all of the work in this doc.
