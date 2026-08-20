@@ -42,6 +42,7 @@ Loaded once at process startup, never per-request, per CLAUDE.md.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 
 logger = logging.getLogger(__name__)
@@ -98,7 +99,10 @@ def _build() -> None:
     opts = ort.SessionOptions()
     # Small, memory-constrained deployment target: one thread is both more
     # predictable at the tail and avoids ORT spawning a thread per core.
-    opts.intra_op_num_threads = 1
+    # Offline bulk-indexing scripts (not the serving path) can override this
+    # via HHGOA_ONNX_INTRA_THREADS to use all available cores instead.
+    threads = int(os.environ.get("HHGOA_ONNX_INTRA_THREADS", "1"))
+    opts.intra_op_num_threads = threads
     opts.inter_op_num_threads = 1
     _session = ort.InferenceSession(onnx_path, opts, providers=["CPUExecutionProvider"])
 

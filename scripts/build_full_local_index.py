@@ -103,7 +103,7 @@ OUTPUT_DIR = Path("artifacts/full_local_index")
 CHECKPOINT_DIR = Path("artifacts/full_index_checkpoints")
 DEDUP_DIR = Path("artifacts/full_index_dedup")
 LOG_EVERY_ROWS = 2000
-EMBED_BATCH = 64
+EMBED_BATCH = 128
 
 
 def _checkpoint_path(config: str, split: str) -> Path:
@@ -150,6 +150,13 @@ def main() -> None:
         "if set, the caller MUST label the resulting artifact smoke/pilot/experiment per CLAUDE.md.",
     )
     args = ap.parse_args()
+
+    import os
+
+    # This offline bulk job is CPU-bound on embedding, unlike the production
+    # serving path (deliberately pinned to 1 ONNX thread for a 512MB Render
+    # container). Use all local cores here instead of leaving them idle.
+    os.environ.setdefault("HHGOA_ONNX_INTRA_THREADS", str(os.cpu_count() or 4))
 
     from hhgoa_rag.dataset.parser import parse_record
     from hhgoa_rag.ingestion.chunkers import get_chunker
