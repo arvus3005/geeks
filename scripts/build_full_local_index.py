@@ -240,22 +240,28 @@ def _segment_dir(config: str, split: str, segment_idx: int) -> Path:
     return OUTPUT_DIR / f"{config}_{split}_segment_{segment_idx:04d}"
 
 
-def _load_mps_model():
+def _load_gpu_model(device: str):
     """Loads the ORIGINAL fp32 HF model (not the production ONNX int8 one),
-    cast to fp16, on the MPS device. See module docstring for the precision-
-    mismatch risk this introduces vs. the int8 query embedder."""
+    cast to fp16, on `device` ("mps" or "cuda"). See module docstring for
+    the precision-mismatch risk this introduces vs. the int8 query
+    embedder. The MPS-vs-CUDA difference is just the device string --
+    same fp16/sorted-batching/inference_mode approach, tuned and measured
+    on MPS (M4 Pro: 1434.8 texts/sec at batch=128) but not yet measured on
+    any specific CUDA GPU. batch=128 is a reasonable starting point for
+    CUDA too, not a verified-optimal one -- a contributor with an NVIDIA
+    GPU could get more by sweeping MPS_BATCH, but nobody has had hardware
+    to test that on as of this writing."""
     import torch
     from transformers import AutoModel, AutoTokenizer
 
-    if not torch.backends.mps.is_available():
-        raise RuntimeError(
-            "MPS not available on this machine -- this script requires an Apple "
-            "Silicon Mac with Metal support for the GPU embedding path."
-        )
+    if device == "mps" and not torch.backends.mps.is_available():
+        raise RuntimeError("MPS not available on this machine.")
+    if device == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA not available on this machine.")
     tok = AutoTokenizer.from_pretrained("intfloat/multilingual-e5-small")
     model = AutoModel.from_pretrained("intfloat/multilingual-e5-small", dtype=torch.float16)
     model.eval()
-    model = model.to("mps")
+    model = model.to(device)
     return tok, model
 
 
@@ -310,12 +316,13 @@ def _cpu_embed_and_tokenize(
     return embeddings, all_pieces  # type: ignore[return-value]
 
 
-def _mps_embed_and_tokenize(
-    tok, model, sp, texts: list[str]
+def _gpu_embed_and_tokenize(
+    tok, model, sp, texts: list[str], device: str
 ) -> tuple[list[list[float]], list[list[str]]]:
-    """Embeds `texts` (passages, no prefix) via MPS fp16 and tokenizes them
-    for BM25 via the same SentencePiece model the production embedder uses
-    (so lexical search stays consistent with the rest of the pipeline).
+    """Embeds `texts` (passages, no prefix) via GPU (MPS or CUDA) fp16 and
+    tokenizes them for BM25 via the same SentencePiece model the production
+    embedder uses (so lexical search stays consistent with the rest of the
+    pipeline). Tuned and measured on MPS specifically -- see _load_gpu_model.
 
     Two things matter for the measured ~1435 texts/sec:
       1. Sort by token length before batching. Padding every text in a batch
@@ -350,7 +357,7 @@ def _mps_embed_and_tokenize(
                 truncation=True,
                 max_length=512,
                 return_tensors="pt",
-            ).to("mps")
+            ).to(device)
             out = model(**enc)
             last_hidden = out.last_hidden_state
             mask = enc["attention_mask"].unsqueeze(-1).to(last_hidden.dtype)
@@ -450,11 +457,11 @@ def main() -> None:
     )
     ap.add_argument(
         "--device",
-        choices=["auto", "mps", "cpu"],
+        choices=["auto", "mps", "cuda", "cpu"],
         default="auto",
-        help="auto detects MPS (Apple Silicon) and falls back to CPU (ONNX int8, "
-        "cross-platform, no torch/CUDA needed) if MPS isn't available. Force one "
-        "explicitly with mps/cpu.",
+        help="auto detects a GPU (MPS on Apple Silicon, CUDA on NVIDIA) and falls back "
+        "to CPU (ONNX int8, cross-platform, no torch/CUDA needed) if neither is "
+        "available. Force one explicitly with mps/cuda/cpu.",
     )
     args = ap.parse_args()
 
@@ -474,25 +481,30 @@ def main() -> None:
         try:
             import torch
 
-            device = "mps" if torch.backends.mps.is_available() else "cpu"
+            if torch.backends.mps.is_available():
+                device = "mps"
+            elif torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
         except ImportError:
             device = "cpu"  # torch not installed -- e.g. `uv sync` without --extra gpu-index
         logger.info("Auto-detected device: %s", device)
 
-    if device == "mps":
+    if device in ("mps", "cuda"):
         import sentencepiece as spm
         from huggingface_hub import hf_hub_download
 
-        logger.info("Loading MPS embedding model (fp16) + SentencePiece tokenizer…")
-        tok, model = _load_mps_model()
+        logger.info("Loading %s embedding model (fp16) + SentencePiece tokenizer…", device.upper())
+        tok, model = _load_gpu_model(device)
         sp_model_path = hf_hub_download("intfloat/multilingual-e5-small", "sentencepiece.bpe.model")
         sp = spm.SentencePieceProcessor(model_file=sp_model_path)
 
         def embed_fn(texts: list[str]):
-            return _mps_embed_and_tokenize(tok, model, sp, texts)
+            return _gpu_embed_and_tokenize(tok, model, sp, texts, device)
 
         embed_backend_label = (
-            "mps_fp16_transformers (NOT the production int8 ONNX query embedder "
+            f"{device}_fp16_transformers (NOT the production int8 ONNX query embedder "
             "-- see build_full_local_index.py module docstring)"
         )
     elif device == "cpu":
