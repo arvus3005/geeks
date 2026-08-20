@@ -153,11 +153,20 @@ def embed_passages_batch(texts: list[str], batch_size: int = 32) -> list[list[fl
     assert _session is not None and _sp is not None
     input_names = {i.name for i in _session.get_inputs()}
 
+    max_position_tokens = 512 - 2  # reserve room for BOS/EOS within the model's 512-position limit
+
     out: list[list[float]] = []
     for start in range(0, len(texts), batch_size):
         chunk = texts[start : start + batch_size]
         encoded = [
-            [_XLMR_BOS, *(p + _FAIRSEQ_OFFSET for p in _sp.encode(f"passage: {t}")), _XLMR_EOS]
+            [
+                _XLMR_BOS,
+                *(
+                    p + _FAIRSEQ_OFFSET
+                    for p in _sp.encode(f"passage: {t}")[:max_position_tokens]
+                ),
+                _XLMR_EOS,
+            ]
             for t in chunk
         ]
         max_len = max(len(e) for e in encoded)

@@ -47,6 +47,10 @@ artifacts/dedup/
 artifacts/ledgers/
 artifacts/eval/
 artifacts/local_index/
+artifacts/full_local_index/
+artifacts/full_local_index_smoke_200/
+artifacts/full_index_checkpoints/
+artifacts/full_index_dedup/
 
 # Generated canary execution reports (runtime output — never committed)
 artifacts/reports/canary_index_execution_*.json
