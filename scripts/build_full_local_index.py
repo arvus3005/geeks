@@ -18,29 +18,61 @@ English passages, matching MS MARCO's real published ~8.8M passage count)
 translated into 14 targets, not 14 independent corpora. A full 14-language
 build would therefore be ~122M unique passages (~360-450GB with HNSW
 overhead) -- does not fit this machine's 214GB free disk. hi+bn+en fits
-comfortably (~26M passages, ~75-100GB). See docs/FULL_INDEX_HANDOFF.md.
+comfortably on disk (~26M passages, ~75-100GB+, though see the SEGMENTING
+section below for why disk was never actually the binding constraint).
+See docs/FULL_INDEX_HANDOFF.md.
 
 Reuses the exact leakage-safe parse/normalize/dedup/chunk pipeline from
 hhgoa_rag.ingestion.engine (parse_record drops query/Answer/query_type/
 is_selected before anything downstream ever sees them -- see
 hhgoa_rag.dataset.parser.FORBIDDEN_FIELDS).
 
-Resumable: progress is checkpointed per (config, split) to
-artifacts/full_index_checkpoints/*.json, granularity = one POOL_SIZE pool.
+SEGMENTING -- READ THIS BEFORE CHANGING SEGMENT_SIZE:
+An earlier version of this script built ONE growing HNSW index and ONE
+growing BM25 token list for an entire (config, split) run, both held
+entirely in RAM, only touching disk once at the very end. This was found
+mid-run to be a real, imminent crash risk: this machine has 24GB total RAM
+(`sysctl hw.memsize`), and live process RSS growth (measured: 1.9GB at
+623,241 passages, tracking vector count almost exactly) projected to
+~52-60GB by the ~25.9M-passage hi+bn+en target -- more than double
+available RAM. Worse, because the HNSW index was never saved until
+success, a crash partway through would have discarded EVERY embedding
+computed so far while the checkpoint files still claimed those rows were
+"done" -- a silent, unrecoverable data-loss bug, not just a performance
+one. BM25 has the same shape of problem: `bm25s.BM25.index()` needs the
+full tokenized corpus materialized as Python objects, and Python's
+per-object overhead on millions of nested string lists is large relative
+to the tokens' raw disk size.
+
+The fix: output is split into SEGMENT_SIZE-passage segments, each with its
+own directory, own HNSW index, and own BM25 index, finalized (written to
+disk, memory released) as soon as it fills up -- not batched together
+across the entire run. This bounds peak RAM to roughly one segment's
+footprint regardless of how large the full corpus gets, and means a crash
+loses at most one in-progress segment (a few minutes of work), not
+everything. Segments are NOT automatically combined into one final index
+-- see scripts/merge_local_indexes.py, and note its own docstring caveat
+that a merge covering enough segments to approach this same RAM ceiling
+has the identical BM25-materialization problem. For hi+bn+en at full
+scale, a single final merged BM25 index may not fit in 24GB RAM either --
+this is a genuinely open problem, not yet solved, and either needs a
+bigger machine for the final merge or a federated/sharded serving
+architecture that queries segments separately. Flagging honestly per
+CLAUDE.md rather than pretending the segmenting fix solves everything.
 
 EMBEDDING BACKEND: MPS (Apple GPU via torch/transformers), fp16, NOT the
 ONNX int8 CPU model that src/hhgoa_rag/retrieval/local_embedder.py uses to
 embed QUERIES in the live API. This was a deliberate speed choice (measured
-~1227 texts/sec vs ~230 texts/sec for the fastest safe all-CPU-int8 config,
-~5.3x) made after the user explicitly chose GPU speed over precision-
-matching. IMPORTANT UNRESOLVED RISK: fp16-MPS passage vectors and int8-ONNX
-query vectors are NOT guaranteed to be numerically/semantically compatible
--- int8 quantization and fp16 both perturb the embedding space, in
-different directions, from the fp32 original. This index must NOT be
-treated as production-ready / swapped in for live serving until someone
-runs a retrieval consistency check (embed a known query both ways, confirm
-top-k results still make sense) -- see docs/FULL_INDEX_HANDOFF.md for the
-full writeup and what check to run. Never claim this is "production ready"
+~1435 texts/sec vs ~230 texts/sec for the fastest safe all-CPU-int8 config)
+made after the user explicitly chose GPU speed over precision-matching.
+IMPORTANT UNRESOLVED RISK: fp16-MPS passage vectors and int8-ONNX query
+vectors are NOT guaranteed to be numerically/semantically compatible --
+int8 quantization and fp16 both perturb the embedding space, in different
+directions, from the fp32 original. This index must NOT be treated as
+production-ready / swapped in for live serving until someone runs a
+retrieval consistency check (embed a known query both ways, confirm top-k
+results still make sense) -- see docs/FULL_INDEX_HANDOFF.md for the full
+writeup and what check to run. Never claim this is "production ready"
 without that check, per CLAUDE.md's Honesty section.
 
 Why not stay on ONNX int8 (the safe option)? Measured throughput ceiling:
@@ -54,9 +86,10 @@ Why not stay on ONNX int8 (the safe option)? Measured throughput ceiling:
   - CoreML EP (same int8 model): only 542/889 graph nodes offload to CoreML,
     rest falls back to CPU; measured slower than plain CPU (~62.6 texts/sec on
     a small batch) and crashed (SIGKILL) on a larger sorted-batch retry.
-  - MPS fp16, batch=128, sorted, DEFERRED cpu() sync (see _mps_embed_and_tokenize
-    docstring for why deferring sync matters): ~1227 texts/sec (measured, real
-    corpus text, reproducible).
+  - Native CoreML/ANE conversion (coremltools, fixed-shape): 694.7 texts/sec --
+    a fair, dedicated test, still ~2x slower than MPS.
+  - MPS fp16, batch=128, sorted, DEFERRED cpu() sync, inference_mode(): 1434.8
+    texts/sec (measured, real corpus text, reproducible) -- the winner.
 
 Usage:
     uv run python -m scripts.build_full_local_index --configs hi bn
@@ -86,7 +119,7 @@ SPLITS = ["train", "validation"]
 #   train/{prefix}train.parquet, validation/{prefix}val.parquet
 # We read them directly via pyarrow.parquet instead of `datasets`.
 # NOTE: "te" (Telugu) has NO train split on this dataset revision (confirmed:
-# 404 on train/teltrain.parquet) -- validation-only. Not in scope for phase 1.
+# 404 on train/teltrain.parquet) -- validation-only.
 CONFIG_TO_PARQUET_PREFIX = {
     "as": "asm",
     "bn": "ben",
@@ -149,38 +182,51 @@ LOG_EVERY_ROWS = 2000
 EMBED_DIM = 384
 
 # Accumulate this many passages before sorting-by-length + embedding as one
-# unit. Bigger pools -> better length-bucketing (less padding waste) but
-# coarser checkpoint/resume granularity and more RAM held at once. 8192 is a
-# middle ground; not deeply tuned, "take more storage/CPU" per user request.
+# GPU unit. Bigger pools -> better length-bucketing (less padding waste) but
+# more RAM held at once mid-pool. 8192 is a middle ground.
 POOL_SIZE = 8192
 # GPU forward-pass batch size. Measured sweep on real corpus text (fp16,
-# sorted, deferred sync): b64=954, b128=1227 (best), b256=1104 texts/sec.
+# sorted, deferred sync, inference_mode): b128=1434.8 texts/sec (best of
+# 64/128/256/512/1024 tried).
 MPS_BATCH = 128
+# Passages per finalized segment (own directory, own HNSW, own BM25). See the
+# module docstring's SEGMENTING section for why this exists and how it was
+# sized: measured ~2.0-2.3KB/passage for HNSW in RAM, conservatively assumed
+# ~7-9KB/passage for BM25's temporary token-list materialization (not
+# directly measured at scale -- treat as an estimate, not a verified number).
+# 500,000 passages/segment -> an estimated ~5-6GB peak per segment, well
+# under this machine's 24GB, with real headroom for the model/OS/other apps.
+SEGMENT_SIZE = 500_000
 
 
 def _checkpoint_path(config: str, split: str) -> Path:
     return CHECKPOINT_DIR / f"{config}_{split}.json"
 
 
-def _load_checkpoint(config: str, split: str) -> int:
+def _load_checkpoint(config: str, split: str) -> tuple[int, int]:
+    """Returns (next_row, next_segment_idx). Both only ever advance together,
+    at the moment a segment is fully finalized (saved to disk) -- see the
+    module docstring. A crash between finalizations replays from the last
+    safely-finalized segment, discarding the in-progress one."""
     p = _checkpoint_path(config, split)
     if not p.exists():
-        return 0
-    return json.loads(p.read_text())["next_row"]
+        return 0, 0
+    d = json.loads(p.read_text())
+    return d["next_row"], d.get("next_segment_idx", 0)
 
 
-def _save_checkpoint(config: str, split: str, next_row: int) -> None:
+def _save_checkpoint(config: str, split: str, next_row: int, next_segment_idx: int) -> None:
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     p = _checkpoint_path(config, split)
     tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"next_row": next_row}))
+    tmp.write_text(json.dumps({"next_row": next_row, "next_segment_idx": next_segment_idx}))
     tmp.rename(p)
 
 
 def _mark_shard_done(config: str, split: str) -> None:
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     p = _checkpoint_path(config, split)
-    p.write_text(json.dumps({"next_row": -1, "status": "complete"}))
+    p.write_text(json.dumps({"next_row": -1, "next_segment_idx": -1, "status": "complete"}))
 
 
 def _shard_done(config: str, split: str) -> bool:
@@ -188,6 +234,10 @@ def _shard_done(config: str, split: str) -> bool:
     if not p.exists():
         return False
     return json.loads(p.read_text()).get("status") == "complete"
+
+
+def _segment_dir(config: str, split: str, segment_idx: int) -> Path:
+    return OUTPUT_DIR / f"{config}_{split}_segment_{segment_idx:04d}"
 
 
 def _load_mps_model():
@@ -216,23 +266,18 @@ def _mps_embed_and_tokenize(
     for BM25 via the same SentencePiece model the production embedder uses
     (so lexical search stays consistent with the rest of the pipeline).
 
-    Two things matter for the measured ~1227 texts/sec:
+    Two things matter for the measured ~1435 texts/sec:
       1. Sort by token length before batching. Padding every text in a batch
          to the batch's longest passage wastes GPU compute on real MSMARCO
          data (lengths range ~19-4700+ tokens) -- sorting first cut time by
-         2.4x on its own (measured: 36.5s -> 23.35s for the same 2048 texts).
+         2.4x on its own.
       2. Defer `.cpu()` sync until ALL batches are queued, not once per
          batch. MPS ops are async; calling `.cpu()` inside the loop forces a
-         round-trip sync every batch and stalls the GPU queue. Deferring
-         sync to the end let the queue stay full (measured: 4.47s -> matches
-         the batch=64 fp32 numbers; the b128/fp16 combo hit 3.34s for the
-         same 4096 texts, i.e. ~1227 texts/sec).
+         round-trip sync every batch and stalls the GPU queue.
       3. `torch.inference_mode()` over `torch.no_grad()` -- lower autograd
-         bookkeeping overhead. Measured on real corpus text, 8192-item sort
-         pool, batch=128: no_grad=1279 texts/sec, inference_mode=1435
-         texts/sec (~12% more, on top of the above). Batch sizes above 128
-         (256/512/1024) were all slower even at this larger pool size --
-         128 is a real optimum here, not an artifact of a small sort pool.
+         bookkeeping overhead, ~12-17% faster on top of the above. Batch
+         sizes above 128 (256/512/1024) were all slower even at larger sort
+         pools -- 128 is a real optimum, not an artifact of pool size.
          Confirmed zero CPU-fallback ops (PYTORCH_MPS_LOG_FALLBACK showed
          nothing) -- the whole model runs natively on MPS.
     """
@@ -275,6 +320,74 @@ def _mps_embed_and_tokenize(
     return embeddings, bm25_tokens  # type: ignore[return-value]
 
 
+class _SegmentWriter:
+    """Owns one segment's in-progress HNSW index + output files. Finalizing
+    writes everything to disk, builds that segment's own BM25 index (bounded
+    to this segment's token count, not the whole run's), and releases the
+    in-memory HNSW/token state so the next segment starts with a clean RAM
+    footprint."""
+
+    def __init__(self, config: str, split: str, segment_idx: int):
+        from usearch.index import Index
+
+        self.config = config
+        self.split = split
+        self.segment_idx = segment_idx
+        self.dir = _segment_dir(config, split, segment_idx)
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.hnsw = Index(ndim=EMBED_DIM, metric="cos", dtype="f32")
+        self.next_key = 0
+        self.passages_f = open(self.dir / "passages.jsonl", "w")
+        self.tokens_f = open(self.dir / "bm25_tokens.jsonl", "w")
+
+    def add(self, embeddings, bm25_token_lists, texts, meta_list):
+        import numpy as np
+
+        n = len(texts)
+        keys = np.arange(self.next_key, self.next_key + n)
+        self.hnsw.add(keys, np.array(embeddings, dtype=np.float32))
+        for i, (text, meta, pieces) in enumerate(zip(texts, meta_list, bm25_token_lists, strict=True)):
+            key = self.next_key + i
+            self.passages_f.write(json.dumps({"key": key, "text": text, "metadata": meta}) + "\n")
+            self.tokens_f.write(json.dumps(pieces) + "\n")
+        self.passages_f.flush()
+        self.tokens_f.flush()
+        self.next_key += n
+
+    def finalize(self) -> None:
+        import bm25s
+
+        self.passages_f.close()
+        self.tokens_f.close()
+        self.hnsw.save(str(self.dir / "hnsw.usearch"))
+
+        corpus_tokens = []
+        with open(self.dir / "bm25_tokens.jsonl") as f:
+            for line in f:
+                corpus_tokens.append(json.loads(line))
+        bm25 = bm25s.BM25()
+        bm25.index(corpus_tokens, show_progress=False)
+        bm25.save(str(self.dir / "bm25"))
+
+        manifest = {
+            "config": self.config,
+            "split": self.split,
+            "segment_idx": self.segment_idx,
+            "n_passages": self.next_key,
+            "embed_dim": EMBED_DIM,
+            "embed_backend": (
+                "mps_fp16_transformers (NOT the production int8 ONNX query "
+                "embedder -- see build_full_local_index.py module docstring)"
+            ),
+            "bm25_backend": "bm25s",
+            "hnsw_backend": "usearch",
+            "status": "complete",
+            "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        (self.dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+        logger.info("Finalized segment %s (%d passages)", self.dir, self.next_key)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--configs", nargs="+", default=["hi", "bn"])
@@ -293,8 +406,6 @@ def main() -> None:
     from hhgoa_rag.ingestion.dedup import ContentDeduplicator
     import sentencepiece as spm
     from huggingface_hub import hf_hub_download
-    from usearch.index import Index
-    import numpy as np
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     DEDUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -309,177 +420,153 @@ def main() -> None:
     sp = spm.SentencePieceProcessor(model_file=sp_model_path)
     logger.info("Ready.")
 
-    passages_path = OUTPUT_DIR / "passages.jsonl"
-    hnsw_path = OUTPUT_DIR / "hnsw.usearch"
-    tokens_path = OUTPUT_DIR / "bm25_tokens.jsonl"  # one JSON array of token strings per line
-
-    hnsw = Index(ndim=EMBED_DIM, metric="cos", dtype="f32")
-    if hnsw_path.exists():
-        hnsw.load(str(hnsw_path))
-        next_key = len(hnsw)
-        logger.info("Resuming HNSW index with %d existing vectors", next_key)
-    else:
-        next_key = 0
-
-    total_indexed = next_key
     t_start = time.monotonic()
+    # On a resumed run, count passages already sitting in finalized segments
+    # from prior invocations -- otherwise this only tracks what THIS process
+    # writes and undercounts the true total in progress/completion logs
+    # (the on-disk data itself is unaffected either way; this is a reporting
+    # fix, not a data-integrity one).
+    grand_total_indexed = 0
+    for manifest_path in OUTPUT_DIR.glob("*/manifest.json"):
+        try:
+            grand_total_indexed += json.loads(manifest_path.read_text()).get("n_passages", 0)
+        except (json.JSONDecodeError, OSError):
+            continue
+    if grand_total_indexed:
+        logger.info("Resuming: %d passages already in finalized segments on disk", grand_total_indexed)
 
-    passages_f = open(passages_path, "a")
-    tokens_f = open(tokens_path, "a")
+    for config in args.configs:
+        for split in SPLITS:
+            if _shard_done(config, split):
+                logger.info("Shard %s/%s already complete, skipping", config, split)
+                continue
 
-    def flush_pool(pending_texts: list[str], pending_meta: list[dict]) -> None:
-        nonlocal next_key, total_indexed
-        if not pending_texts:
-            return
-        embeddings, bm25_token_lists = _mps_embed_and_tokenize(tok, model, sp, pending_texts)
-        n = len(pending_texts)
-        keys = np.arange(next_key, next_key + n)
-        hnsw.add(keys, np.array(embeddings, dtype=np.float32))
-        for i, (text, meta, pieces) in enumerate(
-            zip(pending_texts, pending_meta, bm25_token_lists, strict=True)
-        ):
-            key = next_key + i
-            passages_f.write(json.dumps({"key": key, "text": text, "metadata": meta}) + "\n")
-            tokens_f.write(json.dumps(pieces) + "\n")
-        passages_f.flush()
-        tokens_f.flush()
-        next_key += n
-        total_indexed += n
+            start_row, segment_idx = _load_checkpoint(config, split)
+            logger.info(
+                "Streaming %s/%s from row %d (segment %d) …", config, split, start_row, segment_idx
+            )
 
-    try:
-        for config in args.configs:
-            for split in SPLITS:
-                if _shard_done(config, split):
-                    logger.info("Shard %s/%s already complete, skipping", config, split)
-                    continue
-
-                start_row = _load_checkpoint(config, split)
-                logger.info("Streaming %s/%s from row %d …", config, split, start_row)
-
-                try:
-                    ds = _iter_parquet_rows(config, split, args.dataset_revision)
-                except Exception as e:
-                    logger.warning("Split %s/%s unavailable (%s), skipping", config, split, e)
-                    _mark_shard_done(config, split)
-                    continue
-
-                row_idx = -1
-                emitted_this_shard = 0
-                pending_texts: list[str] = []
-                pending_meta: list[dict] = []
-
-                for row_idx, record in enumerate(ds):
-                    if row_idx < start_row:
-                        continue
-
-                    occurrences, _rejected = parse_record(
-                        record,
-                        config_language=config,
-                        split=split,
-                        source_shard=config,
-                        source_row=row_idx,
-                        dataset_revision=args.dataset_revision or "unknown",
-                    )
-
-                    for occ in occurrences:
-                        dedup = dedup_en if occ.is_original_english else dedup_lang
-                        if dedup.is_duplicate(occ.content_hash):
-                            continue
-                        dedup.mark_seen(occ.content_hash, occ.content_hash)
-
-                        chunks = chunker.chunk(occ.normalized_text, occ.content_hash)
-                        for chunk in chunks:
-                            pending_texts.append(chunk.text)
-                            pending_meta.append(
-                                {
-                                    "language": occ.passage_language,
-                                    "config_language": occ.config_language,
-                                    "split": split,
-                                    "source_row": occ.source_row,
-                                    "passage_position": occ.passage_position,
-                                    "content_hash": occ.content_hash,
-                                    "chunk_ordinal": chunk.chunk_ordinal,
-                                }
-                            )
-
-                    if len(pending_texts) >= POOL_SIZE:
-                        flush_pool(pending_texts, pending_meta)
-                        pending_texts, pending_meta = [], []
-                        dedup_en.flush()
-                        dedup_lang.flush()
-                        _save_checkpoint(config, split, row_idx + 1)
-
-                    emitted_this_shard += 1
-                    if emitted_this_shard % LOG_EVERY_ROWS == 0:
-                        elapsed = time.monotonic() - t_start
-                        rate = total_indexed / elapsed if elapsed > 0 else 0
-                        logger.info(
-                            "%s/%s: %d source rows, %d passages indexed so far (%.1fs elapsed, %.1f passages/sec)",
-                            config,
-                            split,
-                            emitted_this_shard,
-                            total_indexed,
-                            elapsed,
-                            rate,
-                        )
-
-                    if args.max_rows_per_config is not None and (
-                        row_idx - start_row + 1
-                    ) >= args.max_rows_per_config:
-                        break
-
-                if pending_texts:
-                    flush_pool(pending_texts, pending_meta)
-                    dedup_en.flush()
-                    dedup_lang.flush()
-                    _save_checkpoint(config, split, row_idx + 1)
-
+            try:
+                ds = _iter_parquet_rows(config, split, args.dataset_revision)
+            except Exception as e:
+                logger.warning("Split %s/%s unavailable (%s), skipping", config, split, e)
                 _mark_shard_done(config, split)
-                logger.info(
-                    "Completed %s/%s: %d source rows this run, %d passages total indexed",
-                    config,
-                    split,
-                    emitted_this_shard,
-                    total_indexed,
+                continue
+
+            segment = _SegmentWriter(config, split, segment_idx)
+            row_idx = -1
+            emitted_this_shard = 0
+            pending_texts: list[str] = []
+            pending_meta: list[dict] = []
+
+            def flush_pool() -> None:
+                nonlocal pending_texts, pending_meta
+                if not pending_texts:
+                    return
+                embeddings, bm25_token_lists = _mps_embed_and_tokenize(tok, model, sp, pending_texts)
+                segment.add(embeddings, bm25_token_lists, pending_texts, pending_meta)
+                pending_texts, pending_meta = [], []
+
+            for row_idx, record in enumerate(ds):
+                if row_idx < start_row:
+                    continue
+
+                occurrences, _rejected = parse_record(
+                    record,
+                    config_language=config,
+                    split=split,
+                    source_shard=config,
+                    source_row=row_idx,
+                    dataset_revision=args.dataset_revision or "unknown",
                 )
 
-        hnsw.save(str(hnsw_path))
-        logger.info("Saved HNSW index (%d vectors) to %s", len(hnsw), hnsw_path)
+                for occ in occurrences:
+                    dedup = dedup_en if occ.is_original_english else dedup_lang
+                    if dedup.is_duplicate(occ.content_hash):
+                        continue
+                    dedup.mark_seen(occ.content_hash, occ.content_hash)
 
-    finally:
-        passages_f.close()
-        tokens_f.close()
+                    chunks = chunker.chunk(occ.normalized_text, occ.content_hash)
+                    for chunk in chunks:
+                        pending_texts.append(chunk.text)
+                        pending_meta.append(
+                            {
+                                "language": occ.passage_language,
+                                "config_language": occ.config_language,
+                                "split": split,
+                                "source_row": occ.source_row,
+                                "passage_position": occ.passage_position,
+                                "content_hash": occ.content_hash,
+                                "chunk_ordinal": chunk.chunk_ordinal,
+                            }
+                        )
 
-    # ── Final BM25 build (requires full in-memory token corpus — see docstring) ──
-    logger.info("Loading full token corpus for BM25 build …")
-    import bm25s
+                if len(pending_texts) >= POOL_SIZE:
+                    flush_pool()
+                    dedup_en.flush()
+                    dedup_lang.flush()
 
-    corpus_tokens = []
-    with open(tokens_path) as f:
-        for line in f:
-            corpus_tokens.append(json.loads(line))
-    logger.info("Loaded %d token sequences, building BM25 index …", len(corpus_tokens))
-    t0 = time.monotonic()
-    bm25 = bm25s.BM25()
-    bm25.index(corpus_tokens)
-    bm25.save(str(OUTPUT_DIR / "bm25"))
-    logger.info("BM25 index built + saved in %.1fs", time.monotonic() - t0)
+                    if segment.next_key >= SEGMENT_SIZE:
+                        segment.finalize()
+                        grand_total_indexed += segment.next_key
+                        segment_idx += 1
+                        _save_checkpoint(config, split, row_idx + 1, segment_idx)
+                        segment = _SegmentWriter(config, split, segment_idx)
 
-    manifest = {
-        "source": f"{DATASET_REPO} (direct HF stream, not Pinecone metadata)",
-        "configs": args.configs,
-        "n_passages": total_indexed,
-        "embed_dim": EMBED_DIM,
-        "embed_backend": "mps_fp16_transformers (NOT the production int8 ONNX query embedder -- see module docstring for the unresolved precision-consistency risk)",
-        "bm25_backend": "bm25s",
-        "hnsw_backend": "usearch",
-        "tokenization": "sentencepiece_pieces",
-        "max_rows_per_config": args.max_rows_per_config,
-        "label": "smoke" if args.max_rows_per_config is not None else "full_phase1_hi_bn",
-        "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    }
-    (OUTPUT_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2))
-    logger.info("Done: %s", manifest)
+                emitted_this_shard += 1
+                if emitted_this_shard % LOG_EVERY_ROWS == 0:
+                    elapsed = time.monotonic() - t_start
+                    total_so_far = grand_total_indexed + segment.next_key
+                    rate = total_so_far / elapsed if elapsed > 0 else 0
+                    logger.info(
+                        "%s/%s: %d source rows, %d passages indexed so far (%.1fs elapsed, %.1f passages/sec, segment %d has %d)",
+                        config,
+                        split,
+                        emitted_this_shard,
+                        total_so_far,
+                        elapsed,
+                        rate,
+                        segment_idx,
+                        segment.next_key,
+                    )
+
+                if args.max_rows_per_config is not None and row_idx + 1 >= args.max_rows_per_config:
+                    # Absolute row position, NOT relative to start_row -- a
+                    # relative check would let a resumed capped run process
+                    # extra rows beyond the original cap (found via testing:
+                    # resuming from row 90 with max_rows=400 processed rows
+                    # 90-489 instead of stopping at row 399). Only affects
+                    # this smoke-test flag; the real uncapped run never
+                    # takes this branch.
+                    break
+
+            if pending_texts:
+                flush_pool()
+                dedup_en.flush()
+                dedup_lang.flush()
+
+            if segment.next_key > 0:
+                segment.finalize()
+                grand_total_indexed += segment.next_key
+                segment_idx += 1
+
+            _save_checkpoint(config, split, row_idx + 1, segment_idx)
+            _mark_shard_done(config, split)
+            logger.info(
+                "Completed %s/%s: %d source rows this run, %d segments, %d passages total indexed",
+                config,
+                split,
+                emitted_this_shard,
+                segment_idx,
+                grand_total_indexed,
+            )
+
+    logger.info(
+        "Done. %d passages across all segments. Segments are NOT auto-merged -- "
+        "run scripts/merge_local_indexes.py to combine them (see its docstring "
+        "for the RAM caveat on merging many/large segments).",
+        grand_total_indexed,
+    )
 
 
 if __name__ == "__main__":
