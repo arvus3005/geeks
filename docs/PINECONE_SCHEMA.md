@@ -1,5 +1,14 @@
 # Pinecone Index Schema — MSMARCO-XI
 
+> **Scope note:** this describes `pinecone_contract.py`'s contract for `msmarco-xi`
+> (Pinecone-integrated `multilingual-e5-large` embedding), used by the original
+> canary/pilot preparation and indexing scripts below — unchanged in code. It is
+> **not** the schema of the live serving index. The API now queries
+> `msmarco-xi-e5small` (384-dim, raw vectors, locally computed e5-small
+> embeddings, no integrated-embedding contract) — see
+> [README.md](../README.md) for why and `src/hhgoa_rag/retrieval/local_embedder.py`
+> for the current embedding path.
+
 **Source of truth:** `src/hhgoa_rag/pinecone_contract.py`
 
 All lifecycle, ingestion, validation, and reporting code imports constants from

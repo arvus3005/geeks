@@ -1,5 +1,15 @@
 # Ingestion Runbook — MSMARCO-XI → Pinecone
 
+> **Scope note:** this runbook is accurate for what it describes — preparing
+> and indexing the original e5-large canary/pilot corpus into `msmarco-xi`.
+> It predates two later changes: (1) the corpus was extended past the
+> 300-record canary up to ~57,240 passages via the same scripts, and (2) the
+> live serving index has since diverged to `msmarco-xi-e5small` (local
+> e5-small embedding, no Pinecone-integrated embedding) — populated by
+> `scripts/reindex_e5small.py`, which re-embeds this runbook's output rather
+> than re-running these steps. See [README.md](../README.md) for current
+> status and the reasoning.
+
 **Mandatory sequence. Follow in order. Do not skip steps.**
 
 ---

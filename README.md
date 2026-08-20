@@ -16,7 +16,7 @@
 | **6. Model Harness** | Structured orchestration (tool calls, retries, structured I/O, error recovery) | Pydantic v2 I/O schemas, structured error envelopes, fallback routing, deterministic UUIDv5 passage ID verification, and atomic indexing checkpoints. | **IMPLEMENTED** |
 | **7. Guardrails** | Off-topic rejection, input safety, hallucination checks, grounded answers (knows when *not* to answer) | Input safety guards ([`input_guards.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/guardrails/input_guards.py)) + output grounding validator ([`grounding.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/src/hhgoa_rag/answer/grounding.py)) that abstains on ungrounded context. | **IMPLEMENTED** |
 | **8. Dataset Contract** | Grounding on MSMARCO-XI dataset without data leakage | Leakage isolation tests ([`test_leakage.py`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/tests/contract/test_leakage.py)) ensuring query/answer labels are stripped during indexing. | **VERIFIED** |
-| **9. Test & Reliability Suite** | Robust offline verification without flaky external dependencies | **672 passed unit, contract, and behavioural tests** in offline mode with zero live provider calls. | **672 PASSED** |
+| **9. Test & Reliability Suite** | Robust offline verification without flaky external dependencies | **721 passed unit, contract, and behavioural tests** (10 skipped) in offline mode with zero live provider calls. | **721 PASSED** |
 
 ---
 
@@ -36,8 +36,14 @@
 
 **Left / blocked:**
 - Retrieval quality has been spot-checked (ground-truth self-retrieval, related/unrelated similarity gap) but not run through a systematic quality eval (e.g. MRR@k against a held-out query set) — spot checks confirm the pipeline is *correct*, not a measured quality number.
-- Further growth toward a larger pilot corpus is not scheduled.
-- Full MSMARCO-XI corpus (~24.87M vectors, ~171.67 GB extrapolated) has not been started and requires a dedicated production Pinecone tier — out of scope for this submission window.
+
+> ## 🎯 Current direction (team decision, 2026-08-20): full corpus, self-hosted, not Pinecone
+>
+> The team decided the 57k pilot is not sufficient — **the goal is now the full MSMARCO-XI corpus** (~24.87M vectors extrapolated at this chunking rate). Pinecone is **not** the path for this: a hosted, per-vector-billed, quota-metered service doesn't fit that scale on a free/pilot tier (see the embedding-quota exhaustion story above, and CLAUDE.md's Corpus policy — sampling is smoke/pilot-only, never the final corpus).
+>
+> **The path forward is `feat/self-hosted-hybrid-retrieval`** (pushed, not merged — see the "Self-Hosted Hybrid Retrieval" section below): BM25 (`bm25s`) + HNSW (`usearch`) built and queried fully in-process, no per-vector hosting cost, no quota ceiling. It's already validated at 57k-passage scale (P50 3.6ms in-process, faster than the deployed Pinecone path) — the open work is scaling that same pipeline (`scripts/build_local_hybrid_index.py`) to the full corpus: real capacity planning (RAM for a ~24.87M-row HNSW index and BM25 postings, disk for the embeddings and passage sidecar — the current 57k-passage index is already 256MB, so naive linear scaling alone projects to roughly 100GB+ at full scale, not yet verified), a real ingestion pipeline pulling from the HuggingFace source (not from Pinecone metadata, which was only ever a 57k subset), and probably chunked/incremental index construction rather than one all-at-once build script run.
+>
+> **Not started yet** — this is the next concrete task, not something already attempted and blocked.
 
 ---
 
@@ -65,9 +71,21 @@ flowchart TD
   - **Why ONNX + native SentencePiece over `transformers.AutoTokenizer`**: identical 250k-token XLM-RoBERTa vocabulary measured ~440MB via the JSON-based `tokenizers` wrapper vs. ~122MB via `sentencepiece.SentencePieceProcessor` — same data, ~3.6x difference from format alone.
   - Full measurement trail, numbers, and dead ends are documented in `src/hhgoa_rag/retrieval/local_embedder.py`'s module docstring.
 - **Language detection**: Unicode script ranges (Devanagari → hi, Bengali → bn, else → en) — replaced `langdetect`, whose first real call lazily loaded ~58MB of language-profile data (measured; this alone was the difference between fitting and not fitting under 512MB).
-- **Reranker**: `bge-reranker-v2-m3` via Pinecone inference API for cross-lingual precision.
+- **Reranker**: **not currently active.** `bge-reranker-v2-m3` was available via Pinecone's integrated `search_records` API, which the raw-vector `index.query()` path (adopted to fix the embedding-quota/memory issues above) doesn't go through — every live timing breakdown shows `rerank: 0.0ms`. Retrieval currently relies on raw vector similarity (plus BM25+RRF fusion on the `feat/self-hosted-hybrid-retrieval` branch — see below); reintroducing reranking is open follow-up work, not done.
 - **STT Engine**: Sarvam AI API for Indic speech recognition with local Whisper fallback.
 - **Guardrail Layer**: Strict token-limit enforcement, regex-based adversarial input rejection, and token overlap/containment grounding verification.
+
+---
+
+## 🧪 Self-Hosted Hybrid Retrieval — `feat/self-hosted-hybrid-retrieval` branch
+
+Pushed to GitHub, **not merged into `main`, not wired into the live API**. Explores fully in-process retrieval (BM25 + HNSW, no Pinecone, no network hop) as further "vast retrieval" exploration — started only after the deployed Pinecone path was already verified under 200ms, per project direction to not let this compete with the working latency fix.
+
+- **Stack**: `bm25s` (BM25, tokenized on SentencePiece subword pieces — not naive whitespace, which breaks for Devanagari/Bengali) + `usearch` (HNSW, over the same e5-small embeddings used on `main`), fused via Reciprocal Rank Fusion.
+- **Build**: `scripts/build_local_hybrid_index.py` pulls all 57,240 passages from the live Pinecone index's own metadata and builds both indexes locally under `artifacts/local_index/` (gitignored, ~256MB — rerun the script to regenerate; not committed).
+- **Search**: `src/hhgoa_rag/retrieval/local_hybrid_store.py` — `search(query_text, query_vector, top_k)`, drop-in-shaped results (`{id, score, fields}`) matching `PineconeStore.search_by_vector`.
+- **Measured**: in-process latency P50 3.6ms / P95-P100 21.7ms (~12x faster than the deployed Pinecone path's server-side 42.4ms P50, since there's no network hop). Verified end-to-end through extraction and grounding, not just raw retrieval. Language coverage in the underlying corpus: en 54.6%, hi 22.7%, bn 22.7% (real, substantial, not an even split).
+- **Not done**: no config flag to switch the live API onto this backend, no systematic quality eval (spot-checked only), no test coverage.
 
 ---
 
@@ -84,7 +102,7 @@ uv sync --frozen --all-extras
 
 ### 2. Run Test Suite (Offline)
 ```bash
-# Run all 672 unit, contract, and behavioural tests
+# Run all 721 unit, contract, and behavioural tests (10 skipped)
 uv run pytest
 ```
 
@@ -134,7 +152,8 @@ uv run uvicorn hhgoa_rag.api.app:app --host 0.0.0.0 --port 8000 --reload
 
 ## 📚 Key References & Documentation
 
-- [`docs/INGESTION_RUNBOOK.md`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/docs/INGESTION_RUNBOOK.md) — Live indexing & operations runbook.
-- [`docs/PINECONE_SCHEMA.md`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/docs/PINECONE_SCHEMA.md) — Canonical vector and payload schema.
-- [`docs/DATASET_CONTRACT.md`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/docs/DATASET_CONTRACT.md) — Dataset leakage boundary definitions.
-- [`docs/FINAL_PREINDEX_READINESS_REPORT.md`](file:///Users/suvra/Documents/hackerhouse-goa-task-2/docs/FINAL_PREINDEX_READINESS_REPORT.md) — Pre-index hardening verification report.
+- [`docs/INGESTION_RUNBOOK.md`](docs/INGESTION_RUNBOOK.md) — original prep/canary indexing runbook (`prepare_canary.py` → `index_canary.py`, into `msmarco-xi`, e5-large). Still accurate for what it describes; the serving index has since diverged — see [Indexing Status](#-indexing-status--whats-done-whats-left) above.
+- [`docs/PINECONE_SCHEMA.md`](docs/PINECONE_SCHEMA.md) — canonical contract for `msmarco-xi` (the original e5-large ingestion pipeline, unchanged in code). Not the schema of the live serving index (`msmarco-xi-e5small`, raw vectors, no integrated-embedding contract).
+- [`docs/DATASET_CONTRACT.md`](docs/DATASET_CONTRACT.md) — dataset leakage boundary definitions; still enforced, unchanged.
+
+Three pre-index-era docs (`FINAL_PREINDEX_READINESS_REPORT.md`, `PROJECT_SUMMARY.md`, `SKEPTICAL_PREINDEX_AUDIT.md`) were removed — they described a "not yet indexed, awaiting live execution" snapshot from before any real indexing happened, fully superseded by this README and no longer useful as reference.
