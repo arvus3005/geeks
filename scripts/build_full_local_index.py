@@ -259,6 +259,57 @@ def _load_mps_model():
     return tok, model
 
 
+def _load_cpu_model():
+    """Fallback for machines without MPS -- Windows, Linux, or Intel Macs.
+    Reuses hhgoa_rag.retrieval.local_embedder verbatim: the SAME ONNX int8
+    model the production API uses to embed QUERIES. Ironically this makes
+    contributor shards built on CPU MORE consistent with the live query
+    embedder than this machine's own MPS fp16 shards (see module docstring
+    UNRESOLVED RISK) -- there is no precision-mismatch concern for the CPU
+    path. Cross-platform: onnxruntime + sentencepiece both run on Windows
+    and Linux, no torch/CUDA required, so contributors on this path don't
+    need `uv sync --extra gpu-index` at all.
+
+    Sets HHGOA_ONNX_INTRA_THREADS to use every core on this machine, same
+    as the reasoning that got the CPU-only path from ~41.6 to ~230
+    texts/sec during benchmarking on this M4 Pro (8 P-cores) -- an
+    unknown-but-probably-different number on whatever CPU a contributor
+    actually has, since this environment variable is read once at model
+    load time inside local_embedder._build().
+    """
+    import os
+
+    os.environ.setdefault("HHGOA_ONNX_INTRA_THREADS", str(os.cpu_count() or 4))
+    import hhgoa_rag.retrieval.local_embedder as le
+
+    le._lazy_load()
+    return le
+
+
+def _cpu_embed_and_tokenize(
+    le, texts: list[str]
+) -> tuple[list[list[float]], list[list[str]]]:
+    """CPU/ONNX equivalent of _mps_submit()+_mps_drain() combined (no
+    async queue to split across on CPU, so no separate submit/drain phases
+    needed). Applies the same length-sort-before-batching trick that gave
+    a measured 2.1x win on the CPU path in isolation (unsorted 41.6/sec ->
+    sorted 87.9/sec, before threading) -- see the module docstring's "Why
+    not stay on ONNX int8" section for the full CPU benchmark trail.
+    """
+    assert le._sp is not None
+    all_pieces = [le._sp.encode(t, out_type=str) for t in texts]
+    order = sorted(range(len(texts)), key=lambda i: len(all_pieces[i]))
+    sorted_texts = [texts[i] for i in order]
+
+    embeddings_sorted = le.embed_passages_batch(sorted_texts, batch_size=64)
+
+    embeddings: list[list[float] | None] = [None] * len(texts)
+    for pos, orig_idx in enumerate(order):
+        embeddings[orig_idx] = embeddings_sorted[pos]
+    assert all(e is not None for e in embeddings)
+    return embeddings, all_pieces  # type: ignore[return-value]
+
+
 def _mps_embed_and_tokenize(
     tok, model, sp, texts: list[str]
 ) -> tuple[list[list[float]], list[list[str]]]:
@@ -327,12 +378,13 @@ class _SegmentWriter:
     in-memory HNSW/token state so the next segment starts with a clean RAM
     footprint."""
 
-    def __init__(self, config: str, split: str, segment_idx: int):
+    def __init__(self, config: str, split: str, segment_idx: int, embed_backend_label: str):
         from usearch.index import Index
 
         self.config = config
         self.split = split
         self.segment_idx = segment_idx
+        self.embed_backend_label = embed_backend_label
         self.dir = _segment_dir(config, split, segment_idx)
         self.dir.mkdir(parents=True, exist_ok=True)
         self.hnsw = Index(ndim=EMBED_DIM, metric="cos", dtype="f32")
@@ -375,10 +427,7 @@ class _SegmentWriter:
             "segment_idx": self.segment_idx,
             "n_passages": self.next_key,
             "embed_dim": EMBED_DIM,
-            "embed_backend": (
-                "mps_fp16_transformers (NOT the production int8 ONNX query "
-                "embedder -- see build_full_local_index.py module docstring)"
-            ),
+            "embed_backend": self.embed_backend_label,
             "bm25_backend": "bm25s",
             "hnsw_backend": "usearch",
             "status": "complete",
@@ -399,13 +448,19 @@ def main() -> None:
         help="Caps rows per (config, split). Leave unset for the real full corpus; "
         "if set, the caller MUST label the resulting artifact smoke/pilot/experiment per CLAUDE.md.",
     )
+    ap.add_argument(
+        "--device",
+        choices=["auto", "mps", "cpu"],
+        default="auto",
+        help="auto detects MPS (Apple Silicon) and falls back to CPU (ONNX int8, "
+        "cross-platform, no torch/CUDA needed) if MPS isn't available. Force one "
+        "explicitly with mps/cpu.",
+    )
     args = ap.parse_args()
 
     from hhgoa_rag.dataset.parser import parse_record
     from hhgoa_rag.ingestion.chunkers import get_chunker
     from hhgoa_rag.ingestion.dedup import ContentDeduplicator
-    import sentencepiece as spm
-    from huggingface_hub import hf_hub_download
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     DEDUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -414,10 +469,48 @@ def main() -> None:
     dedup_lang = ContentDeduplicator(DEDUP_DIR / "dedup_lang.sqlite")
     chunker = get_chunker("passage_native")
 
-    logger.info("Loading MPS embedding model (fp16) + SentencePiece tokenizer…")
-    tok, model = _load_mps_model()
-    sp_model_path = hf_hub_download("intfloat/multilingual-e5-small", "sentencepiece.bpe.model")
-    sp = spm.SentencePieceProcessor(model_file=sp_model_path)
+    device = args.device
+    if device == "auto":
+        try:
+            import torch
+
+            device = "mps" if torch.backends.mps.is_available() else "cpu"
+        except ImportError:
+            device = "cpu"  # torch not installed -- e.g. `uv sync` without --extra gpu-index
+        logger.info("Auto-detected device: %s", device)
+
+    if device == "mps":
+        import sentencepiece as spm
+        from huggingface_hub import hf_hub_download
+
+        logger.info("Loading MPS embedding model (fp16) + SentencePiece tokenizer…")
+        tok, model = _load_mps_model()
+        sp_model_path = hf_hub_download("intfloat/multilingual-e5-small", "sentencepiece.bpe.model")
+        sp = spm.SentencePieceProcessor(model_file=sp_model_path)
+
+        def embed_fn(texts: list[str]):
+            return _mps_embed_and_tokenize(tok, model, sp, texts)
+
+        embed_backend_label = (
+            "mps_fp16_transformers (NOT the production int8 ONNX query embedder "
+            "-- see build_full_local_index.py module docstring)"
+        )
+    elif device == "cpu":
+        logger.info(
+            "Loading CPU embedding model (ONNX int8 -- the SAME model the production "
+            "query embedder uses, so no precision-mismatch risk on this path)…"
+        )
+        le = _load_cpu_model()
+
+        def embed_fn(texts: list[str]):
+            return _cpu_embed_and_tokenize(le, texts)
+
+        embed_backend_label = (
+            "cpu_int8_onnx (SAME model as the production query embedder -- "
+            "no precision-mismatch risk, unlike the mps_fp16 path)"
+        )
+    else:
+        raise ValueError(f"unknown --device {device!r}")
     logger.info("Ready.")
 
     t_start = time.monotonic()
@@ -453,7 +546,7 @@ def main() -> None:
                 _mark_shard_done(config, split)
                 continue
 
-            segment = _SegmentWriter(config, split, segment_idx)
+            segment = _SegmentWriter(config, split, segment_idx, embed_backend_label)
             row_idx = -1
             emitted_this_shard = 0
             pending_texts: list[str] = []
@@ -463,7 +556,7 @@ def main() -> None:
                 nonlocal pending_texts, pending_meta
                 if not pending_texts:
                     return
-                embeddings, bm25_token_lists = _mps_embed_and_tokenize(tok, model, sp, pending_texts)
+                embeddings, bm25_token_lists = embed_fn(pending_texts)
                 segment.add(embeddings, bm25_token_lists, pending_texts, pending_meta)
                 pending_texts, pending_meta = [], []
 
@@ -511,7 +604,7 @@ def main() -> None:
                         grand_total_indexed += segment.next_key
                         segment_idx += 1
                         _save_checkpoint(config, split, row_idx + 1, segment_idx)
-                        segment = _SegmentWriter(config, split, segment_idx)
+                        segment = _SegmentWriter(config, split, segment_idx, embed_backend_label)
 
                 emitted_this_shard += 1
                 if emitted_this_shard % LOG_EVERY_ROWS == 0:
