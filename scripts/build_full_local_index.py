@@ -608,11 +608,29 @@ def main() -> None:
 
                 if len(pending_texts) >= POOL_SIZE:
                     flush_pool()
-                    dedup_en.flush()
-                    dedup_lang.flush()
+                    # dedup commits are deliberately NOT here. mark_seen()
+                    # buffers hashes in memory only; committing them to
+                    # SQLite here (once per POOL_SIZE, ~8192 passages) while
+                    # a segment only saves to disk once per SEGMENT_SIZE
+                    # (~500,000 passages) breaks the crash-safety invariant:
+                    # a kill between two pool flushes but before the segment
+                    # finalizes would have already committed those hashes as
+                    # "seen" in SQLite, while the embedded passages behind
+                    # them were never written anywhere -- on resume they'd
+                    # be silently skipped as duplicates and permanently
+                    # lost, with no error and a final count that's just
+                    # quietly short. Found this happening for real: a kill
+                    # mid-segment-5 orphaned 139,334 already-dedup-committed
+                    # Tamil passages this way. Committing dedup only when
+                    # the SEGMENT finalizes (below) keeps a kill's blast
+                    # radius to "redo the in-progress segment", matching
+                    # what the crash-safety design was always supposed to
+                    # guarantee.
 
                     if segment.next_key >= SEGMENT_SIZE:
                         segment.finalize()
+                        dedup_en.flush()
+                        dedup_lang.flush()
                         grand_total_indexed += segment.next_key
                         segment_idx += 1
                         _save_checkpoint(config, split, row_idx + 1, segment_idx)
@@ -647,11 +665,11 @@ def main() -> None:
 
             if pending_texts:
                 flush_pool()
-                dedup_en.flush()
-                dedup_lang.flush()
 
             if segment.next_key > 0:
                 segment.finalize()
+                dedup_en.flush()
+                dedup_lang.flush()
                 grand_total_indexed += segment.next_key
                 segment_idx += 1
 
