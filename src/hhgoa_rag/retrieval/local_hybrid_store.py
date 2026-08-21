@@ -7,9 +7,8 @@ Why hybrid, not dense-only
 --------------------------
 Dense embedding search (what Pinecone/local_embedder alone provide) is good
 at semantic/paraphrase matches but can miss exact keyword hits — names,
-numbers, rare terms — that a lexical method catches reliably. This is the
-same pattern proven by multiple reference implementations for this task
-(voice-HHGoa-main, hh-goa-rag-main): retrieve from both, then fuse.
+numbers, rare terms — that a lexical method catches reliably. Retrieve
+from both, then fuse.
 
 Why RRF, not a weighted score blend
 ------------------------------------

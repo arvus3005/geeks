@@ -90,7 +90,7 @@ def _check_write_guards(mode: str, args: argparse.Namespace) -> bool:
             print(
                 f"ERROR: Full mode refused. Missing: {', '.join(missing)}\n"
                 "DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED.\n"
-                "See docs/INGESTION_RUNBOOK.md for prerequisites.",
+                "This script targets the retired Pinecone pilot pipeline.",
                 file=sys.stderr,
             )
             return False
@@ -156,7 +156,7 @@ def main() -> None:
             print(
                 "ERROR: --confirm-full-ingest is required for full mode.\n"
                 "DO NOT RUN UNTIL INFRASTRUCTURE AND COST ARE APPROVED.\n"
-                "See docs/INGESTION_RUNBOOK.md for prerequisites.",
+                "This script targets the retired Pinecone pilot pipeline.",
                 file=sys.stderr,
             )
             sys.exit(1)

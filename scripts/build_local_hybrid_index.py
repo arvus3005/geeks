@@ -8,8 +8,7 @@ Pinecone already meets the latency target once deployed near its region
 "vast chunking/retrieval" per the task spec, not a fix for a problem —
 in-process hybrid search removes the network hop entirely and adds lexical
 (BM25) recall that pure dense search can miss (exact keyword/name/number
-matches), matching the hybrid pattern proven by multiple reference
-implementations (voice-HHGoa-main, hh-goa-rag-main).
+matches).
 
 Pulls passage text from the live Pinecone index's own metadata (same
 approach as scripts/reindex_e5small.py) rather than re-downloading from
@@ -47,10 +46,9 @@ def _sp_tokenize(texts: list[str]) -> list[list[str]]:
     """Tokenize on SentencePiece subword pieces, stringified as BM25 terms.
 
     Not whitespace splitting — that breaks for Devanagari/Bengali, which
-    don't reliably word-segment on spaces the way Latin scripts do (shruti
-    -main's README notes this exact failure mode with off-the-shelf
-    tokenizers). Subword pieces are a script-agnostic, already-verified-
-    correct choice since local_embedder.py's tokenizer is used unchanged.
+    don't reliably word-segment on spaces the way Latin scripts do.
+    Subword pieces are a script-agnostic, already-verified-correct choice
+    since local_embedder.py's tokenizer is used unchanged.
     """
     import hhgoa_rag.retrieval.local_embedder as le
 

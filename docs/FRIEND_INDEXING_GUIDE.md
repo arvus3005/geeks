@@ -1,224 +1,173 @@
-# Indexing Guide for Contributors
+# Indexing Guide — For a Friend Helping Out on Windows
 
-Hi — you've been asked to help build part of a large search index for HH
-Goa 2026 Task 2. This document has everything you need. No other context
-is required. Setup takes about 15 minutes. After that, the indexing runs
-by itself for a long time (likely several hours) — you don't need to
-watch it the whole time.
+This guide is written for **one person, on one Windows PC, indexing one
+language**. If you're reading this, someone on the team asked you to help
+build part of a large multilingual search index. This document has
+everything you need — no other context required, and it's written so
+either you or an AI coding assistant (like Claude Code or Copilot) can
+follow it directly.
 
-If anything here doesn't match what you actually see on your screen, stop
-and ask rather than guessing. A quick question now is much cheaper than
+---
+
+## Quick reference (read this first)
+
+| | |
+|---|---|
+| **What you're doing** | Running one Python script that downloads a language's text data and builds a search index from it |
+| **Your OS** | Windows |
+| **Time needed (yours)** | ~15 minutes of setup, then it runs by itself for a few hours |
+| **Time needed (machine)** | A few hours of continuous running — keep the PC on and plugged in |
+| **What you need to tell the team first** | Which language code you're assigned (Step 2) |
+| **What you send back at the end** | One compressed file, a few GB to a few dozen GB |
+| **Can it be interrupted?** | Yes — safe to stop and resume any time, see Step 6 |
+
+If anything on your screen doesn't match what this guide says, **stop and
+ask** rather than guessing — a quick question now is much cheaper than
 redoing hours of work later.
 
-## Step 0: Before you start
+### Why this is needed (the actual problem being solved)
 
-**Tell the team which language code(s) you're picking, and wait for a
-thumbs-up before you actually start running anything.** This is the most
-important step. If two people accidentally pick the same language, that
-work is wasted — we need to know who's doing what so nothing overlaps.
-The list of available codes is in Step 4 below.
+The project this supports needs a search index built over an entire
+multilingual dataset — not a small sample of it — across many Indian
+languages. That's too much data and compute for one machine to finish
+alone in the time available. So the work is split: different volunteers
+each index one or two languages on their own computers, and all the
+results get combined at the end into one final index. Your part is one
+language.
 
-**This works on Windows and Mac.** The script automatically detects what
-your computer has:
-- An NVIDIA graphics card → uses it (fastest)
-- An Apple Silicon Mac (M1/M2/M3/M4 chip) → uses its built-in GPU (fastest)
-- Neither of the above → uses your regular processor (CPU) instead. This
-  still works completely fine, just slower. There's nothing to configure —
-  the script figures this out on its own when it starts.
+---
 
-You don't need to know which of these applies to you — just run the
-setup steps below and the first few lines of output will tell you what
-was detected.
+## Step 1: Install the tools
 
-You'll also want:
-- Your computer plugged into power for the whole run.
-- A few hours where you don't need to shut it down. It's fine to let the
-  screen lock or step away — just don't put it to sleep or shut it off
-  (see "keep it awake" in Step 6).
-- Free disk space — see Step 5.
+Open **PowerShell** (search for it in the Start menu).
 
-## Step 1: Get the code
-
-**On Mac**: open the Terminal app (search for "Terminal" with Spotlight,
-the magnifying glass in your menu bar).
-**On Windows**: open PowerShell (search for "PowerShell" in the Start menu).
-
-Then paste these commands one at a time:
-
-```bash
-git clone https://github.com/arvus3005/geeks.git
-cd geeks
-git checkout feat/self-hosted-hybrid-retrieval
+**1a. Install Git** (skips if already installed):
+```powershell
+winget install --id Git.Git -e --source winget
 ```
+Close and reopen PowerShell after this finishes.
 
-If `git` isn't installed, your system will likely prompt you to install it
-the first time — say yes. On Windows, if that doesn't happen, download it
-from [git-scm.com](https://git-scm.com/download/win) first.
-
-## Step 2: Install `uv` (a tool this project uses)
-
-**On Mac/Linux:**
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-**On Windows (in PowerShell):**
+**1b. Install `uv`** (the tool this project uses to manage Python and
+dependencies — you do not need Python installed separately, `uv` handles
+that):
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
+Close and reopen PowerShell again after this finishes.
 
-Close and reopen your terminal afterward so it takes effect.
+## Step 2: Get the code and pick your language
 
-## Step 3: Install the project's dependencies
-
-If you have an NVIDIA GPU or an Apple Silicon Mac and want to use it:
-```bash
-uv sync --extra gpu-index
+```powershell
+git clone https://github.com/arvus3005/geeks.git
+cd geeks
+git checkout main
 ```
 
-If you're not sure, or you know you're on CPU only, this also works fine
-(smaller download, and the script will use the slower CPU path):
-```bash
-uv sync
-```
+**Tell the team which language code you're taking, and wait for a
+confirmation before you start running anything.** This matters — if two
+people accidentally pick the same language, that work is wasted.
 
-Either is fine to start with — if you picked wrong, just re-run whichever
-command you needed later, nothing breaks.
-
-## Step 4: Which language(s) are you doing?
-
-Pick from the list below (anything except `hi` and `bn`, which are
-already being handled elsewhere) and **message the team before you start**
-(see Step 0). 2-3 languages per person is reasonable. Every language is
-roughly similar in size to index — more on why at the bottom of this doc.
+Pick one (or two) from this table — **anything except `hi`, `bn`, `gu`,
+`mr`, `ta`**, which are already being handled elsewhere. English is not
+a separate pick — every language's data already includes a matching set
+of English text, so you don't need to (and can't) pick English on its own.
 
 | Code | Language | Has training data | Has validation data |
 |---|---|---|---|
 | `as` | Assamese | yes | yes |
-| `gu` | Gujarati | yes | yes |
 | `kn` | Kannada | yes | yes |
 | `ml` | Malayalam | yes | yes |
-| `mr` | Marathi | yes | yes |
 | `ne` | Nepali | yes | yes |
 | `or` | Odia | yes | yes |
 | `pa` | Punjabi | yes | yes |
 | `sa` | Sanskrit | yes | yes |
-| `ta` | Tamil | yes | yes |
 | `ur` | Urdu | yes | yes |
-| `te` | Telugu | **no** (missing from the source data — not our bug) | yes |
+| `te` | Telugu | **no** (missing from the source data — not a bug, real gap) | yes |
 
-If you pick `te` (Telugu), expect noticeably less output than the others —
-that's expected, not something wrong with your setup.
+## Step 3: Install project dependencies
 
-## Step 5: Disk space and memory
-
-**Disk**: budget roughly **120GB for your first language, plus ~60GB for
-each additional one** if you run them together in one command (the shared
-English portion only gets stored once per run, which is why extra
-languages cost less than the first). So: 1 language ≈ 120GB, 2 ≈ 180GB,
-3 ≈ 240GB. This is measured from a real run, not a guess, but still budget
-some extra margin. Check your free space first:
-
-**Mac/Linux:**
-```bash
-df -h /
+**If you have an NVIDIA graphics card** and want to use it (faster):
+```powershell
+uv sync --extra gpu-index
 ```
-**Windows (PowerShell):**
+
+**If you're not sure, or you know you don't have one:**
+```powershell
+uv sync
+```
+This still works completely fine, just slower. The script automatically
+detects what your PC has (NVIDIA GPU → CPU fallback) — you don't need to
+configure anything either way.
+
+## Step 4: Check your free disk space and memory
+
+**Disk** — budget roughly **120GB** for your one assigned language. Check
+what you have free:
 ```powershell
 Get-PSDrive C
 ```
+If you're short on space, tell the team before starting, not after.
 
-If you're short on space, tell us before starting rather than after — we
-can adjust how many languages you take on.
-
-**Memory (RAM)**: the script saves progress in chunks so it doesn't use
-unlimited memory, but each chunk is held fully in memory while it's being
-built. If your computer has 8GB or 16GB of RAM (common on lower-end
-laptops) rather than 24GB+, flag this to us before starting — we may need
-to give you a smaller chunk-size setting. Check yours:
-- **Mac**: Apple menu → About This Mac → "Memory"
-- **Windows**: Settings → System → About → "Installed RAM"
-
-## Step 6: Run it
-
-Say you're assigned Gujarati and Tamil:
-
-**Mac/Linux** (stays awake automatically while running):
-```bash
-caffeinate -i uv run python -m scripts.build_full_local_index --configs gu ta
-```
-
-**Windows:**
+**Memory (RAM)** — check yours:
 ```powershell
-uv run python -m scripts.build_full_local_index --configs gu ta
+Get-CimInstance Win32_ComputerSystem | Select-Object TotalPhysicalMemory
 ```
-On Windows, also go to Settings → System → Power & battery, and turn off
-automatic sleep for as long as you expect this to run — otherwise Windows
-may sleep the machine partway through.
+(divide the number by 1073741824 to get GB). If you have 8GB or 16GB
+rather than 24GB+, flag this before starting — a smaller setting may be
+needed.
 
-Swap `gu ta` for whichever codes you were assigned.
+## Step 5: Run it
 
-**Do not add a `--max-rows-per-config` option.** If you see that flag
-mentioned elsewhere in this project, it's for quick internal tests only —
-leaving it off is what gets you the real, complete data we need.
+Replace `XX` below with your assigned language code (e.g. `kn`):
+
+```powershell
+uv run python -m scripts.build_full_local_index --configs XX
+```
+
+Also go to **Settings → System → Power & battery** and turn off automatic
+sleep for as long as you expect this to run — otherwise Windows may put
+the machine to sleep partway through and pause the job.
+
+**Do not add a `--max-rows-per-config` flag.** That's for quick internal
+tests only — leaving it off is what gets the real, complete data needed.
 
 ### What normal output looks like
 
-Right at the start, one line tells you what was detected:
+Right at the start:
 ```
 INFO Auto-detected device: cuda
 ```
-(or `mps`, or `cpu` — whichever your computer has). That's just
-informational, no action needed.
+(or `cpu` if you don't have an NVIDIA GPU — both are fine, just different
+speeds.)
 
-Then, every couple thousand rows, a progress line:
+Then, repeating progress lines:
 ```
-INFO gu/train: 2000 source rows, 32784 passages indexed so far (47.0s elapsed, 697.0 passages/sec)
+INFO kn/train: 2000 source rows, 32784 passages indexed so far (47.0s elapsed, 697.0 passages/sec)
 ```
-Speed varies a lot by hardware — there's no single "correct" number, just
-watch that it's steadily climbing and not stuck.
+Speed varies a lot by hardware — just watch that the numbers keep
+climbing, not stuck.
 
-You'll also see lines mentioning "segment" and "Finalized segment" — the
-script periodically saves a safe checkpoint to disk. This is normal and
-means it's working correctly, not a problem.
+You'll also see lines mentioning "segment" and "Finalized segment" — this
+is the script periodically saving safe progress to disk. Normal, not a
+problem.
 
-### It's safe to interrupt and resume
+## Step 6: It's safe to interrupt and resume
 
 If you need to close the laptop, it crashes, or you stop it for any
-reason: that's fine. Run the **exact same command again** to continue —
-it automatically resumes from the last safe checkpoint instead of
+reason: that's fine. **Run the exact same command again** to continue —
+it automatically picks up from the last safe checkpoint instead of
 starting over. You'll lose at most a few minutes of progress, never more.
-
-### How long will this take?
-
-We don't have solid numbers yet for most hardware — watch your own logged
-speed for the first few minutes and use that as your best guide. As a
-rough reference point, one Apple Silicon Mac (M4 Pro) processed about
-500-700 passages per second; a language with training and validation data
-combined has roughly 1.5-2 million passages, so do the math with your own
-observed rate for a real estimate.
 
 ## Step 7: When it's finished
 
-You'll see a line starting with `Done.`, and the program will end on its
-own (return you to a normal prompt).
+You'll see a line starting with `Done.`, and PowerShell will return to a
+normal prompt.
 
-**Your results will be split across many folders**, not one — this is
-intentional (it's how the script keeps memory use safe), so you'll see
-something like `artifacts/full_local_index/gu_train_segment_0000/`,
-`gu_train_segment_0001/`, and so on, one per chunk of progress. That's
-correct — don't worry that it looks fragmented.
+Your results will be split across many folders (this is intentional, not
+a problem) — e.g. `artifacts/full_local_index/kn_train_segment_0000/`,
+`kn_train_segment_0001/`, and so on.
 
-Then run this to prepare everything for sending back:
-
-**Mac/Linux:**
-```bash
-for dir in artifacts/full_local_index/*/; do
-  uv run python -m scripts.export_local_index_vectors "$dir"
-done
-```
-
-**Windows (PowerShell):**
+Prepare everything for sending back:
 ```powershell
 Get-ChildItem artifacts/full_local_index -Directory | ForEach-Object {
   uv run python -m scripts.export_local_index_vectors $_.FullName
@@ -228,55 +177,83 @@ Get-ChildItem artifacts/full_local_index -Directory | ForEach-Object {
 ## Step 8: Send your results back
 
 Check the total size:
-```bash
-du -sh artifacts/full_local_index/
-```
-(Windows: `Get-ChildItem artifacts/full_local_index -Recurse | Measure-Object -Property Length -Sum`)
-
-Compress the whole folder into one file:
-
-**Mac/Linux:**
-```bash
-cd artifacts
-tar -czf full_local_index_<yourname>_<languages>.tar.gz full_local_index/
-# example: full_local_index_prasun_gu_ta.tar.gz
+```powershell
+Get-ChildItem artifacts/full_local_index -Recurse | Measure-Object -Property Length -Sum
 ```
 
-**Windows (PowerShell):**
+Compress it into one file:
 ```powershell
 cd artifacts
-Compress-Archive -Path full_local_index -DestinationPath full_local_index_<yourname>_<languages>.zip
+Compress-Archive -Path full_local_index -DestinationPath full_local_index_<yourname>_<language>.zip
+# example: full_local_index_prasun_kn.zip
 ```
 
-**Always include your name and language codes in the filename** — with
-multiple people sending files, an unlabeled file is impossible to identify.
+**Always include your name and language code in the filename** — with
+multiple people sending files, an unlabeled file can't be identified.
 
-How to send it:
-- **In person together**: a shared drive, cable transfer, or local network
-  transfer is usually much faster than uploading over shared WiFi.
-- **Remote**: Google Drive, Dropbox, or WeTransfer all handle files this
-  size fine — just budget extra time for the upload.
+Send it via whatever's fastest available: a shared drive/cable transfer
+if you're in person, or Google Drive / Dropbox / WeTransfer if remote
+(budget extra time for the upload — these files are large).
 
-## Why this ends up smaller than it looks
+## Why your results will be smaller than you might expect
 
 Every language in this dataset is a translation of the *same* original
-set of English questions and passages — it's one shared dataset translated
-many ways, not many separate ones. So the English portion of your results
-will almost certainly overlap with what everyone else produces too. That's
-expected — when everything gets combined at the end, duplicate English is
-automatically merged down to one copy. You don't need to do anything
-differently because of this; just send us everything your run produces.
+set of English text — one shared dataset translated many ways, not many
+separate ones. So the English portion of your results will overlap with
+everyone else's. That's expected — it gets merged down to one copy when
+everything is combined at the end. You don't need to do anything
+differently because of this; just send everything your run produces.
 
 ## If something looks wrong
 
-- **Script says it can't find a GPU when you're sure you have one**: it
-  will still work — it just falls back to CPU (slower, not broken). Tell
-  us anyway so we can look into why it wasn't detected.
-- **A download fails, times out, or seems stuck**: the dataset files are a
-  few GB each, so a slow connection can make this take a while or
-  occasionally fail partway. Run the exact same command again — it
-  resumes downloads instead of starting over.
-- **Anything else you're not sure about**: don't guess or try to force
-  past it. Send us the exact error message (copy-paste the text) and
-  which step you were on — that's much faster for us to help with than a
-  description of what happened.
+- **Script can't find a GPU when you're sure you have one**: it still
+  works, just falls back to CPU (slower, not broken). Tell the team
+  anyway so it can be looked into.
+- **A download fails, times out, or seems stuck**: source files are a
+  few GB each — a slow connection can make this take a while or fail
+  partway. Run the exact same command again — it resumes downloads
+  instead of starting over.
+- **Anything else you're not sure about**: don't guess or force past it.
+  Send the exact error message (copy-paste the text) and which step you
+  were on.
+
+---
+
+## Structured summary (for AI agents / automation)
+
+If you're an AI assistant helping run this rather than a human following
+it step by step, here is the same guide as an unambiguous checklist:
+
+```yaml
+task: index_one_language
+target_os: windows
+prerequisites:
+  - git installed (winget install --id Git.Git -e --source winget)
+  - uv installed (irm https://astral.sh/uv/install.ps1 | iex, via PowerShell -ExecutionPolicy ByPass)
+  - free disk space >= 120GB on the drive containing the repo
+  - language code confirmed with the team, not already in the excluded set
+excluded_language_codes: [hi, bn, gu, mr, ta]
+available_language_codes: [as, kn, ml, ne, or, pa, sa, ur, te]
+setup_commands:
+  - git clone https://github.com/arvus3005/geeks.git
+  - cd geeks
+  - git checkout main
+  - uv sync --extra gpu-index   # if NVIDIA GPU present, else: uv sync
+run_command_template: "uv run python -m scripts.build_full_local_index --configs {LANGUAGE_CODE}"
+forbidden_flags: ["--max-rows-per-config"]
+success_signal: "a line starting with 'Done.' appears, process exits 0"
+interrupted_run_recovery: "re-run the exact same run_command_template — it resumes from last checkpoint automatically, no data loss beyond a few minutes"
+post_run_commands:
+  - "for each dir in artifacts/full_local_index/*/: uv run python -m scripts.export_local_index_vectors <dir>"
+  - "Compress-Archive -Path artifacts/full_local_index -DestinationPath artifacts/full_local_index_<name>_<language>.zip"
+output_naming_convention: "full_local_index_<contributor_name>_<language_code>.zip"
+failure_modes:
+  gpu_not_detected: "non-fatal, falls back to CPU automatically, notify team"
+  download_stuck_or_failed: "re-run the exact same run_command_template, downloads resume"
+  unrecognized_error: "do not guess a fix; capture exact error text and current step, report to team"
+do_not:
+  - do not pick a language already in excluded_language_codes
+  - do not add --max-rows-per-config to the real run
+  - do not let the machine sleep mid-run
+  - do not rename output folders manually before running export_local_index_vectors
+```
