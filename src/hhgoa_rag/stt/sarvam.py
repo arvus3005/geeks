@@ -61,6 +61,22 @@ def _detect_audio_format(audio_bytes: bytes) -> tuple[str, str]:
     return "audio.wav", "audio/wav"
 
 
+SARVAM_STT_LANG_MAP: dict[str, str] = {
+    "hi": "hi-IN",
+    "bn": "bn-IN",
+    "gu": "gu-IN",
+    "mr": "mr-IN",
+    "ta": "ta-IN",
+    "ur": "ur-IN",
+    "en": "en-IN",
+    "te": "te-IN",
+    "kn": "kn-IN",
+    "ml": "ml-IN",
+    "pa": "pa-IN",
+    "od": "od-IN",
+}
+
+
 class SarvamSTTAdapter(BaseSTTAdapter):
     """Sarvam Saaras v3 STT adapter."""
 
@@ -71,11 +87,24 @@ class SarvamSTTAdapter(BaseSTTAdapter):
     @_sarvam_retry
     async def _post(self, client: httpx.AsyncClient, audio_bytes: bytes, language_hint: str | None):
         filename, mime_type = _detect_audio_format(audio_bytes)
+        if not language_hint or language_hint in ("auto", "unknown"):
+            lang_code = "unknown"
+        elif language_hint in SARVAM_STT_LANG_MAP:
+            lang_code = SARVAM_STT_LANG_MAP[language_hint]
+        elif language_hint.endswith("-IN"):
+            lang_code = language_hint
+        else:
+            lang_code = "unknown"
+
         response = await client.post(
             "https://api.sarvam.ai/speech-to-text",
             headers={"api-subscription-key": self.api_key},
             files={"file": (filename, audio_bytes, mime_type)},
-            data={"model": self.model, "language_code": language_hint or "hi-IN"},
+            data={
+                "model": self.model,
+                "language_code": lang_code,
+                "with_timestamps": "false",
+            },
         )
         response.raise_for_status()
         return response
