@@ -85,8 +85,31 @@ MIN_QUERY_OVERLAP = 0.1
 # landed on a floor of -2.0, explicitly calling it "an improvement, not a
 # solution" and intentionally decline-biased. -2.0 sits right around this
 # project's own measured p20-p30 (real data: p20=-2.30, p30=-2.19) --
-# two independent measurements landing in the same place. Set to -2.0.
-MIN_RERANKER_SCORE = -2.0
+# two independent measurements landing in the same place. -2.0 was correct
+# for what it was chosen for (not declining on ~everything), but the real
+# 50+50 eval loop (eval/checks/reliability.py) measured what it actually
+# costs: false_confidence_rate=0.88 -- the reranker's relevance signal
+# alone routinely scores a topically-related-but-wrong passage above this
+# floor (a passage BEING about the right entity is not the same as it
+# answering the specific question; see reference/VoiceRagAgent-main's own
+# Phase 5 report reaching the identical conclusion from dense-retrieval
+# scores). reliability.py's own docstring calls false confidence the worse
+# of the two failure modes, and false_refusal_rate was measured at only
+# 0.02 -- large unused headroom to trade for a lower false-confidence rate.
+#
+# Recalibrated 2026-08-22 via eval/diagnose_threshold_sweep.py: a real
+# risk-coverage sweep over every reranker score observed across the same
+# 100-example eval set (not two anecdotal percentiles), picking the
+# Youden's-J-maximizing operating point (threshold=0.42, J=0.52: proxy
+# false_refusal=0.10, proxy false_confidence=0.38, vs. 0.00/0.98 at the old
+# -2.0 floor on the same proxy scoring). That sweep scores every candidate
+# in each example's full pool, not just the top-3 the real pipeline
+# retrieves, so it is a shape check on the tradeoff, not an exact
+# prediction of the production rate -- re-run the full eval loop after
+# changing this constant to get the real number. Set to 0.4 (just inside
+# the J-optimal point, leaving a little margin before the steeper
+# false-refusal cost that starts past ~0.55 in that sweep).
+MIN_RERANKER_SCORE = 0.4
 
 # Passages are scored sentence-by-sentence for the FINAL answer span (not
 # for the relevance gate above, which now runs on whole passages -- the
@@ -132,6 +155,41 @@ _POINTER_RE = re.compile(
 
 def _is_pointer_sentence(sentence: str) -> bool:
     return bool(_POINTER_RE.match(sentence.strip()))
+
+
+# Whole-sentence fragments left behind by naive period-splitting of an
+# abbreviation ("e.g.", "i.e.") -- e.g. the passage text "...bacteria with
+# many other organisms (e.g., humans)..." splits (on every period) into a
+# dangling "(e." fragment. Found via a real eval false-confidence example:
+# Q "what type of association is formed by bacteria with many other
+# organisms, including humans?" -> A "(e." -- three characters, zero
+# information, but it was the highest-reranker-scoring "sentence" in its
+# passage. No real answer is ever just an optional paren + one letter +
+# optional punctuation, so this is unambiguous, zero-regression-risk junk.
+_FRAGMENT_RE = re.compile(r"^\(?[A-Za-z]\.?\)?$")
+
+
+def _is_truncated_fragment(sentence: str) -> bool:
+    return bool(_FRAGMENT_RE.match(sentence.strip()))
+
+
+# A colon immediately followed by a bare outline/multiple-choice marker
+# ("... in the following situations: 1." or "... did all of the following
+# EXCEPT: A)") is the start of a list or quiz-option enumeration whose real
+# content never arrived in this chunk -- not an answer. Found via two real
+# eval false-confidence examples (2026-08-22): "how to do citations in an
+# essay" -> "In-text citations must be used in the following situations:
+# 1." and "what was the purpose of the new deal quizlet" -> "The New Deal
+# did all of the following EXCEPT: A)". Deliberately narrow (requires
+# whitespace after the colon, and the marker itself must be PURE digits+"."
+# or a single capital letter+")") so a real label:value answer like "Time:
+# 5pm" or "Score: 2-1" is never caught -- neither matches \d{1,2}\. or
+# [A-Za-z]\) exactly.
+_ENUMERATOR_STUB_RE = re.compile(r":\s+(\d{1,2}\.|[A-Za-z]\))\s*$")
+
+
+def _is_enumerator_stub(sentence: str) -> bool:
+    return bool(_ENUMERATOR_STUB_RE.search(sentence.strip()))
 
 
 def _is_question_echo(sentence: str, query_tokens: set[str]) -> bool:
@@ -254,7 +312,12 @@ def extract_answer(
         # the real example that motivated this) -- best_sentence already
         # defaults to the whole passage, so if every sentence is an echo
         # this falls back to that instead of ever picking a non-answer.
-        if _is_question_echo(sentence, query_tokens) or _is_pointer_sentence(sentence):
+        if (
+            _is_question_echo(sentence, query_tokens)
+            or _is_pointer_sentence(sentence)
+            or _is_truncated_fragment(sentence)
+            or _is_enumerator_stub(sentence)
+        ):
             continue
         s = rerank_score(query, sentence)
         if s > best_sentence_score:

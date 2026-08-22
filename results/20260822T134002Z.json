@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 50,
+    "num_unanswerable": 50,
+    "num_examples": 100,
+    "num_chunks": 2391,
+    "top_k": 5,
+    "seed": 42,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 50,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.54,
+        "3": 0.8,
+        "5": 0.9
+      },
+      "mrr": 0.6797
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.54,
+        "3": 0.8,
+        "5": 0.9
+      },
+      "mrr": 0.6797
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 50,
+    "num_unanswerable_evaluated": 50,
+    "false_refusal_rate": 0.18,
+    "false_refusal_examples": [
+      {
+        "query": "what is megatron called",
+        "expected_answer": "Megatron is the founder of the Decepticon uprising, and their most well-known and feared leader."
+      },
+      {
+        "query": "what is not present when fermentation is used",
+        "expected_answer": "Oxygen is not present, when fermentation is used."
+      },
+      {
+        "query": "how fast is a kilometer in miles",
+        "expected_answer": "One kilometer is equal to 0.6214 miles."
+      },
+      {
+        "query": "gas dryers running cost",
+        "expected_answer": "Gas dryers cost anywhere from about $350 to $1,600."
+      },
+      {
+        "query": "foods to firm up stool",
+        "expected_answer": "Multi grain or whole grain wheat, corn and rice cereals, bran, fibrous vegetables (carrots, celery), skins of fruit and vegetables, oats, barley, rye, legumes (lentils, kidney beans), peeled fruits an"
+      }
+    ],
+    "false_confidence_rate": 0.36,
+    "false_confidence_examples": [
+      {
+        "query": "how to do citations in an essay",
+        "fabricated_answer": "In-text citations must be used in the following situations: 1."
+      },
+      {
+        "query": "erie insurance corporate address",
+        "fabricated_answer": "Erie Insurance Exchange has rolled down lots of different insurance roads since its founding as a Pennsylvania auto insurer."
+      },
+      {
+        "query": "what is tlr development",
+        "fabricated_answer": "TLR and Brain Development During TLR, the connections to the temporal lobe are starting to be developed, setting up the brain to be able to sequence."
+      },
+      {
+        "query": "tail wagging the dog originate",
+        "fabricated_answer": "The phrase “the tail that wags the dog” dates to the turn of the last century."
+      },
+      {
+        "query": "calculate distance deceleration",
+        "fabricated_answer": "When you have constant acceleration (or deceleration) and want to find distance, you can use this equation of motion (see ref 1): (1) v² = u² + 2a * d, where: v = current velocity u = initial velocity"
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 100,
+    "embed": {
+      "avg_ms": 2.68,
+      "p50_ms": 2.42,
+      "p95_ms": 4.15,
+      "p99_ms": 5.65
+    },
+    "search": {
+      "avg_ms": 0.11,
+      "p50_ms": 0.09,
+      "p95_ms": 0.28,
+      "p99_ms": 0.52
+    },
+    "retrieval_total": {
+      "avg_ms": 2.65,
+      "p50_ms": 2.43,
+      "p95_ms": 3.64,
+      "p99_ms": 5.27
+    },
+    "generation": {
+      "avg_ms": 103.47,
+      "p50_ms": 50.98,
+      "p95_ms": 991.59,
+      "p99_ms": 997.4
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}

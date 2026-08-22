@@ -5,9 +5,11 @@ sentences that are pure question-echoes."""
 
 from hhgoa_rag.answer.extractive import (
     _content_tokens,
+    _is_enumerator_stub,
     _is_navigation_junk,
     _is_pointer_sentence,
     _is_question_echo,
+    _is_truncated_fragment,
     extract_answer,
 )
 
@@ -56,6 +58,29 @@ def test_extract_answer_skips_navigation_junk_passage(monkeypatch):
     answer, evidence = extract_answer(passages, "what is elastomer processing")
     assert answer is not None
     assert "manufacturing method" in answer
+
+
+def test_truncated_abbreviation_fragment_is_flagged():
+    # Real eval example: "(e." left over from naive period-splitting of
+    # "...other organisms (e.g., humans)..."
+    assert _is_truncated_fragment("(e.")
+    assert _is_truncated_fragment("i.")
+
+
+def test_real_short_sentence_is_not_a_fragment():
+    assert not _is_truncated_fragment("Water boils at 100 degrees.")
+
+
+def test_enumerator_stub_is_flagged():
+    # Real eval examples: a dangling list intro and a dangling MC-quiz stem.
+    assert _is_enumerator_stub("In-text citations must be used in the following situations: 1.")
+    assert _is_enumerator_stub("The New Deal did all of the following EXCEPT: A)")
+
+
+def test_label_value_sentence_is_not_an_enumerator_stub():
+    # Must not catch a real short label:value answer.
+    assert not _is_enumerator_stub("Time: 5pm")
+    assert not _is_enumerator_stub("Final score: 2-1")
 
 
 def test_extract_answer_falls_back_when_every_sentence_echoes(monkeypatch):
