@@ -104,3 +104,7 @@ reference/
 
 # Claude memory file
 CLAUDE.md
+
+# Local-only reference notes -- deliberately never committed (see git
+# history: was purged from history entirely at the user's request)
+docs/FOLLOWUP_TECHNIQUES.md
