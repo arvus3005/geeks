@@ -53,6 +53,24 @@ class TTSResult:
     error: str | None = None
 
 
+import threading
+
+_tts_client: httpx.AsyncClient | None = None
+_tts_client_lock = threading.Lock()
+
+
+def _get_tts_client() -> httpx.AsyncClient:
+    global _tts_client
+    if _tts_client is None or _tts_client.is_closed:
+        with _tts_client_lock:
+            if _tts_client is None or _tts_client.is_closed:
+                _tts_client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(20.0, connect=5.0),
+                    limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=60.0),
+                )
+    return _tts_client
+
+
 class SarvamTTSAdapter:
     """Sarvam Bulbul v1 Text-to-Speech adapter."""
 
@@ -101,11 +119,11 @@ class SarvamTTSAdapter:
         t0 = time.monotonic()
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await self._post(client, text, lang_code)
-                data = response.json()
-                audios = data.get("audios", [])
-                audio_b64 = audios[0] if audios else None
+            client = _get_tts_client()
+            response = await self._post(client, text, lang_code)
+            data = response.json()
+            audios = data.get("audios", [])
+            audio_b64 = audios[0] if audios else None
 
             elapsed_ms = (time.monotonic() - t0) * 1000.0
             return TTSResult(

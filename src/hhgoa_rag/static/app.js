@@ -105,14 +105,32 @@
   // Recording
   async function startRecording() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       audioContext = new (window.AudioContext || window.webkitAudioContext)();
       const source = audioContext.createMediaStreamSource(stream);
       analyser = audioContext.createAnalyser();
       analyser.fftSize = 64;
       source.connect(analyser);
 
-      mediaRecorder = new MediaRecorder(stream);
+      const recorderOptions = { audioBitsPerSecond: 16000 };
+      let recordedMime = 'audio/wav';
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        recorderOptions.mimeType = 'audio/webm;codecs=opus';
+        recordedMime = 'audio/webm';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        recorderOptions.mimeType = 'audio/mp4';
+        recordedMime = 'audio/mp4';
+      }
+
+      mediaRecorder = new MediaRecorder(stream, recorderOptions);
       audioChunks = [];
 
       mediaRecorder.ondataavailable = (e) => {
@@ -122,7 +140,7 @@
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        const audioBlob = new Blob(audioChunks, { type: recordedMime });
         await handleVoiceSubmit(audioBlob);
         stream.getTracks().forEach((track) => track.stop());
         if (audioContext && audioContext.state !== 'closed') {

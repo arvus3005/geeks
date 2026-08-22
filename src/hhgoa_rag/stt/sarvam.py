@@ -1,3 +1,4 @@
+import threading
 import time
 
 import httpx
@@ -30,6 +31,35 @@ _sarvam_retry = retry(
     reraise=True,
 )
 
+_client: httpx.AsyncClient | None = None
+_client_lock = threading.Lock()
+
+
+def _get_stt_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        with _client_lock:
+            if _client is None or _client.is_closed:
+                _client = httpx.AsyncClient(
+                    timeout=httpx.Timeout(25.0, connect=5.0),
+                    limits=httpx.Limits(max_keepalive_connections=10, max_connections=20, keepalive_expiry=60.0),
+                )
+    return _client
+
+
+def _detect_audio_format(audio_bytes: bytes) -> tuple[str, str]:
+    if audio_bytes.startswith(b"RIFF") and b"WAVE" in audio_bytes[:12]:
+        return "audio.wav", "audio/wav"
+    if audio_bytes.startswith(b"\x1a\x45\xdf\xa3"):
+        return "audio.webm", "audio/webm"
+    if audio_bytes.startswith(b"OggS"):
+        return "audio.ogg", "audio/ogg"
+    if audio_bytes.startswith(b"ID3") or audio_bytes.startswith(b"\xff\xfb"):
+        return "audio.mp3", "audio/mp3"
+    if audio_bytes.startswith(b"fLaC"):
+        return "audio.flac", "audio/flac"
+    return "audio.wav", "audio/wav"
+
 
 class SarvamSTTAdapter(BaseSTTAdapter):
     """Sarvam Saaras v3 STT adapter."""
@@ -40,10 +70,11 @@ class SarvamSTTAdapter(BaseSTTAdapter):
 
     @_sarvam_retry
     async def _post(self, client: httpx.AsyncClient, audio_bytes: bytes, language_hint: str | None):
+        filename, mime_type = _detect_audio_format(audio_bytes)
         response = await client.post(
             "https://api.sarvam.ai/speech-to-text",
             headers={"api-subscription-key": self.api_key},
-            files={"file": ("audio.wav", audio_bytes, "audio/wav")},
+            files={"file": (filename, audio_bytes, mime_type)},
             data={"model": self.model, "language_code": language_hint or "hi-IN"},
         )
         response.raise_for_status()
@@ -53,9 +84,9 @@ class SarvamSTTAdapter(BaseSTTAdapter):
         self, audio_bytes: bytes, language_hint: str | None = None
     ) -> TranscriptResult:
         t0 = time.monotonic()
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await self._post(client, audio_bytes, language_hint)
-            data = response.json()
+        client = _get_stt_client()
+        response = await self._post(client, audio_bytes, language_hint)
+        data = response.json()
         elapsed_ms = (time.monotonic() - t0) * 1000.0
         return TranscriptResult(
             text=data.get("transcript", ""),
