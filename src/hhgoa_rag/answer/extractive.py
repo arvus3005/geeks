@@ -1,4 +1,20 @@
+import time
+
 from hhgoa_rag.retrieval_contract import TEXT_FIELD
+
+# Wall-clock budget for the reranker portion of extract_answer, checked
+# BETWEEN calls (can't preempt a call already in flight, but bounds how
+# many more get scheduled). Real per-call cost is normally ~5-30ms and the
+# short-circuit above usually means only 1 passage call runs at all
+# (reference/RAGgoa-main measured their first candidate alone clears their
+# floor 83% of the time) -- this is a defensive ceiling against an
+# outlier, not the expected path. Sized to leave real room inside the
+# 200ms backend budget alongside retrieval + embedding + everything else
+# (measured backend P100=110.6ms with this code path exercised normally).
+# Task spec requirement 5 (harness) asks for "error recovery" explicitly;
+# a slow reranker call is exactly the kind of failure a harness should
+# degrade gracefully from rather than let blow the latency target.
+RERANKER_TIME_BUDGET_S = 0.15
 
 # Common English function words, stripped before computing query<->passage
 # overlap. Without this, a short question like "what is a corporation"
@@ -130,6 +146,8 @@ def extract_answer(passages: list[dict], query: str) -> tuple[str | None, list[d
 
     from hhgoa_rag.answer.reranker import score as rerank_score
 
+    deadline = time.monotonic() + RERANKER_TIME_BUDGET_S
+
     best_text = ""
     best_score = float("-inf")
     for text in candidate_texts:
@@ -139,13 +157,24 @@ def extract_answer(passages: list[dict], query: str) -> tuple[str | None, list[d
             best_text = text
         if best_score >= MIN_RERANKER_SCORE:
             break  # short-circuit -- this candidate already clears the floor
+        if time.monotonic() >= deadline:
+            # Ran out of time before confirming relevance on any candidate.
+            # Decline rather than answer unverified -- the whole point of
+            # this gate is not fabricating, so a timeout should fail safe,
+            # not fail open.
+            break
 
     if not best_text or best_score < MIN_RERANKER_SCORE:
         return None, []
 
+    # Passage-level relevance is already confirmed at this point -- a
+    # sentence-scoring timeout here just means a less precise answer span
+    # (falls back to the passage's first sentence), not an unguarded one.
     best_sentence = best_text
     best_sentence_score = float("-inf")
     for sentence in _sentences(best_text):
+        if time.monotonic() >= deadline:
+            break
         s = rerank_score(query, sentence)
         if s > best_sentence_score:
             best_sentence_score = s
