@@ -1,3 +1,4 @@
+import re
 import time
 
 from hhgoa_rag.retrieval_contract import TEXT_FIELD
@@ -102,7 +103,7 @@ def _content_tokens(text: str) -> set[str]:
 
 
 def _sentences(text: str) -> list[str]:
-    parts = [s.strip() for s in text.split(". ") if s.strip()]
+    parts = [s.strip() for s in re.split(r"[.!?।॥\n]+", text) if s.strip()]
     return parts[:MAX_SENTENCES_PER_PASSAGE] if parts else [text]
 
 
