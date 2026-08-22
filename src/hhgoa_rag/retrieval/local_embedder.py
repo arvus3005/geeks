@@ -135,6 +135,10 @@ def _embed(text: str) -> list[float]:
     return vec
 
 
+import functools
+
+
+@functools.lru_cache(maxsize=1024)
 def embed_query(text: str) -> list[float]:
     """E5 models require the 'query: ' prefix at query time (distinct from
     'passage: ' at indexing time) — mixing these up silently degrades
