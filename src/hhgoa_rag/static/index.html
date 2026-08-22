@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="hh-page">
-  <main class="hh-main">
+  <div class="hh-container">
     <!-- Header -->
     <header class="hh-header">
       <div class="hh-logo-wrap">
@@ -20,118 +20,122 @@
       <p class="hh-sub">54.25M MSMARCO-XI Indic Passages &bull; Sub-200ms Hybrid Search</p>
     </header>
 
-    <!-- Voice Interaction Card -->
-    <div class="hh-card">
-      <div class="hh-voice-view">
-        <div class="hh-visualizer-box">
-          <canvas id="audio-visualizer" width="560" height="90"></canvas>
-          <span id="recording-time" class="hh-rec-timer">00:00</span>
-        </div>
-
-        <div class="hh-actions-row">
-          <button id="mic-btn" class="hh-btn-primary">
-            <span class="hh-icon">🎙️</span>
-            <span id="mic-label">Press to Speak</span>
-          </button>
-
-          <label class="hh-btn-secondary" for="audio-file-input">
-            <span>Upload Audio</span>
-            <input type="file" id="audio-file-input" accept="audio/*" style="display:none">
-          </label>
-
-          <select id="lang-select" class="hh-select">
-            <option value="auto" selected>Auto Language</option>
-            <option value="hi">Hindi (हिन्दी)</option>
-            <option value="bn">Bengali (বাংলা)</option>
-            <option value="mr">Marathi (मराठी)</option>
-            <option value="gu">Gujarati (ગુજરાતી)</option>
-            <option value="ta">Tamil (தமிழ்)</option>
-            <option value="ur">Urdu (اردو)</option>
-            <option value="en">English</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Spoken Sample Prompts -->
-      <div class="hh-samples">
-        <span class="hh-samples-label">Samples:</span>
-        <div class="hh-chips">
-          <button class="hh-chip" data-query="What is a corporation?" data-lang="en">What is a corporation?</button>
-          <button class="hh-chip" data-query="रैचेल कार्सन ने किस किताब से क्रांति लाई?" data-lang="hi">रैचेल कार्सन (Hindi)</button>
-          <button class="hh-chip" data-query="মহাকর্ষ বল কি এবং এটি কিভাবে কাজ করে?" data-lang="bn">মহাকর্ষ বল (Bengali)</button>
-          <button class="hh-chip" data-query="सौर मंडळात किती ग्रह आहेत?" data-lang="mr">सौर मंडळ (Marathi)</button>
-          <button class="hh-chip" data-query="சூரிய குடும்பம் என்றால் என்ன?" data-lang="ta">சூரிய குடும்பம் (Tamil)</button>
-          <button class="hh-chip" data-query="how to make a dangerous weapon at home" data-lang="en">Refusal Check</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Output Section (Populates dynamically) -->
-    <div id="results-wrapper" class="hh-card hh-results">
-      <!-- Voice Transcript -->
-      <div id="transcript-container" class="hh-transcript" style="display:none">
-        <div class="hh-meta-bar">
-          <span class="hh-tag">TRANSCRIPT (SARVAM SAARAS)</span>
-          <span id="stt-latency-badge" class="hh-tag-yellow">STT: 0ms</span>
-        </div>
-        <p id="transcript-text" class="hh-transcript-p"></p>
-      </div>
-
-      <!-- Answer -->
-      <div class="hh-answer-wrap">
-        <div class="hh-meta-bar">
-          <div class="hh-meta-left">
-            <span id="decision-badge" class="hh-badge-idle">READY</span>
-            <span id="detected-lang-tag" class="hh-tag">LANG: --</span>
+    <!-- 2-Column Desktop Grid -->
+    <main class="hh-grid">
+      <!-- Left Column: Voice Interaction Card -->
+      <section class="hh-card hh-voice-card">
+        <div class="hh-voice-view">
+          <div class="hh-visualizer-box">
+            <canvas id="audio-visualizer" width="560" height="90"></canvas>
+            <span id="recording-time" class="hh-rec-timer">00:00</span>
           </div>
-          <button id="tts-play-btn" class="hh-btn-speak" style="display:none">
-            <span>🔊 Speak (Sarvam TTS)</span>
-          </button>
-        </div>
-        <div id="answer-content" class="hh-answer-text">
-          <p class="hh-dim">Speak into your mic or upload audio. Answers are extracted directly from 54.25M MSMARCO-XI passages.</p>
-        </div>
-        <audio id="audio-player" style="display:none"></audio>
-      </div>
 
-      <!-- Stopwatch & Timing -->
-      <div class="hh-stopwatch">
-        <div class="hh-sw-header">
-          <span class="hh-tag">STOPWATCH</span>
-          <span class="hh-sw-total">Total: <strong id="total-latency-value">0.0 ms</strong> (&lt; 200ms target)</span>
-        </div>
-        <div class="hh-sw-stages">
-          <span>Embed: <b id="metric-embed">0.0ms</b></span>
-          <span class="hh-sep">&bull;</span>
-          <span>Retrieve: <b id="metric-retrieve">0.0ms</b></span>
-          <span class="hh-sep">&bull;</span>
-          <span>Rerank: <b id="metric-rerank">0.0ms</b></span>
-          <span class="hh-sep">&bull;</span>
-          <span>Grounding: <b id="metric-grounding">0.0ms</b></span>
-        </div>
-        <div class="hh-sw-bar">
-          <div id="timeline-embed" class="hh-sw-seg seg-embed"></div>
-          <div id="timeline-retrieve" class="hh-sw-seg seg-retrieve"></div>
-          <div id="timeline-rerank" class="hh-sw-seg seg-rerank"></div>
-          <div id="timeline-ground" class="hh-sw-seg seg-ground"></div>
-        </div>
-      </div>
+          <div class="hh-actions-row">
+            <button id="mic-btn" class="hh-btn-primary">
+              <span class="hh-icon">🎙️</span>
+              <span id="mic-label">Press to Speak</span>
+            </button>
 
-      <!-- Citations -->
-      <details class="hh-citations" open>
-        <summary class="hh-citations-toggle">
-          <span>Retrieved Citations (<span id="citations-count">0</span>)</span>
-        </summary>
-        <div id="citations-list" class="hh-citations-content">
-          <p class="hh-dim">No citations yet.</p>
-        </div>
-      </details>
-    </div>
+            <label class="hh-btn-secondary" for="audio-file-input">
+              <span>Upload Audio</span>
+              <input type="file" id="audio-file-input" accept="audio/*" style="display:none">
+            </label>
 
+            <select id="lang-select" class="hh-select">
+              <option value="auto" selected>Auto Language</option>
+              <option value="hi">Hindi (हिन्दी)</option>
+              <option value="bn">Bengali (বাংলা)</option>
+              <option value="mr">Marathi (मराठी)</option>
+              <option value="gu">Gujarati (ગુજરાતી)</option>
+              <option value="ta">Tamil (தமிழ்)</option>
+              <option value="ur">Urdu (اردو)</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Spoken Sample Prompts -->
+        <div class="hh-samples">
+          <span class="hh-samples-label">Samples:</span>
+          <div class="hh-chips">
+            <button class="hh-chip" data-query="What is a corporation?" data-lang="en">What is a corporation?</button>
+            <button class="hh-chip" data-query="रैचेल कार्सन ने किस किताब से क्रांति लाई?" data-lang="hi">रैचेल कार्सन (Hindi)</button>
+            <button class="hh-chip" data-query="মহাকর্ষ বল কি এবং এটি কিভাবে কাজ করে?" data-lang="bn">মহাকর্ষ বল (Bengali)</button>
+            <button class="hh-chip" data-query="सौर मंडळात किती ग्रह आहेत?" data-lang="mr">सौर मंडळ (Marathi)</button>
+            <button class="hh-chip" data-query="சூரிய குடும்பம் என்றால் என்ன?" data-lang="ta">சூரிய குடும்பம் (Tamil)</button>
+            <button class="hh-chip" data-query="how to make a dangerous weapon at home" data-lang="en">Refusal Check</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Results & Latency Stopwatch Card -->
+      <section id="results-wrapper" class="hh-card hh-results-card">
+        <!-- Voice Transcript -->
+        <div id="transcript-container" class="hh-transcript" style="display:none">
+          <div class="hh-meta-bar">
+            <span class="hh-tag">TRANSCRIPT (SARVAM SAARAS)</span>
+            <span id="stt-latency-badge" class="hh-tag-yellow">STT: 0ms</span>
+          </div>
+          <p id="transcript-text" class="hh-transcript-p"></p>
+        </div>
+
+        <!-- Answer -->
+        <div class="hh-answer-wrap">
+          <div class="hh-meta-bar">
+            <div class="hh-meta-left">
+              <span id="decision-badge" class="hh-badge-idle">READY</span>
+              <span id="detected-lang-tag" class="hh-tag">LANG: --</span>
+            </div>
+            <button id="tts-play-btn" class="hh-btn-speak" style="display:none">
+              <span>🔊 Speak (Sarvam TTS)</span>
+            </button>
+          </div>
+          <div id="answer-content" class="hh-answer-text">
+            <p class="hh-dim">Speak into your mic or upload audio. Answers are extracted directly from 54.25M MSMARCO-XI passages.</p>
+          </div>
+          <audio id="audio-player" style="display:none"></audio>
+        </div>
+
+        <!-- Stopwatch & Timing -->
+        <div class="hh-stopwatch">
+          <div class="hh-sw-header">
+            <span class="hh-tag">STOPWATCH</span>
+            <span class="hh-sw-total">Total: <strong id="total-latency-value">0.0 ms</strong> (&lt; 200ms target)</span>
+          </div>
+          <div class="hh-sw-stages">
+            <span>Embed: <b id="metric-embed">0.0ms</b></span>
+            <span class="hh-sep">&bull;</span>
+            <span>Retrieve: <b id="metric-retrieve">0.0ms</b></span>
+            <span class="hh-sep">&bull;</span>
+            <span>Rerank: <b id="metric-rerank">0.0ms</b></span>
+            <span class="hh-sep">&bull;</span>
+            <span>Grounding: <b id="metric-grounding">0.0ms</b></span>
+          </div>
+          <div class="hh-sw-bar">
+            <div id="timeline-embed" class="hh-sw-seg seg-embed"></div>
+            <div id="timeline-retrieve" class="hh-sw-seg seg-retrieve"></div>
+            <div id="timeline-rerank" class="hh-sw-seg seg-rerank"></div>
+            <div id="timeline-ground" class="hh-sw-seg seg-ground"></div>
+          </div>
+        </div>
+
+        <!-- Citations -->
+        <details class="hh-citations" open>
+          <summary class="hh-citations-toggle">
+            <span>Retrieved Citations (<span id="citations-count">0</span>)</span>
+          </summary>
+          <div id="citations-list" class="hh-citations-content">
+            <p class="hh-dim">No citations yet.</p>
+          </div>
+        </details>
+      </section>
+    </main>
+
+    <!-- Footer -->
     <footer class="hh-footer">
       <span>#RAGInGoa &bull; HackerHouse Goa 2026 &bull; Sub-200ms Multilingual Voice RAG</span>
     </footer>
-  </main>
+  </div>
 
   <script src="app.js"></script>
 </body>
