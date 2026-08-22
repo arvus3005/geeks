@@ -107,6 +107,39 @@ def _sentences(text: str) -> list[str]:
     return parts[:MAX_SENTENCES_PER_PASSAGE] if parts else [text]
 
 
+# Website-navigation boilerplate ("You are here: Home / Products / ...") that
+# real web-scraped passages sometimes contain -- found via the eval loop's
+# own false-confidence examples (2026-08-22): the reranker can still score
+# this kind of text as topically relevant (it does mention the right nouns),
+# but it was never prose meant to answer anything. Cheap, high-precision
+# signal, checked before spending a reranker call.
+_NAV_JUNK_RE = re.compile(r"you are here\s*:", re.IGNORECASE)
+
+
+def _is_navigation_junk(text: str) -> bool:
+    return bool(_NAV_JUNK_RE.search(text))
+
+
+def _is_question_echo(sentence: str, query_tokens: set[str]) -> bool:
+    """True if `sentence` adds zero content words beyond the query itself --
+    i.e. it's a rephrasing of the question, not an answer to it. Found via
+    a real eval example: Q "what type of photon has the greatest energy"
+    answered with "Which photon has the greatest energy." -- a genuine
+    non-answer the reranker scored highly because it's lexically almost
+    identical to the query it's supposedly answering. Deliberately
+    conservative (only rejects when NO new information is added at all) so
+    a real short factual answer that happens to reuse the query's words
+    (and adds a number/name/date) is never caught by this.
+
+    Strips trailing punctuation per token before comparing -- _content_tokens
+    alone doesn't (a period stuck to the sentence's final word, e.g.
+    "energy.", would never match the query's bare "energy" otherwise,
+    caught by this function's own test)."""
+    sentence_tokens = {t.strip(".,!?।॥\"'") for t in _content_tokens(sentence)}
+    sentence_tokens.discard("")
+    return bool(sentence_tokens) and not (sentence_tokens - query_tokens)
+
+
 def extract_answer(
     passages: list[dict], query: str, global_deadline: float | None = None
 ) -> tuple[str | None, list[dict]]:
@@ -149,7 +182,7 @@ def extract_answer(
         payload = p.get("payload", {})
         # Local hybrid store sets TEXT_FIELD (chunk_text); fallback to legacy text
         text = payload.get(TEXT_FIELD, "") or payload.get("text", "")
-        if not text:
+        if not text or _is_navigation_junk(text):
             continue
         overlap = len(query_tokens & _content_tokens(text)) / max(len(query_tokens), 1)
         if overlap >= MIN_QUERY_OVERLAP:
@@ -203,6 +236,12 @@ def extract_answer(
     for sentence in all_sentences:
         if time.monotonic() >= deadline:
             break
+        # Skip pure question-echoes (see _is_question_echo's docstring for
+        # the real example that motivated this) -- best_sentence already
+        # defaults to the whole passage, so if every sentence is an echo
+        # this falls back to that instead of ever picking a non-answer.
+        if _is_question_echo(sentence, query_tokens):
+            continue
         s = rerank_score(query, sentence)
         if s > best_sentence_score:
             best_sentence_score = s

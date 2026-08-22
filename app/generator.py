@@ -24,6 +24,7 @@ from dataclasses import dataclass
 
 from hhgoa_rag.answer.extractive import extract_answer
 from hhgoa_rag.config.settings import get_settings
+from hhgoa_rag.guardrails.input_guards import check_input
 from hhgoa_rag.guardrails.output_guards import verify_grounding
 
 _MODEL_LABEL = "hhgoa-local-hybrid-extractive-v1"
@@ -40,6 +41,18 @@ class _EvalAnswer:
 def generate_answer(query: str, results: list) -> _EvalAnswer:
     t0 = time.monotonic()
 
+    # query.py runs check_input() before retrieval ever happens for every
+    # real /v1/query request -- this generator previously skipped straight
+    # to extract_answer(), which meant the eval suite's Reliability check
+    # never exercised this guardrail at all (e.g. a genuinely current-state
+    # query like "weather in X" would be refused live, but answered here).
+    settings = get_settings()
+    guard = check_input(query, settings.max_query_chars)
+    if not guard.allowed:
+        return _EvalAnswer(
+            text="", grounded=False, generation_ms=(time.monotonic() - t0) * 1000, model=_MODEL_LABEL
+        )
+
     # eval/pipeline.py builds `results` as plain objects with .text/.source
     # (duck-typed, not this project's own passage dict shape) -- adapt into
     # the {"payload": {...}, "score": ...} shape extract_answer expects.
@@ -55,7 +68,6 @@ def generate_answer(query: str, results: list) -> _EvalAnswer:
         )
 
     passage_texts = [p["payload"]["chunk_text"] for p in evidence]
-    settings = get_settings()
     grounded, _confidence = verify_grounding(answer, passage_texts, settings.min_retrieval_score)
 
     return _EvalAnswer(

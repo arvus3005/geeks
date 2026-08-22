@@ -1,0 +1,114 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 50,
+    "num_unanswerable": 50,
+    "num_examples": 100,
+    "num_chunks": 2391,
+    "top_k": 5,
+    "seed": 42,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 50,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.54,
+        "3": 0.8,
+        "5": 0.9
+      },
+      "mrr": 0.6797
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.54,
+        "3": 0.8,
+        "5": 0.9
+      },
+      "mrr": 0.6797
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 50,
+    "num_unanswerable_evaluated": 50,
+    "false_refusal_rate": 0.02,
+    "false_refusal_examples": [
+      {
+        "query": "define hoofed",
+        "expected_answer": "Having a hoof or hoofs."
+      }
+    ],
+    "false_confidence_rate": 0.88,
+    "false_confidence_examples": [
+      {
+        "query": "difference from phycol and psychiatrist",
+        "fabricated_answer": "1 Be aware of the difference between being a psychologist and a psychiatrist.. 2  To be a Psychiatrist, you must go to medical school and get a medical degree (MD). 3  Then, you specialize in Psychiat"
+      },
+      {
+        "query": "how to do citations in an essay",
+        "fabricated_answer": "In-text citations must be used in the following situations: 1."
+      },
+      {
+        "query": "who is the person that created transformers",
+        "fabricated_answer": "Optimus Prime was created as the last of the Thirteen, the first generation of Transformers, each created directly by Primus as a band of unique warriors to combat and defeat Unicron."
+      },
+      {
+        "query": "can hyponatremia cause vertigo",
+        "fabricated_answer": "Hyponatremia signs and symptoms may include: 1  Nausea and vomiting."
+      },
+      {
+        "query": "erie insurance corporate address",
+        "fabricated_answer": "Erie Insurance Exchange has rolled down lots of different insurance roads since its founding as a Pennsylvania auto insurer."
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 100,
+    "embed": {
+      "avg_ms": 2.54,
+      "p50_ms": 2.3,
+      "p95_ms": 3.71,
+      "p99_ms": 4.41
+    },
+    "search": {
+      "avg_ms": 0.1,
+      "p50_ms": 0.09,
+      "p95_ms": 0.16,
+      "p99_ms": 0.26
+    },
+    "retrieval_total": {
+      "avg_ms": 2.46,
+      "p50_ms": 2.31,
+      "p95_ms": 3.51,
+      "p99_ms": 3.62
+    },
+    "generation": {
+      "avg_ms": 96.43,
+      "p50_ms": 50.79,
+      "p95_ms": 885.62,
+      "p99_ms": 892.98
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}
