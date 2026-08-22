@@ -222,9 +222,15 @@ async def voice_query_endpoint(
 
     passages = [{"id": h["id"], "score": h["score"], "payload": h["fields"]} for h in hits]
 
-    # Extract answer
+    # Extract answer -- global_deadline shrinks the reranker's own budget if
+    # STT-adjacent stages already ate into latency_budget_ms (see query.py's
+    # identical wiring and extract_answer's docstring for why).
     with timer.stage("answer_extract"):
-        answer, evidence = extract_answer(passages, transcript)
+        answer, evidence = extract_answer(
+            passages,
+            transcript,
+            global_deadline=timer.deadline(settings.latency_budget_ms / 1000.0),
+        )
 
     if not answer:
         return VoiceQueryResponse(

@@ -107,7 +107,9 @@ def _sentences(text: str) -> list[str]:
     return parts[:MAX_SENTENCES_PER_PASSAGE] if parts else [text]
 
 
-def extract_answer(passages: list[dict], query: str) -> tuple[str | None, list[dict]]:
+def extract_answer(
+    passages: list[dict], query: str, global_deadline: float | None = None
+) -> tuple[str | None, list[dict]]:
     """Extract best-supported answer span from top passages.
 
     1. Cheap lexical pre-filter (MIN_QUERY_OVERLAP): drops candidates with
@@ -125,6 +127,17 @@ def extract_answer(passages: list[dict], query: str) -> tuple[str | None, list[d
     3. Answer span: scores SENTENCES within the winning passage (also via
        the reranker) to pick a precise answer, rather than blindly the
        passage's first sentence.
+
+    global_deadline: an absolute time.monotonic() deadline for the WHOLE
+    request (see observability.timing.RequestTimer.deadline), not just this
+    function's own fixed RERANKER_TIME_BUDGET_S. Optional and defaults to
+    None (falls back to the fixed local budget alone) so existing callers
+    and tests that don't pass it see no behavior change. When provided, the
+    tighter of the two wins -- insurance against the case a slow upstream
+    stage (retrieval, embedding) already ate into the 200ms target before
+    this function even starts, in which case handing the reranker a fresh
+    full local budget on top would still blow the end-to-end target even
+    though this function's own timeout "worked".
     """
     if not passages:
         return None, []
@@ -147,7 +160,8 @@ def extract_answer(passages: list[dict], query: str) -> tuple[str | None, list[d
 
     from hhgoa_rag.answer.reranker import score as rerank_score
 
-    deadline = time.monotonic() + RERANKER_TIME_BUDGET_S
+    local_deadline = time.monotonic() + RERANKER_TIME_BUDGET_S
+    deadline = min(local_deadline, global_deadline) if global_deadline is not None else local_deadline
 
     best_text = ""
     best_score = float("-inf")
@@ -174,6 +188,18 @@ def extract_answer(passages: list[dict], query: str) -> tuple[str | None, list[d
     best_sentence = best_text
     best_sentence_score = float("-inf")
     all_sentences = _sentences(best_text)
+    # A lexical-overlap pre-rank was tried here (score only the top-3
+    # sentences by content-word overlap, on the theory that the true best
+    # span is very unlikely to have ~zero lexical overlap). Reverted after
+    # empirical validation against 16 real queries through the actual
+    # pipeline found a real counterexample: "How does a computer processor
+    # work?" -- the reranker's true best sentence (score 0.57) was lexically
+    # outside the top-3 and got replaced by a worse one (0.10), a genuine
+    # answer-quality regression in ~11% of real multi-sentence cases (1/9).
+    # Same failure mode as the MIN_QUERY_OVERLAP history above: a cheap
+    # lexical proxy competing with the cross-encoder and losing. Scoring
+    # every sentence is the correct behavior; latency is bounded by the
+    # deadline check below regardless.
     for sentence in all_sentences:
         if time.monotonic() >= deadline:
             break

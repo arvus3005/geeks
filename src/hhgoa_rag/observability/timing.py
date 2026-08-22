@@ -18,3 +18,13 @@ class RequestTimer:
 
     def total_ms(self) -> float:
         return (time.monotonic() - self._start) * 1000.0
+
+    def deadline(self, budget_s: float) -> float:
+        """Absolute monotonic deadline: this request's start time plus a
+        total budget -- lets a downstream stage (e.g. the reranker) know how
+        much of the WHOLE request's time is left, not just its own fixed
+        local allowance. Without this, a stage that already ran long
+        upstream (slow retrieval, GC pause, etc.) still hands the next stage
+        a fresh full budget on top, which is exactly how a single-stage
+        timeout can still blow the end-to-end target."""
+        return self._start + budget_s

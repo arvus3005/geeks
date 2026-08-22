@@ -129,9 +129,17 @@ async def query_endpoint(req: QueryRequest):
     ]
     retrieval_mode = "local_hybrid_sharded_bm25_hnsw_rrf"
 
-    # 4. Extract answer
+    # 4. Extract answer -- global_deadline lets the reranker's own time
+    # budget shrink if input_guard/language_detect/query_embed/retrieval
+    # already ate into the total latency_budget_ms, instead of always
+    # handing it a fresh fixed local allowance regardless of what's already
+    # elapsed (see RequestTimer.deadline and extract_answer's docstring).
     with timer.stage("answer_extract"):
-        answer, evidence = extract_answer(passages, req.question)
+        answer, evidence = extract_answer(
+            passages,
+            req.question,
+            global_deadline=timer.deadline(settings.latency_budget_ms / 1000.0),
+        )
 
     if not answer:
         return QueryResponse(

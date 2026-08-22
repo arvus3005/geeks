@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 20
     context_n: int = 3
 
+    # Hard end-to-end backend target per CLAUDE.md/task spec (STT excluded).
+    # Threaded through as a single global deadline (see RequestTimer.deadline
+    # and answer.extractive.extract_answer's global_deadline param) so a
+    # downstream stage that already has less time left than its own fixed
+    # local budget degrades early instead of blowing the total anyway.
+    latency_budget_ms: int = 200
+
     # STT
     sarvam_api_key: str | None = None
     sarvam_model: str = "saaras:v3"
