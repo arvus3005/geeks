@@ -68,7 +68,7 @@ def generate_answer(query: str, results: list) -> _EvalAnswer:
         )
 
     passage_texts = [p["payload"]["chunk_text"] for p in evidence]
-    grounded, _confidence = verify_grounding(answer, passage_texts, settings.min_retrieval_score)
+    grounded, _confidence = verify_grounding(query, answer, passage_texts, settings.min_retrieval_score)
 
     return _EvalAnswer(
         text=answer if grounded else "",

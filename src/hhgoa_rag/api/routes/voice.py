@@ -250,7 +250,7 @@ async def voice_query_endpoint(
     # Grounding verify
     passage_texts = [p.get("payload", {}).get(TEXT_FIELD, "") for p in evidence]
     with timer.stage("grounding_verify"):
-        grounded, confidence = verify_grounding(answer, passage_texts, settings.min_retrieval_score)
+        grounded, confidence = verify_grounding(transcript, answer, passage_texts, settings.min_retrieval_score)
 
     if not grounded:
         return VoiceQueryResponse(

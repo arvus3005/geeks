@@ -163,7 +163,7 @@ async def query_endpoint(req: QueryRequest):
     # 5. Grounding
     passage_texts = [p.get("payload", {}).get(TEXT_FIELD, "") for p in evidence]
     with timer.stage("grounding_verify"):
-        grounded, confidence = verify_grounding(answer, passage_texts, settings.min_retrieval_score)
+        grounded, confidence = verify_grounding(req.question, answer, passage_texts, settings.min_retrieval_score)
 
     if not grounded:
         return QueryResponse(

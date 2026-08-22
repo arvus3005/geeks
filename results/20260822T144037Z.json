@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 50,
+    "num_unanswerable": 50,
+    "num_examples": 100,
+    "num_chunks": 2391,
+    "top_k": 5,
+    "seed": 42,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 50,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.54,
+        "3": 0.8,
+        "5": 0.9
+      },
+      "mrr": 0.6797
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.54,
+        "3": 0.8,
+        "5": 0.9
+      },
+      "mrr": 0.6797
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 50,
+    "num_unanswerable_evaluated": 50,
+    "false_refusal_rate": 0.12,
+    "false_refusal_examples": [
+      {
+        "query": "how fast is a kilometer in miles",
+        "expected_answer": "One kilometer is equal to 0.6214 miles."
+      },
+      {
+        "query": "what is peekaboo",
+        "expected_answer": "Peekaboo is a game played by or with very young children, typically in which one covers the face or hides and then suddenly uncovers the face or reappears, calling “Peekaboo!”."
+      },
+      {
+        "query": "what is chrome mean",
+        "expected_answer": "Chrome is a fast, simple, and secure web browser, built for the modern web."
+      },
+      {
+        "query": "define hoofed",
+        "expected_answer": "Having a hoof or hoofs."
+      },
+      {
+        "query": "what is the atoms and molecules full of",
+        "expected_answer": "An atom is composed of a dense core called the nucleus and a series of outer shells occupied by orbiting electrons and molecules are made up of atoms."
+      }
+    ],
+    "false_confidence_rate": 0.56,
+    "false_confidence_examples": [
+      {
+        "query": "difference from phycol and psychiatrist",
+        "fabricated_answer": "1 Be aware of the difference between being a psychologist and a psychiatrist.. 2  To be a Psychiatrist, you must go to medical school and get a medical degree (MD). 3  Then, you specialize in Psychiat"
+      },
+      {
+        "query": "who is the person that created transformers",
+        "fabricated_answer": "Optimus Prime was created as the last of the Thirteen, the first generation of Transformers, each created directly by Primus as a band of unique warriors to combat and defeat Unicron."
+      },
+      {
+        "query": "can hyponatremia cause vertigo",
+        "fabricated_answer": "Hyponatremia signs and symptoms may include: 1  Nausea and vomiting."
+      },
+      {
+        "query": "erie insurance corporate address",
+        "fabricated_answer": "Erie Insurance Exchange has rolled down lots of different insurance roads since its founding as a Pennsylvania auto insurer."
+      },
+      {
+        "query": "what is tlr development",
+        "fabricated_answer": "TLR and Brain Development During TLR, the connections to the temporal lobe are starting to be developed, setting up the brain to be able to sequence."
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 100,
+    "embed": {
+      "avg_ms": 3.04,
+      "p50_ms": 2.73,
+      "p95_ms": 5.23,
+      "p99_ms": 8.3
+    },
+    "search": {
+      "avg_ms": 0.16,
+      "p50_ms": 0.1,
+      "p95_ms": 0.6,
+      "p99_ms": 1.14
+    },
+    "retrieval_total": {
+      "avg_ms": 3.12,
+      "p50_ms": 2.63,
+      "p95_ms": 6.03,
+      "p99_ms": 8.12
+    },
+    "generation": {
+      "avg_ms": 109.74,
+      "p50_ms": 53.47,
+      "p95_ms": 1039.94,
+      "p99_ms": 1046.34
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}
