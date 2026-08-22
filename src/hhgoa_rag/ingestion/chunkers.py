@@ -1,9 +1,20 @@
-"""Four chunking strategies for MSMARCO-XI passages.
+"""Five chunking strategies for MSMARCO-XI passages.
 
-1. PassageNativeChunker   — preserve passage as-is
-2. SentenceAwareChunker   — split on sentence boundaries, group to target size
-3. FixedTokenChunker      — fixed exact-token windows with overlap (requires real tokenizer)
-4. SemanticChunker        — split on similarity drops (EXPERIMENTAL)
+1. PassageNativeChunker    — preserve passage as-is
+2. SentenceAwareChunker    — split on sentence boundaries, group to target size
+3. FixedTokenChunker       — fixed exact-token windows with overlap (requires real tokenizer)
+4. SemanticChunker         — split on similarity drops (EXPERIMENTAL)
+5. MetadataPrefixChunker   — wraps a base chunker, injects a short
+   `[lang|source|doc_id]`-style prefix into the text used for EMBEDDING
+   only, never shown to the user. Found via reference-project research
+   (reference/hhgoa-task2-main/docs/BUILD_LOG.md: this exact pattern,
+   validated with a paired-bootstrap significance test at full corpus
+   scale, was the one strategy that actually beat a plain single-strategy
+   baseline -- not just a design choice, a measured one). Not applied to
+   this project's already-built 54M-passage index (re-indexing that scale
+   is out of scope same-day); implemented and tested as a genuine 5th
+   available strategy, and the natural next step if the corpus is ever
+   rebuilt or extended -- see docs/FOLLOWUP_TECHNIQUES.md item 3.
 
 All chunkers are deterministic given the same input.
 
@@ -37,6 +48,13 @@ class Chunk:
     char_length: int = 0
     # "real" when a real tokenizer was used; "approximate_whitespace" otherwise.
     tokenizer_label: str = "real"
+    # What actually gets embedded, if different from `text` (e.g. a
+    # metadata-prefixed version for MetadataPrefixChunker). None means
+    # "embed `text` itself, nothing to add" -- the common case for every
+    # chunker except MetadataPrefixChunker. Kept separate from `text` so
+    # `text` always stays the clean, displayable answer span -- never show
+    # a user the metadata prefix that helped retrieval find it.
+    embedding_text: str | None = None
 
 
 class BaseChunker(ABC):
@@ -337,6 +355,48 @@ class SemanticChunker(BaseChunker):
                 )
             )
         return chunks
+
+
+# ── 5. Metadata-prefix (wraps a base chunker) ────────────────────────────────
+
+
+class MetadataPrefixChunker(BaseChunker):
+    """Wraps another chunker; for each of its chunks, builds a short prefix
+    (`[lang|source|doc_id]`) and sets `embedding_text = prefix + text` --
+    the prefix helps the embedder place the vector correctly (e.g.
+    disambiguating short, generic-sounding chunks by their source/language)
+    without ever being shown to the user, since `text` (the displayable
+    field) is left untouched.
+
+    Per-language metadata dict keyed by parent_passage_id is the caller's
+    responsibility to build (typically language + source dataset config +
+    doc id, whatever's available at indexing time) -- this class only
+    knows how to format and attach it, not where indexing metadata comes
+    from, since that varies by which script is calling it.
+    """
+
+    strategy_name = "metadata_prefix"
+
+    def __init__(self, base: BaseChunker, metadata_for: dict[str, dict[str, str]] | None = None):
+        self.base = base
+        # passage_id -> {"lang": ..., "source": ..., "doc_id": ...} (any
+        # subset of keys; missing ones are just omitted from the prefix).
+        self.metadata_for = metadata_for or {}
+
+    def _prefix(self, passage_id: str) -> str:
+        meta = self.metadata_for.get(passage_id, {})
+        parts = [meta[k] for k in ("lang", "source", "doc_id") if meta.get(k)]
+        return f"[{'|'.join(parts)}] " if parts else ""
+
+    def chunk(self, text: str, passage_id: str) -> list[Chunk]:
+        base_chunks = self.base.chunk(text, passage_id)
+        prefix = self._prefix(passage_id)
+        if not prefix:
+            return base_chunks
+        for c in base_chunks:
+            c.embedding_text = prefix + c.text
+            c.chunk_strategy = self.strategy_name
+        return base_chunks
 
 
 # ── Registry ──────────────────────────────────────────────────────────────────
