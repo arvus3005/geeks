@@ -1,5 +1,5 @@
 /**
- * HH Goa 2026 Multilingual Voice RAG — Official Client Application
+ * HH Goa 2026 Multilingual Voice RAG — Dedicated Voice-First Interface
  * Theme: HackerHouse Goa 2026 (Clean Handcrafted Single-Column Layout)
  */
 
@@ -7,18 +7,10 @@
   'use strict';
 
   // DOM Elements
-  const tabVoice = document.getElementById('tab-voice');
-  const tabText = document.getElementById('tab-text');
-  const voiceContainer = document.getElementById('voice-mode-container');
-  const textContainer = document.getElementById('text-mode-container');
-
   const micBtn = document.getElementById('mic-btn');
   const micLabel = document.getElementById('mic-label');
   const audioFileInput = document.getElementById('audio-file-input');
   const langSelect = document.getElementById('lang-select');
-  const textForm = document.getElementById('text-query-form');
-  const queryTextInput = document.getElementById('query-text-input');
-  const submitBtn = document.getElementById('submit-query-btn');
   
   const canvas = document.getElementById('audio-visualizer');
   const canvasCtx = canvas.getContext('2d');
@@ -57,23 +49,6 @@
   let recordingStartTime = 0;
   let timerInterval = null;
   let currentAudioBase64 = null;
-
-  // Tabs
-  tabVoice.addEventListener('click', () => {
-    tabVoice.classList.add('active');
-    tabText.classList.remove('active');
-    voiceContainer.style.display = 'flex';
-    textContainer.style.display = 'none';
-    initCanvas();
-  });
-
-  tabText.addEventListener('click', () => {
-    tabText.classList.add('active');
-    tabVoice.classList.remove('active');
-    voiceContainer.style.display = 'none';
-    textContainer.style.display = 'block';
-    queryTextInput.focus();
-  });
 
   // Canvas Waveform
   function initCanvas() {
@@ -166,7 +141,7 @@
       drawLiveVisualizer();
     } catch (err) {
       console.error('Microphone error:', err);
-      alert('Could not access microphone. Please allow audio permissions.');
+      alert('Could not access microphone. Please allow audio permissions or upload an audio file.');
     }
   }
 
@@ -189,9 +164,9 @@
     timerDisplay.textContent = `${mins}:${secs}`;
   }
 
-  // Voice Query
+  // Voice Query Submission
   async function handleVoiceSubmit(audioBlob) {
-    setLoadingState(true, 'Transcribing & retrieving answer…');
+    setLoadingState(true, 'Transcribing via Sarvam Saaras & retrieving answer…');
     const formData = new FormData();
     formData.append('file', audioBlob, 'query.wav');
     
@@ -222,11 +197,13 @@
     }
   }
 
-  // Text Query
-  async function handleTextSubmit(text, lang) {
+  // Quick Spoken Sample Query
+  async function handleTextQueryDirect(text, lang) {
     if (!text || !text.trim()) return;
     setLoadingState(true, 'Retrieving from 54.25M MSMARCO-XI index…');
-    transcriptBox.style.display = 'none';
+    transcriptBox.style.display = 'block';
+    transcriptText.textContent = `"${text}" (Spoken Sample)`;
+    sttLatencyBadge.textContent = 'STT: simulated';
 
     const payload = {
       question: text.trim(),
@@ -247,7 +224,7 @@
       const data = await response.json();
       renderTextResponse(data);
     } catch (err) {
-      console.error('Text query failed:', err);
+      console.error('Query failed:', err);
       renderError(err.message);
     } finally {
       setLoadingState(false);
@@ -372,14 +349,12 @@
 
   function setLoadingState(loading, message) {
     if (loading) {
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Searching…';
+      micBtn.disabled = true;
       decisionBadge.className = 'hh-badge-idle';
-      decisionBadge.textContent = 'RUNNING';
+      decisionBadge.textContent = 'PROCESSING';
       answerContent.innerHTML = `<p class="hh-dim">${escapeHtml(message || 'Processing…')}</p>`;
     } else {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Search';
+      micBtn.disabled = false;
     }
   }
 
@@ -412,20 +387,12 @@
     }
   });
 
-  textForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const q = queryTextInput.value;
-    const lang = langSelect.value;
-    handleTextSubmit(q, lang);
-  });
-
   document.querySelectorAll('.hh-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const q = chip.dataset.query;
       const lang = chip.dataset.lang;
-      queryTextInput.value = q;
-      if (lang) langSelect.value = lang;
-      handleTextSubmit(q, lang);
+      if (lang && lang !== 'auto') langSelect.value = lang;
+      handleTextQueryDirect(q, lang);
     });
   });
 

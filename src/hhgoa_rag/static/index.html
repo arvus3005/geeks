@@ -16,21 +16,13 @@
       <div class="hh-logo-wrap">
         <img src="logo.svg" alt="HackerHouse Goa" class="hh-logo" />
       </div>
-      <p class="hh-motto">LESS NOISE. MORE SIGNAL.</p>
       <h1 class="hh-title">Voice-Enabled Multilingual RAG</h1>
-      <p class="hh-sub">54.25M MSMARCO-XI Indic Passages &bull; Sub-200ms Hybrid Search &bull; #RAGInGoa</p>
+      <p class="hh-sub">54.25M MSMARCO-XI Indic Passages &bull; Sub-200ms Hybrid Search</p>
     </header>
 
-    <!-- Pill Tabs -->
-    <div class="hh-tabs">
-      <button id="tab-voice" class="hh-tab active">Voice Query</button>
-      <button id="tab-text" class="hh-tab">Text Search</button>
-    </div>
-
-    <!-- Interaction Box -->
+    <!-- Voice Interaction Card -->
     <div class="hh-card">
-      <!-- Voice Input View -->
-      <div id="voice-mode-container" class="hh-voice-view">
+      <div class="hh-voice-view">
         <div class="hh-visualizer-box">
           <canvas id="audio-visualizer" width="560" height="90"></canvas>
           <span id="recording-time" class="hh-rec-timer">00:00</span>
@@ -60,15 +52,7 @@
         </div>
       </div>
 
-      <!-- Text Input View -->
-      <div id="text-mode-container" class="hh-text-view" style="display:none">
-        <form id="text-query-form" class="hh-search-box">
-          <input type="text" id="query-text-input" placeholder="Ask in Hindi, Bengali, Marathi, Tamil, Urdu, English..." autocomplete="off">
-          <button type="submit" id="submit-query-btn" class="hh-btn-search">Search</button>
-        </form>
-      </div>
-
-      <!-- Sample Prompts -->
+      <!-- Spoken Sample Prompts -->
       <div class="hh-samples">
         <span class="hh-samples-label">Samples:</span>
         <div class="hh-chips">
@@ -105,7 +89,7 @@
           </button>
         </div>
         <div id="answer-content" class="hh-answer-text">
-          <p class="hh-dim">Answers extracted directly from 54.25M MSMARCO-XI passages with cross-encoder verification.</p>
+          <p class="hh-dim">Speak into your mic or upload audio. Answers are extracted directly from 54.25M MSMARCO-XI passages.</p>
         </div>
         <audio id="audio-player" style="display:none"></audio>
       </div>
@@ -145,7 +129,7 @@
     </div>
 
     <footer class="hh-footer">
-      <span>#RAGInGoa &bull; HackerHouse Goa 2026 &bull; Sub-200ms Multilingual RAG</span>
+      <span>#RAGInGoa &bull; HackerHouse Goa 2026 &bull; Sub-200ms Multilingual Voice RAG</span>
     </footer>
   </main>
 
