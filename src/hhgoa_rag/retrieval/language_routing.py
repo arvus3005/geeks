@@ -68,6 +68,8 @@ def detect_script(text: str) -> str:
         return "Malayalam"
     if ODIA_RANGE.search(text):
         return "Odia"
+    if GURMUKHI_RANGE.search(text):
+        return "Gurmukhi"
     return "Latin"
 
 
@@ -88,6 +90,7 @@ _SCRIPT_TO_LANGS = {
     "Kannada": ["kn"],
     "Malayalam": ["ml"],
     "Odia": ["or"],
+    "Gurmukhi": ["pa"],
 }
 
 
@@ -104,7 +107,7 @@ def detect_language(text: str) -> str:
     return langs[0] if langs else "en"
 
 
-def get_language_filter(detected_lang: str, hint: str | None) -> list[str]:
+def get_language_filter(detected_lang: str | None, hint: str | None) -> list[str]:
     """Return the list of shard-group codes (matching full_local_index/
     directory prefixes) that should be queried for this language.
 

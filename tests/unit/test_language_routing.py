@@ -1,4 +1,4 @@
-from hhgoa_rag.retrieval.language_routing import detect_script, get_language_filter
+from hhgoa_rag.retrieval.language_routing import detect_language, detect_script, get_language_filter
 
 
 def test_detect_devanagari():
@@ -11,6 +11,67 @@ def test_detect_bengali():
 
 def test_detect_latin():
     assert detect_script("hello world") == "Latin"
+
+
+def test_detect_kannada():
+    assert detect_script("ಕನ್ನಡ") == "Kannada"
+
+
+def test_detect_malayalam():
+    assert detect_script("മലയാളം") == "Malayalam"
+
+
+def test_detect_odia():
+    assert detect_script("ଓଡ଼ିଆ") == "Odia"
+
+
+def test_detect_gurmukhi():
+    assert detect_script("ਪੰਜਾਬੀ") == "Gurmukhi"
+
+
+# detect_language exercises the _SCRIPT_TO_LANGS mapping, not just the
+# regex range -- a script range can be defined but never wired into that
+# dict (this happened for real with Gurmukhi during development: the range
+# matched correctly but detect_language still fell through to "en" because
+# _SCRIPT_TO_LANGS had no "Gurmukhi" key). These would have caught it.
+def test_detect_language_kannada():
+    assert detect_language("ಕನ್ನಡ") == "kn"
+
+
+def test_detect_language_malayalam():
+    assert detect_language("മലയാളം") == "ml"
+
+
+def test_detect_language_odia():
+    assert detect_language("ଓଡ଼ିଆ") == "or"
+
+
+def test_detect_language_gurmukhi():
+    assert detect_language("ਪੰਜਾਬੀ") == "pa"
+
+
+def test_detect_language_nepali_defaults_to_hi_in_devanagari_ambiguity():
+    # ne shares Devanagari with hi/mr; detect_language's single-guess return
+    # is "hi" first by design (see _SCRIPT_TO_LANGS ordering) -- the real
+    # ne coverage comes from get_language_filter fanning out to all three,
+    # not from this function guessing "ne" for Devanagari text.
+    assert detect_language("नेपाली") == "hi"
+
+
+def test_filter_as_kn_ml_or_pa_each_reach_own_shard():
+    for lang in ("kn", "ml", "or", "pa"):
+        f = get_language_filter(None, lang)
+        assert lang in f and "hi" in f
+
+
+def test_filter_assamese_reaches_bn_and_as():
+    f = get_language_filter(None, "as")
+    assert "as" in f and "bn" in f and "hi" in f
+
+
+def test_filter_nepali_hint_reaches_all_three_devanagari_shards():
+    f = get_language_filter(None, "ne")
+    assert "ne" in f and "hi" in f and "mr" in f
 
 
 def test_filter_hindi():
