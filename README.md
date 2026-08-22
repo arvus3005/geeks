@@ -33,7 +33,7 @@
 | **Model harness** | Structured I/O, retries, error recovery | Pydantic v2 schemas, structured errors, fallback routing, atomic checkpoints | ✅ Implemented |
 | **Guardrails** | Off-topic rejection, hallucination checks | Input safety guards + output grounding validator (abstains when ungrounded) | ✅ Implemented |
 | **Dataset contract** | No label leakage into the index | Leakage isolation tests, zero forbidden-field hits | ✅ Verified |
-| **Test suite** | Robust offline verification | **104 tests passing**, zero live provider calls | ✅ 104 passed (re-run against the current local hybrid serving path on 2026-08-22; the 672 figure was pre-migration and included ~20 now-deleted Pinecone-only test files — see Known Gaps) |
+| **Test suite** | Robust offline verification | **106 tests passing**, zero live provider calls | ✅ 106 passed (re-run against the current local hybrid serving path on 2026-08-22; the 672 figure was pre-migration and included ~20 now-deleted Pinecone-only test files — see Known Gaps) |
 | **Full-corpus, self-hosted retrieval** | Team decision (not a spec line item) | BM25 + HNSW hybrid, fused with Reciprocal Rank Fusion, sharded across per-segment indexes, **now the live serving backend**. 54.25M passages built (6/14 languages); live serving caps to a RAM-resident subset per language. | ✅ Serving live, 6/14 languages built |
 
 ---
