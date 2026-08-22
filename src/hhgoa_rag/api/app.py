@@ -7,10 +7,10 @@ Pinecone-based serving path and the Pinecone-specific ingestion pipeline
 it depended on were removed from the repo entirely the same day, not left
 around unused.
 
-The query embedder (local_embedder.py, int8 ONNX) and SentencePiece
-tokenizer, plus every live-serving shard, are warmed here at startup —
-loaded once, never per-request, per CLAUDE.md — since both are real
-per-process resources.
+The query embedder (local_embedder.py, int8 ONNX), the cross-encoder
+relevance reranker (answer/reranker.py, int8 ONNX) that gates whether
+extract_answer answers or declines, and every live-serving shard are all
+warmed here at startup — loaded once, never per-request, per CLAUDE.md.
 """
 
 from __future__ import annotations
@@ -33,10 +33,12 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     try:
+        from hhgoa_rag.answer import reranker
         from hhgoa_rag.retrieval import local_embedder
         from hhgoa_rag.retrieval.sharded_local_hybrid_store import _discover_shards, warm_all_shards
 
         local_embedder._lazy_load()
+        reranker._lazy_load()
 
         shards_by_lang = _discover_shards()
         total_shards = sum(len(v) for v in shards_by_lang.values())

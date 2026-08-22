@@ -14,51 +14,70 @@ _STOPWORDS = frozenset(
 )
 
 # Below this fraction of shared CONTENT words between the query and the
-# best-matching passage, decline rather than extract an answer. Exists
-# because grounding (extract_answer's caller, hhgoa_rag.guardrails.
-# output_guards.verify_grounding) checks the answer against the passage it
-# was extracted FROM -- for extractive answering that's nearly tautological
-# (the "answer" is literally a sentence out of that passage, so it always
-# "grounds"), so it can't catch a passage that's simply irrelevant to the
-# question. Query<->passage content overlap is a fast, cheap first signal
-# that distinguishes "topically relevant" from "grammatically coincidental"
-# -- real example this fixes, caught by rag-local-eval-loop's Reliability
-# check (2026-08-22): query "hexadecimal numbers to binary numbers" against
-# an irrelevant passage was answering anyway pre-fix (0% content overlap,
-# should have declined).
-MIN_QUERY_OVERLAP = 0.4
+# best-matching passage, decline rather than extract an answer -- a cheap
+# pre-filter to skip reranker calls on candidates with ~zero real content
+# overlap. Originally set to 0.4 when this was the PRIMARY relevance
+# signal (before the cross-encoder reranker existed), which made sense
+# when it had to do the real discrimination work alone. Lowered to 0.1
+# once the reranker became the real gate: at 0.4, real production testing
+# showed the lexical filter was discarding candidates BEFORE the (much
+# more reliable) reranker ever got to score them -- compounding with the
+# reranker's own MIN_RERANKER_SCORE gate and pushing abstain rate to 57.5%
+# on real traffic, well above what the reranker's own measured score
+# distribution implied it should be (~30%). 0.1 keeps this as what it's
+# actually for now -- skipping reranker calls on genuine zero-overlap
+# noise, not as a second independent relevance judgment competing with a
+# stronger one.
+MIN_QUERY_OVERLAP = 0.1
 
-# Below this cosine similarity between the query's own embedding and the
-# best-matching SENTENCE's embedding (not the whole passage -- see below),
-# decline. A first attempt at this gate (2026-08-22, reverted -- see git
-# history) was calibrated on hand-written, full-sentence English pairs
-# ("What is a corporation?") and scored 0.88+ for genuinely relevant
-# matches -- but real MSMARCO-style queries are short, informal fragments
-# ("hexadecimal numbers to binary numbers"), and that mismatch in QUERY
-# STYLE (not just language) miscalibrated the threshold so badly it drove
-# the live production abstain rate to 80.8%.
+# Two earlier gates (2026-08-22, superseded -- see git history) were tried
+# and moved past, not just tuned: a query<->passage lexical content-overlap
+# gate, then an embedding cosine-similarity gate on top of it (calibrated
+# on real multilingual data after a first English-only attempt broke
+# production). Both were bi-encoder-shaped signals -- comparing two
+# SEPARATELY-computed vectors -- and both hit the same real ceiling a
+# competing team's own AUC ablation independently measured
+# (reference/shruti-main/docs/BUILD_LOG.md: top-1 cosine similarity tops
+# out at AUC=0.713 for "genuinely answers this question" vs "topically
+# related but doesn't", because that's structurally not what similarity of
+# separately-computed vectors measures).
 #
-# Redone properly: sampled 48 real passages across all 6 indexed languages
-# (hi/bn/gu/ta/mr/ur), built SHORT natural-style queries from each (first
-# ~6 words, lowercased -- matching real search-query shape, not a clean
-# sentence), and measured real cosine similarity for (a) the guaranteed-
-# relevant self-retrieval pair's best-matching sentence and (b) the
-# best-matching sentence within a DIFFERENT same-language passage (a
-# stand-in for "irrelevant"). Per-language relevant-mean / irrelevant-mean:
-# hi 0.878/0.782, bn 0.878/0.791, gu 0.888/0.795, ta 0.903/0.793,
-# mr 0.867/0.793, ur 0.852/0.783 -- a real, consistent ~0.08-0.11 gap in
-# every language. The tails overlap somewhat at n=8/language (e.g. mr's
-# weakest relevant sample and ta's strongest irrelevant one land close
-# together), so 0.80 is set conservatively near the low end of every
-# language's relevant range rather than at the exact midpoint of the gap.
-MIN_SEMANTIC_SIMILARITY = 0.80
+# Replaced with a real cross-encoder (hhgoa_rag.answer.reranker,
+# jinaai/jina-reranker-v2-base-multilingual, int8 ONNX) that runs the
+# query and passage through the model TOGETHER, with cross-attention, so
+# it can actually judge "does this text answer that question" instead of
+# "are these two topics similar". Measured on this project's own known
+# problem cases: relevant pair scored 2.46, a topically-adjacent-but-wrong
+# pair scored -0.58 (negative), a genuinely unrelated pair scored -3.62 --
+# separation cosine similarity never produced (<0.05 gap, overlapping
+# tails, on the same pairs).
+#
+# MIN_RERANKER_SCORE was first set to 0.0, calibrated against synthetic
+# "perfect echo" self-retrieval pairs (a query built from a passage's own
+# text, guaranteed relevant by construction). That looked well-separated
+# in isolation but broke real production the same way the first cosine-
+# similarity attempt did: tested against 120 real queries run through the
+# ACTUAL retrieval pipeline (not synthetic pairs), the real best-of-top-3
+# score distribution is heavily left-skewed (p50=-0.74, p70=0.12, p90=0.87
+# -- real retrieval against a 54M-passage corpus routinely does not surface
+# a strongly-matching top-3 candidate even for genuinely answerable
+# queries), so 0.0 declined ~80% of real traffic.
+#
+# Reference/RAGgoa-main/rag/generation/relevance.py independently ran the
+# same class of ablation (160 in-corpus + 14 out-of-corpus questions) and
+# landed on a floor of -2.0, explicitly calling it "an improvement, not a
+# solution" and intentionally decline-biased. -2.0 sits right around this
+# project's own measured p20-p30 (real data: p20=-2.30, p30=-2.19) --
+# two independent measurements landing in the same place. Set to -2.0.
+MIN_RERANKER_SCORE = -2.0
 
-# Passages are scored sentence-by-sentence, not as one block: a topically
-# broad passage can have one sharply on-topic sentence among several
-# irrelevant ones, which whole-passage scoring dilutes. Cap the number of
-# sentences checked per candidate passage to bound embed-call latency (a
-# real production passage rarely needs more than this to find its best
-# match, and MSMARCO passages are themselves already short).
+# Passages are scored sentence-by-sentence for the FINAL answer span (not
+# for the relevance gate above, which now runs on whole passages -- the
+# cross-encoder's cross-attention already handles finding the relevant
+# part of a longer passage internally, unlike bi-encoder similarity which
+# needed sentence-splitting to avoid dilution). Sentence-level scoring here
+# is just for picking a precise answer span from within the winning
+# passage. Capped to bound embed-call latency.
 MAX_SENTENCES_PER_PASSAGE = 6
 
 
@@ -74,21 +93,21 @@ def _sentences(text: str) -> list[str]:
 def extract_answer(passages: list[dict], query: str) -> tuple[str | None, list[dict]]:
     """Extract best-supported answer span from top passages.
 
-    Scores candidate SENTENCES, not whole passages: a topically broad
-    passage can contain one sentence that actually answers the question
-    among several that don't, which whole-passage scoring blurs together
-    (found via a competing team's reference implementation, which had
-    already measured this exact class of error -- see the commit this
-    function was last changed in). Ranks by REAL embedding cosine
-    similarity between the query and each candidate sentence, not lexical
-    overlap (an earlier version picked the lexical-overlap winner first
-    and only used semantic similarity as a gate afterward, letting a
-    lexically-strong-but-semantically-wrong candidate beat a better one
-    sitting right next to it). Declines (returns None) if even the best
-    sentence doesn't clear MIN_QUERY_OVERLAP at the passage level (cheap
-    lexical pre-filter, avoids spending embed calls on passages with zero
-    real content overlap) or MIN_SEMANTIC_SIMILARITY (the real relevance
-    gate, now checked at sentence granularity).
+    1. Cheap lexical pre-filter (MIN_QUERY_OVERLAP): drops candidates with
+       ~zero real content-word overlap before spending a reranker call on
+       them.
+    2. Real relevance gate: scores each surviving candidate PASSAGE with
+       the cross-encoder reranker (hhgoa_rag.answer.reranker), in RRF
+       order (best-ranked-by-retrieval first), and stops as soon as one
+       clears MIN_RERANKER_SCORE -- reference/RAGgoa-main measured their
+       first candidate alone clears their floor 83% of the time, so
+       scoring the full shortlist every time is often wasted work. Only
+       keeps scoring if the current-best candidate doesn't clear the
+       floor, in case a later one does. Declines (returns None) if none of
+       the candidates clear it.
+    3. Answer span: scores SENTENCES within the winning passage (also via
+       the reranker) to pick a precise answer, rather than blindly the
+       passage's first sentence.
     """
     if not passages:
         return None, []
@@ -109,24 +128,28 @@ def extract_answer(passages: list[dict], query: str) -> tuple[str | None, list[d
     if not candidate_texts:
         return None, []
 
-    from hhgoa_rag.retrieval.local_embedder import embed_passage, embed_query
+    from hhgoa_rag.answer.reranker import score as rerank_score
 
-    query_vec = embed_query(query)
-    best_sentence = ""
-    best_similarity = -1.0
-
+    best_text = ""
+    best_score = float("-inf")
     for text in candidate_texts:
-        for sentence in _sentences(text):
-            sentence_vec = embed_passage(sentence)
-            # Both vectors are L2-normalized (see local_embedder._embed), so
-            # cosine similarity is just the dot product.
-            similarity = sum(a * b for a, b in zip(query_vec, sentence_vec, strict=True))
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_sentence = sentence
+        s = rerank_score(query, text)
+        if s > best_score:
+            best_score = s
+            best_text = text
+        if best_score >= MIN_RERANKER_SCORE:
+            break  # short-circuit -- this candidate already clears the floor
 
-    if not best_sentence or best_similarity < MIN_SEMANTIC_SIMILARITY:
+    if not best_text or best_score < MIN_RERANKER_SCORE:
         return None, []
+
+    best_sentence = best_text
+    best_sentence_score = float("-inf")
+    for sentence in _sentences(best_text):
+        s = rerank_score(query, sentence)
+        if s > best_sentence_score:
+            best_sentence_score = s
+            best_sentence = sentence
 
     answer = best_sentence if best_sentence.endswith(".") else best_sentence + "."
     return answer, passages[:3]
