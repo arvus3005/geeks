@@ -20,13 +20,26 @@ _STOPWORDS = frozenset(
 # was extracted FROM -- for extractive answering that's nearly tautological
 # (the "answer" is literally a sentence out of that passage, so it always
 # "grounds"), so it can't catch a passage that's simply irrelevant to the
-# question. Query<->passage content overlap is the signal that actually
-# distinguishes "topically relevant" from "lexically coincidental" — real
-# example this fixes, caught by rag-local-eval-loop's Reliability check
-# (2026-08-22): query "hexadecimal numbers to binary numbers" against an
-# irrelevant passage was answering anyway pre-fix (0% content overlap,
+# question. Query<->passage content overlap is a fast, cheap first signal
+# that distinguishes "topically relevant" from "grammatically coincidental"
+# -- real example this fixes, caught by rag-local-eval-loop's Reliability
+# check (2026-08-22): query "hexadecimal numbers to binary numbers" against
+# an irrelevant passage was answering anyway pre-fix (0% content overlap,
 # should have declined).
 MIN_QUERY_OVERLAP = 0.4
+
+# A semantic-similarity gate (embedding cosine similarity between query and
+# best passage) was tried on top of the lexical gate to catch
+# topically-adjacent-but-wrong passages the lexical check alone lets
+# through -- it worked on rag-local-eval-loop's (English-only) sample
+# (fabrication rate ~90%->53%), but a threshold calibrated against English
+# text pairs did NOT generalize to this project's real multilingual traffic:
+# tested against the live production index with the real 60-native-language/
+# 60-English benchmark query set and it drove the abstain rate to 80.8%
+# (97/120), breaking normal operation. Reverted rather than shipped with
+# only-English calibration -- would need real per-language calibration data
+# to redo safely, not available under today's deadline. See git history for
+# the full numbers on both sides of this decision.
 
 
 def _content_tokens(text: str) -> set[str]:
@@ -45,6 +58,7 @@ def extract_answer(passages: list[dict], query: str) -> tuple[str | None, list[d
     best_passage = None
     best_score = -1.0
     best_overlap = 0.0
+    best_text = ""
 
     for p in passages[:3]:
         payload = p.get("payload", {})
@@ -60,14 +74,13 @@ def extract_answer(passages: list[dict], query: str) -> tuple[str | None, list[d
             best_score = combined
             best_overlap = overlap
             best_passage = p
+            best_text = text
 
     if best_passage is None or best_overlap < MIN_QUERY_OVERLAP:
         return None, []
 
-    payload = best_passage.get("payload", {})
-    text = payload.get(TEXT_FIELD, "") or payload.get("text", "")
-    sentences = text.split(". ")
-    answer = sentences[0] if sentences else text[:300]
+    sentences = best_text.split(". ")
+    answer = sentences[0] if sentences else best_text[:300]
     if not answer.endswith("."):
         answer += "."
 
