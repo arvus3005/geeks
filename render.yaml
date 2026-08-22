@@ -1,0 +1,33 @@
+# Render Blueprint — free tier, no credit card required.
+#
+# This service does NOT run the real RAG pipeline. Render's free tier is
+# 512MB RAM total; this project's embedding stack alone (ONNX Runtime +
+# SentencePiece + the e5-small model) measures ~470MB before a single
+# passage is loaded, and the real live-serving index needs several GB on
+# top of that (see src/hhgoa_rag/retrieval/sharded_local_hybrid_store.py's
+# module docstring for the exact numbers) — checked for real, not assumed,
+# on 2026-08-22. There is no tuning that closes that gap on this tier.
+#
+# What this service actually is: a thin reverse proxy
+# (src/hhgoa_rag/proxy_app.py) forwarding every request to the real
+# backend — the local hybrid index served from the indexing machine via
+# an ngrok tunnel. Kept as a second live link alongside the ngrok URL
+# itself, at the user's request. If the ngrok tunnel or the indexing
+# machine goes down, this link goes down too — it is not an independent
+# redundant deployment, just a second URL for the same one real backend.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> connect this repo.
+
+services:
+  - type: web
+    name: hhgoa-rag
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: uv run uvicorn hhgoa_rag.proxy_app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health/ready
+    autoDeploy: true
+    envVars:
+      - key: PROXY_UPSTREAM_URL
+        value: https://hyphen-onyx-sprig.ngrok-free.dev
