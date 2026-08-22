@@ -72,9 +72,9 @@ def _get_tts_client() -> httpx.AsyncClient:
 
 
 class SarvamTTSAdapter:
-    """Sarvam Bulbul v1 Text-to-Speech adapter."""
+    """Sarvam Bulbul v3 Text-to-Speech adapter for Indic languages."""
 
-    def __init__(self, api_key: str | None = None, model: str = "bulbul:v1", speaker: str = "meera"):
+    def __init__(self, api_key: str | None = None, model: str = "bulbul:v3", speaker: str = "priya"):
         self.api_key = api_key
         self.model = model
         self.speaker = speaker
@@ -85,10 +85,10 @@ class SarvamTTSAdapter:
             "inputs": [text[:500]],
             "target_language_code": lang_code,
             "speaker": self.speaker,
-            "pitch": 0,
+            "pitch": 0.0,
             "pace": 1.0,
-            "loudness": 1.5,
-            "speech_sample_rate": 8000,
+            "loudness": 1.0,
+            "speech_sample_rate": 16000,
             "enable_preprocessing": True,
             "model": self.model,
         }

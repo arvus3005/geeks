@@ -78,12 +78,20 @@ async def lifespan(app: FastAPI):
 
 
 from pathlib import Path
+from fastapi.responses import ORJSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .routes import health, query, system, voice  # noqa: E402
 
-app = FastAPI(title="HH Goa RAG API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="HH Goa RAG API",
+    version="0.1.0",
+    lifespan=lifespan,
+    default_response_class=ORJSONResponse,
+)
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
