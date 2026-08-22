@@ -72,19 +72,17 @@ body.hh-page {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0.75rem 1.5rem;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 0 20px rgba(254, 225, 1, 0.15);
+  background: transparent;
+  border: none;
+  box-shadow: none;
   margin-bottom: 0.35rem;
 }
 
 .hh-logo {
-  height: 52px;
+  height: 64px;
   width: auto;
   object-fit: contain;
-  filter: drop-shadow(0 0 10px rgba(254, 225, 1, 0.35));
+  filter: drop-shadow(0 0 15px rgba(254, 225, 1, 0.4));
 }
 
 .hh-title {
@@ -217,14 +215,16 @@ body.hh-page {
 .hh-btn-secondary {
   display: inline-flex;
   align-items: center;
-  padding: 0.7rem 1.1rem;
+  padding: 0.75rem 1.2rem;
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid var(--border-dashed);
   border-radius: var(--radius-full);
   color: var(--yellow);
-  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
 
 .hh-btn-secondary:hover {
@@ -232,16 +232,25 @@ body.hh-page {
 }
 
 .hh-select {
-  background: var(--bg-input);
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: var(--bg-input) url("data:image/svg+xml;utf8,<svg fill='%23fee101' height='16' viewBox='0 0 24 24' width='16' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/></svg>") no-repeat right 0.75rem center;
   color: var(--yellow);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--border-dashed);
   border-radius: var(--radius-full);
-  padding: 0.65rem 0.9rem;
+  padding: 0.75rem 2.2rem 0.75rem 1.15rem;
   font-family: var(--font-mono);
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 600;
   outline: none;
   cursor: pointer;
+  line-height: 1.2;
+}
+
+.hh-select option {
+  background: #084a28;
+  color: #fffbe8;
 }
 
 /* Samples */
