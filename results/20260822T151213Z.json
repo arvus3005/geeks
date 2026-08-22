@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 50,
+    "num_unanswerable": 50,
+    "num_examples": 100,
+    "num_chunks": 2420,
+    "top_k": 5,
+    "seed": 123,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 50,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.58,
+        "3": 0.96,
+        "5": 0.98
+      },
+      "mrr": 0.7617
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.58,
+        "3": 0.96,
+        "5": 0.98
+      },
+      "mrr": 0.7617
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 50,
+    "num_unanswerable_evaluated": 50,
+    "false_refusal_rate": 0.12,
+    "false_refusal_examples": [
+      {
+        "query": "how to determine your molina provider id number",
+        "expected_answer": "The most current 13-digit recipient identification number was frozen and became the permanent Medicaid recipient identification number."
+      },
+      {
+        "query": "what percentage of california population growth is due to illegal immigrants",
+        "expected_answer": "Fifty percentage of California population growth is due to illegal immigrants."
+      },
+      {
+        "query": "cost to add a second floor to an existing home",
+        "expected_answer": "A Virginia homeowner spent about $100,000 to add a 1,300-square-foot second floor."
+      },
+      {
+        "query": "what is importing?",
+        "expected_answer": "Import is to have a product shipped into a country or region opposite of export."
+      },
+      {
+        "query": "what is dell s",
+        "expected_answer": "Dell, Incorporated is a computer hardware manufacturer and distributor."
+      }
+    ],
+    "false_confidence_rate": 0.62,
+    "false_confidence_examples": [
+      {
+        "query": "Gabon's largest river is the Ogooué. In which neighbouring country does this river originate?",
+        "fabricated_answer": "Gabon's largest river is the Ogooue ogooué which is 1200 km. Long gabon has three karst areas where there are hundreds of caves located in the dolomite and limestone. Rocks some of the caves Include g"
+      },
+      {
+        "query": "what was the cast of spaceballs the movie",
+        "fabricated_answer": "SPACEBALLS, 1987, Park Circus/MGM, 96 min. Dir. Mel Brooks. Bill Pullman, John Candy and Rick Moranis head the cast in Mel Brooks' hilarious riff on STAR WARS. Brooks is a riot in two roles, with dimi"
+      },
+      {
+        "query": "what will i learn in strategy policy class",
+        "fabricated_answer": "Global Business Strategy Classes and Courses. Students in global business strategy classes learn how to market and manage products in different countries, and they learn how to lead in a global busine"
+      },
+      {
+        "query": "describe how a nuclear reactor works",
+        "fabricated_answer": "explain how a fission reactor (nuclear) works."
+      },
+      {
+        "query": "california senior fraud laws elder",
+        "fabricated_answer": "Justice’s Bureau of Medi-Cal Fraud & Elder Abuse and Crime."
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 100,
+    "embed": {
+      "avg_ms": 3.46,
+      "p50_ms": 3.05,
+      "p95_ms": 6.28,
+      "p99_ms": 8.14
+    },
+    "search": {
+      "avg_ms": 0.19,
+      "p50_ms": 0.11,
+      "p95_ms": 0.35,
+      "p99_ms": 2.82
+    },
+    "retrieval_total": {
+      "avg_ms": 3.59,
+      "p50_ms": 3.04,
+      "p95_ms": 7.01,
+      "p99_ms": 8.24
+    },
+    "generation": {
+      "avg_ms": 109.5,
+      "p50_ms": 59.01,
+      "p95_ms": 964.32,
+      "p99_ms": 971.34
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}

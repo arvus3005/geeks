@@ -1,0 +1,123 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 4,
+    "num_unanswerable": 4,
+    "num_examples": 8,
+    "num_chunks": 177,
+    "top_k": 5,
+    "seed": 43,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 4,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.75,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "mrr": 0.875
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.75,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "mrr": 0.875
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 7,
+    "faithful_rate": 1.0,
+    "hallucination_rate": 0.0,
+    "num_confident_answers": 7,
+    "self_report_precision": 1.0,
+    "self_report_disagreements": [],
+    "hallucinated_examples": []
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 3,
+    "correct_rate": 0.6667,
+    "incorrect_examples": [
+      {
+        "query": "aramaic abba definition",
+        "reference_answer": "Abba, an originally Aramaic form borrowed into the Greek Old Testament as a name.",
+        "answer": "615-616. It is traditional that I bring up the common myth that the Aramaic word “abba” means “daddy” around this time of year, but I must admit that this is the first year in a long time that sightin",
+        "judge_reason": "The answer discusses a common myth about the meaning of the word 'abba' rather than defining it as an Aramaic form borrowed into Greek."
+      }
+    ]
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 4,
+    "num_unanswerable_evaluated": 4,
+    "false_refusal_rate": 0.25,
+    "false_refusal_examples": [
+      {
+        "query": "temperature in st andrews scotland",
+        "expected_answer": "Today's St Andrews sea temperature is 59 °F."
+      }
+    ],
+    "false_confidence_rate": 1.0,
+    "false_confidence_examples": [
+      {
+        "query": "to what extent is truth different in mathematics the arts and ethics ib tok",
+        "fabricated_answer": "THEORY OF KNOWLEDGE ESSAY To what extent is truth different in mathematics, the arts, and ethics? TOK Question #1 To what extent is truth different in mathematics, the arts, and ethics? In order to an"
+      },
+      {
+        "query": "how do you activate a glow stick",
+        "fabricated_answer": "Best Answer: To reactivate a dead glow light stick or glow light product you just put it into boiling water for about 30 seconds and it will glow again for up to half an hour.."
+      },
+      {
+        "query": "how many hours between tylenol and ibuprofen for adults?",
+        "fabricated_answer": "Nonprescription ibuprofen is available in the following forms: tablet, chewable tablet, liquid and drops of concentrated liquid. Adults and children over 12 can take ibuprofen every four to six hours "
+      },
+      {
+        "query": "where does the name asteroid belt come from",
+        "fabricated_answer": "The Asteroid Belt: If you traveled towards the planet Jupiter, along your way you would have to fly though an area called the Asteroid Belt. The Asteroid Belt sits between the planets Mars and Jupiter"
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 8,
+    "embed": {
+      "avg_ms": 2.81,
+      "p50_ms": 2.68,
+      "p95_ms": 3.88,
+      "p99_ms": 4.89
+    },
+    "search": {
+      "avg_ms": 0.16,
+      "p50_ms": 0.11,
+      "p95_ms": 0.35,
+      "p99_ms": 0.51
+    },
+    "retrieval_total": {
+      "avg_ms": 2.56,
+      "p50_ms": 2.43,
+      "p95_ms": 3.29,
+      "p99_ms": 3.31
+    },
+    "generation": {
+      "avg_ms": 730.08,
+      "p50_ms": 967.17,
+      "p95_ms": 971.64,
+      "p99_ms": 971.76
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}

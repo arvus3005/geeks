@@ -10,7 +10,7 @@
 | **False Refusal Rate** | Reliability (low refusal on valid queries) | **12.0%** (6 / 50) | ⚠️ Real, deliberate tradeoff — see §1.1B |
 | **False Confidence Rate** | Reliability (no confident fabrication) | **56.0%** (28 / 50), down from **88.0%** | ⚠️ Real, substantial improvement, real gap remains — see §1.1B |
 | **Faithfulness (LLM judge)** | Answer supported by its own retrieved context | **94.4%** (n=36, real, uncontaminated) | ✅ First real judge signal this session — see §1.1C |
-| **Full-Corpus Index** | 14 Indic languages | **54.25M passages** (6 full configs + 7 pilot configs) | ✅ **Self-Hosted & Verified** (unchanged this session) |
+| **Full-Corpus Index** | 14 Indic languages | **55.37M passages** (6 full configs + 7 pilot configs) | ✅ Self-Hosted; re-verified against real manifests 2026-08-22, see §1.3 |
 | **Offline Test Suite** | Reliability & Safety | **137 tests passing** (`uv run pytest`) | ✅ **100% Pass** |
 
 ---
@@ -91,25 +91,27 @@ Retrieval-only (embed + hybrid search, no extraction) was also re-measured direc
 
 ### 1.3 Indexing Scale & Multi-Lingual Corpus Verification
 
-Counted directly from disk manifests and verified line-by-line across all 54.25M+ passages:
+Re-counted directly from every segment's own `manifest.json` under `artifacts/full_local_index/` on 2026-08-22 (not re-derived from an older claim) — two real discrepancies from the previous version of this table were caught and corrected here, not smoothed over:
 
-| Config Code | Language Name | Segments Built | Total Passages | Mode / Status |
-|---|---|---|---|---|
-| `hi` | Hindi + Shared English Pool | 32 segments | ~23,000,000 | ✅ Full Corpus Built & Verified |
-| `bn` | Bengali | 16 segments | ~6,250,000 | ✅ Full Corpus Built & Verified |
-| `gu` | Gujarati | 16 segments | ~6,250,000 | ✅ Full Corpus Built & Verified |
-| `ta` | Tamil | 16 segments | ~6,250,000 | ✅ Full Corpus Built & Verified |
-| `mr` | Marathi | 16 segments | ~6,250,000 | ✅ Full Corpus Built & Verified |
-| `ur` | Urdu | 16 segments | ~6,250,000 | ✅ Full Corpus Built & Verified |
-| `as` | Assamese | 1 segment | 99,412 | ✅ Pilot Index Built & Serving |
-| `kn` | Kannada | 1 segment | 99,104 | ✅ Pilot Index Built & Serving |
-| `ml` | Malayalam | 1 segment | 98,950 | ✅ Pilot Index Built & Serving |
-| `ne` | Nepali | 1 segment | 496,210 | ✅ Pilot Index Built & Serving |
-| `or` | Odia | 1 segment | 99,220 | ✅ Pilot Index Built & Serving |
-| `pa` | Punjabi | 1 segment | 99,350 | ✅ Pilot Index Built & Serving |
-| `sa` | Sanskrit | 1 segment | 69,458 | ✅ Pilot Index Built & Serving |
-| `te` | Telugu | — | — | ⚪ No training split upstream |
-| **TOTAL** | **13 Active Languages** | **119 Segments** | **55,487,403** | **Zero mismatch across all manifests** |
+| Config Code | Language Name | Segments (train+val) | Total Passages | Validation Split | Mode / Status |
+|---|---|---|---|---|---|
+| `hi` | Hindi + Shared English Pool | 32 | **15,590,943** | ✅ | ✅ Full Corpus Built & Verified |
+| `bn` | Bengali | 16 | 7,931,568 | ✅ | ✅ Full Corpus Built & Verified |
+| `gu` | Gujarati | 16 | 7,564,389 | ✅ | ✅ Full Corpus Built & Verified |
+| `ta` | Tamil | 16 | 7,526,975 | ✅ | ✅ Full Corpus Built & Verified |
+| `mr` | Marathi | 16 | 7,824,922 | ✅ | ✅ Full Corpus Built & Verified |
+| `ur` | Urdu | 16 | 7,814,902 | ✅ | ✅ Full Corpus Built & Verified |
+| `as` | Assamese | 2 | 146,984 | ✅ | ✅ Pilot Index Built & Serving |
+| `kn` | Kannada | 2 | 99,052 | ✅ | ✅ Pilot Index Built & Serving |
+| `ml` | Malayalam | 2 | 99,033 | ✅ | ✅ Pilot Index Built & Serving |
+| `or` | Odia | 2 | 99,050 | ✅ | ✅ Pilot Index Built & Serving |
+| `pa` | Punjabi | 2 | 99,003 | ✅ | ✅ Pilot Index Built & Serving |
+| `ne` | Nepali | **1** | 500,299 | ❌ **train only** | ⚠️ Pilot, train-only — no validation segment built |
+| `sa` | Sanskrit | **1** | 69,458 | ❌ **train only** | ⚠️ Pilot, train-only — no validation segment built |
+| `te` | Telugu | — | — | — | ⚪ No training split upstream |
+| **TOTAL** | **13 Active Languages** | **124 Segments** | **55,366,578** | 11/13 complete | **2 real gaps found (`hi` count, `ne`/`sa` validation) — see below** |
+
+**What changed from the previous version of this table:** `hi`'s passage count was previously stated as ~23,000,000 — the real manifests sum to **15,590,943**, a genuine ~32% overstatement, not a rounding difference. Pilot languages `as`/`kn`/`ml`/`or`/`pa` were previously listed as "1 segment" each; they actually have 2 (train + validation), which was an undercount in the other direction. `ne` and `sa` genuinely have only a train segment each — no validation split was ever built for them, which the previous table's uniform "1 segment ✅" framing didn't surface. None of this changes what's *servable* (`MAX_SEGMENTS_PER_LANGUAGE=1` already caps live serving to one segment per language regardless), but the corpus-scale and completeness claims above are now what's actually on disk, not carried forward from an earlier count.
 
 ---
 
@@ -292,7 +294,7 @@ uv run uvicorn hhgoa_rag.api.app:app --host 0.0.0.0 --port 8000 --reload
 | **GitHub Repository** | ✅ Complete | [GitHub Repo](https://github.com/arvus3005/geeks) |
 | **Live Deployed API (Primary)** | ✅ Active & Serving | `https://hyphen-onyx-sprig.ngrok-free.dev` |
 | **Live Deployed API (Mirror)** | ✅ Active & Serving | `https://hhgoa-rag-d3fw.onrender.com` |
-| **Self-Hosted Indexing** | ✅ Verified | 54.25M passages full corpus (6 configs) + 7 pilot configs (13/14 total) |
+| **Self-Hosted Indexing** | ✅ Verified | 55.37M passages, 6 full configs + 7 pilot configs (13/14 total, `te` has no upstream train split); `ne`/`sa` pilots are train-only, no validation segment — see §1.3 |
 | **Eval Loop Results** | ✅ Verified, 2026-08-22 | Recall@5=90.0% (isolated harness index, see §1.1 caveat); False Confidence=56.0% (down from 88.0%); False Refusal=12.0%; Faithfulness=94.4% (n=36); Correctness=61.1% (n=18) |
 | **Latency Benchmark** | ✅ Sub-200ms Met | Real `/v1/query` in-process: P50=39.2ms, P100=94.7ms (re-verified 2026-08-22 post-guardrail-changes); retrieval-only P50=4.19ms |
 | **Offline Test Suite** | ✅ 137 Tests Passing | `uv run pytest` |

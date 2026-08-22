@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 50,
+    "num_unanswerable": 50,
+    "num_examples": 100,
+    "num_chunks": 2420,
+    "top_k": 5,
+    "seed": 123,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 50,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.6,
+        "3": 0.96,
+        "5": 0.98
+      },
+      "mrr": 0.7717
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.6,
+        "3": 0.96,
+        "5": 0.98
+      },
+      "mrr": 0.7717
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 50,
+    "num_unanswerable_evaluated": 50,
+    "false_refusal_rate": 0.24,
+    "false_refusal_examples": [
+      {
+        "query": "how to determine your molina provider id number",
+        "expected_answer": "The most current 13-digit recipient identification number was frozen and became the permanent Medicaid recipient identification number."
+      },
+      {
+        "query": "what percentage of california population growth is due to illegal immigrants",
+        "expected_answer": "Fifty percentage of California population growth is due to illegal immigrants."
+      },
+      {
+        "query": "what is considered fire hazard",
+        "expected_answer": "A fire hazard is a situation that increases the likelihood of a fire or may impede escape in the event a fire occurs."
+      },
+      {
+        "query": "cost to add a second floor to an existing home",
+        "expected_answer": "A Virginia homeowner spent about $100,000 to add a 1,300-square-foot second floor."
+      },
+      {
+        "query": "vale todo cast",
+        "expected_answer": "Vale todo cast: Mexican actress Itatí Cantoral and Peruvian actor Diego Bertie, co-starring Argentine Javier Gómez, Ana Claudia Talancon and stellar participation of the first actress Zully Montero."
+      }
+    ],
+    "false_confidence_rate": 0.48,
+    "false_confidence_examples": [
+      {
+        "query": "Gabon's largest river is the Ogooué. In which neighbouring country does this river originate?",
+        "fabricated_answer": "Gabon's largest river is the Ogooue ogooué which is 1200 km. Long gabon has three karst areas where there are hundreds of caves located in the dolomite and limestone. Rocks some of the caves Include g"
+      },
+      {
+        "query": "what will i learn in strategy policy class",
+        "fabricated_answer": "Global Business Strategy Classes and Courses. Students in global business strategy classes learn how to market and manage products in different countries, and they learn how to lead in a global busine"
+      },
+      {
+        "query": "california senior fraud laws elder",
+        "fabricated_answer": "Justice’s Bureau of Medi-Cal Fraud & Elder Abuse and Crime."
+      },
+      {
+        "query": "who sings the song stay woke",
+        "fabricated_answer": "Throughout the song, Badu sings the phrase I stay woke, though the phrase did not yet have any connection to justice issues."
+      },
+      {
+        "query": "aspect is mnemosyne the associated",
+        "fabricated_answer": "Mnemosyne is open source and it has a research aspect associated with it: by (voluntary) collection of your learning history, it collects a huge database with useful information for mnemotechnic resea"
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 100,
+    "embed": {
+      "avg_ms": 3.22,
+      "p50_ms": 2.85,
+      "p95_ms": 5.79,
+      "p99_ms": 7.87
+    },
+    "search": {
+      "avg_ms": 0.17,
+      "p50_ms": 0.11,
+      "p95_ms": 0.44,
+      "p99_ms": 1.29
+    },
+    "retrieval_total": {
+      "avg_ms": 3.28,
+      "p50_ms": 2.86,
+      "p95_ms": 5.92,
+      "p99_ms": 6.95
+    },
+    "generation": {
+      "avg_ms": 108.08,
+      "p50_ms": 55.04,
+      "p95_ms": 999.23,
+      "p99_ms": 1001.98
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}

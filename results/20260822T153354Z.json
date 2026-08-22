@@ -1,0 +1,118 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 4,
+    "num_unanswerable": 4,
+    "num_examples": 8,
+    "num_chunks": 176,
+    "top_k": 5,
+    "seed": 42,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 4,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.5,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "mrr": 0.75
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.5,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "mrr": 0.75
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 8,
+    "faithful_rate": 1.0,
+    "hallucination_rate": 0.0,
+    "num_confident_answers": 8,
+    "self_report_precision": 1.0,
+    "self_report_disagreements": [],
+    "hallucinated_examples": []
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 4,
+    "correct_rate": 0.75,
+    "incorrect_examples": [
+      {
+        "query": "how to find the surface area of a triangle",
+        "reference_answer": "To find the area of a triangle, multiply the base by the height, and then divide by 2. The division by 2 comes from the fact that a parallelogram can be divided into 2 triangles.",
+        "answer": "The area of a triangular-shaped mat is 18 square feet and the base is 3 feet. Find the height. Solution: In this example, we are given the area of a triangle and one dimension, and we are asked to wor",
+        "judge_reason": "The answer provides a word problem and solution instead of explaining how to find the area of a triangle."
+      }
+    ]
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 4,
+    "num_unanswerable_evaluated": 4,
+    "false_refusal_rate": 0.0,
+    "false_refusal_examples": [],
+    "false_confidence_rate": 1.0,
+    "false_confidence_examples": [
+      {
+        "query": "what is ruthenian",
+        "fabricated_answer": "Ruthenian rōō-thē′ni-an, adj. of or pertaining to the Ruthenians, a branch of the little Russian division of the Slav race, on both sides of the Carpathians.— n."
+      },
+      {
+        "query": "what is wealth gov and econ definition",
+        "fabricated_answer": "Wealth is the value of all resources an individual or society owns. While countries measure their wealth in terms of GDP, individuals typically use net worth. Individual wealth is composed of a series"
+      },
+      {
+        "query": "brett desmond net worth",
+        "fabricated_answer": "Dermot Desmond Net Worth is $2 Billion Dermot Desmond Biography Dermot Desmond is an Irish businessman, financier and tax exile. He is estimated to be worth €1.35 billion and is ranked by the Sunday I"
+      },
+      {
+        "query": "what is the scorebridge app used for",
+        "fabricated_answer": "Scorebridge for mac: 01 and 5, and XHTML 1."
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 8,
+    "embed": {
+      "avg_ms": 2.34,
+      "p50_ms": 2.4,
+      "p95_ms": 2.99,
+      "p99_ms": 3.54
+    },
+    "search": {
+      "avg_ms": 0.11,
+      "p50_ms": 0.05,
+      "p95_ms": 0.35,
+      "p99_ms": 0.67
+    },
+    "retrieval_total": {
+      "avg_ms": 2.38,
+      "p50_ms": 2.28,
+      "p95_ms": 3.32,
+      "p99_ms": 3.65
+    },
+    "generation": {
+      "avg_ms": 730.21,
+      "p50_ms": 962.87,
+      "p95_ms": 966.97,
+      "p99_ms": 967.0
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}

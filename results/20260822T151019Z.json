@@ -1,0 +1,130 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 50,
+    "num_unanswerable": 50,
+    "num_examples": 100,
+    "num_chunks": 2391,
+    "top_k": 5,
+    "seed": 42,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 50,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.54,
+        "3": 0.8,
+        "5": 0.9
+      },
+      "mrr": 0.6797
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.54,
+        "3": 0.8,
+        "5": 0.9
+      },
+      "mrr": 0.6797
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 0,
+    "error": "OPENAI_API_KEY not configured -- judge-based checks skipped."
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 50,
+    "num_unanswerable_evaluated": 50,
+    "false_refusal_rate": 0.26,
+    "false_refusal_examples": [
+      {
+        "query": "how long do fly eggs live",
+        "expected_answer": "An adults fly eggs usually live for 15 to 25 days."
+      },
+      {
+        "query": "how fast is a kilometer in miles",
+        "expected_answer": "One kilometer is equal to 0.6214 miles."
+      },
+      {
+        "query": "what is the name of a turtles lower shell",
+        "expected_answer": "The name of a turtles lower shell is plastron."
+      },
+      {
+        "query": "foods to firm up stool",
+        "expected_answer": "Multi grain or whole grain wheat, corn and rice cereals, bran, fibrous vegetables (carrots, celery), skins of fruit and vegetables, oats, barley, rye, legumes (lentils, kidney beans), peeled fruits an"
+      },
+      {
+        "query": "why did laozi say that idea",
+        "expected_answer": "Laozi thought that both Communism and Legalism were a little off with there ideas to re-create a better society, so he created the idea of Daoism."
+      }
+    ],
+    "false_confidence_rate": 0.36,
+    "false_confidence_examples": [
+      {
+        "query": "erie insurance corporate address",
+        "fabricated_answer": "Erie Insurance Exchange has rolled down lots of different insurance roads since its founding as a Pennsylvania auto insurer."
+      },
+      {
+        "query": "what is tlr development",
+        "fabricated_answer": "TLR and Brain Development During TLR, the connections to the temporal lobe are starting to be developed, setting up the brain to be able to sequence."
+      },
+      {
+        "query": "what majors are clemson university known for",
+        "fabricated_answer": "List of Clemson University majors by size and degree."
+      },
+      {
+        "query": "cite a movie mla",
+        "fabricated_answer": "To cite a movie quote in MLA style, the title of the film, the director's name, the studio and the release year are required."
+      },
+      {
+        "query": "why adaptive sports help people with disabilities",
+        "fabricated_answer": "Iselin says adaptive sports equipment is not made based on what people can't do anymore but what they can do."
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 100,
+    "embed": {
+      "avg_ms": 3.56,
+      "p50_ms": 2.96,
+      "p95_ms": 7.47,
+      "p99_ms": 8.47
+    },
+    "search": {
+      "avg_ms": 0.16,
+      "p50_ms": 0.11,
+      "p95_ms": 0.43,
+      "p99_ms": 0.99
+    },
+    "retrieval_total": {
+      "avg_ms": 3.44,
+      "p50_ms": 2.86,
+      "p95_ms": 6.58,
+      "p99_ms": 8.51
+    },
+    "generation": {
+      "avg_ms": 111.88,
+      "p50_ms": 59.03,
+      "p95_ms": 991.88,
+      "p99_ms": 994.9
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}

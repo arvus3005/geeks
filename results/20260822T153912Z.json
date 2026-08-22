@@ -1,0 +1,114 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 4,
+    "num_unanswerable": 4,
+    "num_examples": 8,
+    "num_chunks": 185,
+    "top_k": 5,
+    "seed": 46,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 4,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.25,
+        "3": 0.75,
+        "5": 1.0
+      },
+      "mrr": 0.5208
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.25,
+        "3": 0.75,
+        "5": 1.0
+      },
+      "mrr": 0.5208
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 7,
+    "faithful_rate": 1.0,
+    "hallucination_rate": 0.0,
+    "num_confident_answers": 7,
+    "self_report_precision": 1.0,
+    "self_report_disagreements": [],
+    "hallucinated_examples": []
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 4,
+    "correct_rate": 0.75,
+    "incorrect_examples": [
+      {
+        "query": "what is cuba's currency",
+        "reference_answer": "Cuban Convertible Peso and Cuban Peso are Cuba's currency.",
+        "answer": "The economic and monetary situation in Cuba is quite complex, for a start there are 2 currencies: 1  The Peso Convertible - CUC - the main currency used by tourists.",
+        "judge_reason": "The answer mentions only one of the two currencies (Peso Convertible) and fails to mention the main Cuban Peso."
+      }
+    ]
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 4,
+    "num_unanswerable_evaluated": 4,
+    "false_refusal_rate": 0.0,
+    "false_refusal_examples": [],
+    "false_confidence_rate": 0.75,
+    "false_confidence_examples": [
+      {
+        "query": "what is the perirectal space",
+        "fabricated_answer": "Figure 1 The presacral space. Illustration shows the presacral space (yellow area), which is bordered by the rectum anteriorly; the pelvic peritoneal reflection superiorly; the levator ani muscles inf"
+      },
+      {
+        "query": "american family mutual insurance phone number",
+        "fabricated_answer": "(800)MYAMFAM or (800) 692-6326. AMERICAN FAMILY operates under the following company names: AMERICAN FAMILY HOME INSURANCE COMPANY. AMERICAN FAMILY INSURANCE COMPANY. AMERICAN FAMILY LIFE INSURANCE CO"
+      },
+      {
+        "query": "how long after sex to feel chlamydia",
+        "fabricated_answer": "If the sexual contact occurred after your partner finished treatment, and your partner didn’t have any sexual contact with anyone for those 7 days, it is less likely the Chlamydia was transmitted."
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 8,
+    "embed": {
+      "avg_ms": 2.46,
+      "p50_ms": 2.23,
+      "p95_ms": 3.27,
+      "p99_ms": 3.84
+    },
+    "search": {
+      "avg_ms": 0.24,
+      "p50_ms": 0.09,
+      "p95_ms": 0.84,
+      "p99_ms": 1.41
+    },
+    "retrieval_total": {
+      "avg_ms": 2.45,
+      "p50_ms": 2.31,
+      "p95_ms": 3.04,
+      "p99_ms": 3.07
+    },
+    "generation": {
+      "avg_ms": 706.78,
+      "p50_ms": 930.44,
+      "p95_ms": 933.46,
+      "p99_ms": 933.67
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}

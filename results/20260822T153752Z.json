@@ -1,0 +1,142 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 4,
+    "num_unanswerable": 4,
+    "num_examples": 8,
+    "num_chunks": 196,
+    "top_k": 5,
+    "seed": 45,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 4,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.75,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "mrr": 0.8333
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.75,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "mrr": 0.8333
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 8,
+    "faithful_rate": 0.875,
+    "hallucination_rate": 0.125,
+    "num_confident_answers": 8,
+    "self_report_precision": 0.875,
+    "self_report_disagreements": [
+      {
+        "query": "which bond has the longest bond length",
+        "answer": "The longest bond length is always the triple bond, then the double bond, and the shortest bond is the single bond. Therefore, the compound with the longest C-C bond is HCCH or CH≡CH. Comments.",
+        "judge_reason": "The context states the opposite, that the longest bond is the single bond and the shortest is the triple bond."
+      }
+    ],
+    "hallucinated_examples": [
+      {
+        "query": "which bond has the longest bond length",
+        "answer": "The longest bond length is always the triple bond, then the double bond, and the shortest bond is the single bond. Therefore, the compound with the longest C-C bond is HCCH or CH≡CH. Comments.",
+        "judge_reason": "The context states the opposite, that the longest bond is the single bond and the shortest is the triple bond."
+      }
+    ]
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 4,
+    "correct_rate": 0.25,
+    "incorrect_examples": [
+      {
+        "query": "which bond has the longest bond length",
+        "reference_answer": "C-C bond has the longest bond length.",
+        "answer": "The longest bond length is always the triple bond, then the double bond, and the shortest bond is the single bond. Therefore, the compound with the longest C-C bond is HCCH or CH≡CH. Comments.",
+        "judge_reason": "The answer incorrectly claims that triple bonds are the longest, which contradicts the reference answer stating C-C (single) bonds are the longest."
+      },
+      {
+        "query": "what is yield for ge stock?",
+        "reference_answer": "General Electric generates a yield of 2.95%.",
+        "answer": "'s stock GE, -0. 21% surged 2% in premarket trade Monday, after the dividend cut announced earlier kept its dividend yield above its peers and the broader market.",
+        "judge_reason": "The answer does not provide the specific yield percentage of 2.95% as stated in the reference answer."
+      },
+      {
+        "query": "when was bol bol born?",
+        "reference_answer": "Bol Bol was born on November 16, 1999.",
+        "answer": "Bol Bol, 15, son of the former N. B.",
+        "judge_reason": "The answer does not provide Bol Bol's birth date."
+      }
+    ]
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 4,
+    "num_unanswerable_evaluated": 4,
+    "false_refusal_rate": 0.0,
+    "false_refusal_examples": [],
+    "false_confidence_rate": 1.0,
+    "false_confidence_examples": [
+      {
+        "query": "time in grade for smsgt testing",
+        "fabricated_answer": "deletes Table 4.3 and references to Table 4.3 throughout this instruction, eliminates promotion to the. grade of MSgt, authorizes promotion to the grade of TSgt only and increases the required satisfa"
+      },
+      {
+        "query": "how many round trip miles from 70663 to nashville, tn",
+        "fabricated_answer": "The total driving distance from Nashville, TN to Memphis, TN is 212 miles or 341 kilometers.Your trip begins in Nashville, Tennessee.It ends in Memphis, Tennessee.ore trip calculations. 1  driving tim"
+      },
+      {
+        "query": "what is gbc gang",
+        "fabricated_answer": "View the profiles of people named Gbc Gang. Join Facebook to connect with Gbc Gang and others you may know. Facebook gives people the power to share and..."
+      },
+      {
+        "query": "what object is pink",
+        "fabricated_answer": "In color psychology, pink is a sign of hope. It is a positive color inspiring warm and comforting feelings, a sense that everything will be okay. Pink calms and reassures our emotional energies, allev"
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 8,
+    "embed": {
+      "avg_ms": 2.44,
+      "p50_ms": 2.29,
+      "p95_ms": 3.4,
+      "p99_ms": 4.2
+    },
+    "search": {
+      "avg_ms": 0.16,
+      "p50_ms": 0.07,
+      "p95_ms": 0.56,
+      "p99_ms": 0.64
+    },
+    "retrieval_total": {
+      "avg_ms": 2.3,
+      "p50_ms": 2.24,
+      "p95_ms": 2.84,
+      "p99_ms": 3.05
+    },
+    "generation": {
+      "avg_ms": 711.5,
+      "p50_ms": 934.91,
+      "p95_ms": 938.79,
+      "p99_ms": 939.39
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "meta": {
+    "target_root": "/Users/suvra/Documents/hackerhouse-goa-task-2",
+    "generation_backend": "unknown",
+    "generation_model_hint": "hhgoa-local-hybrid-extractive-v1",
+    "language": "hin",
+    "split": "validation",
+    "num_answerable": 4,
+    "num_unanswerable": 4,
+    "num_examples": 8,
+    "num_chunks": 187,
+    "top_k": 5,
+    "seed": 47,
+    "num_errored": 0
+  },
+  "retrieval": {
+    "check": "retrieval (reference-based)",
+    "num_evaluated": 4,
+    "top_k": 5,
+    "cross_lingual": {
+      "recall_at_k": {
+        "1": 0.75,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "mrr": 0.875
+    },
+    "same_language": {
+      "recall_at_k": {
+        "1": 0.75,
+        "3": 1.0,
+        "5": 1.0
+      },
+      "mrr": 0.875
+    }
+  },
+  "faithfulness": {
+    "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
+    "num_evaluated": 6,
+    "faithful_rate": 1.0,
+    "hallucination_rate": 0.0,
+    "num_confident_answers": 6,
+    "self_report_precision": 1.0,
+    "self_report_disagreements": [],
+    "hallucinated_examples": []
+  },
+  "correctness": {
+    "check": "correctness (reference-based, LLM-as-judge)",
+    "num_evaluated": 3,
+    "correct_rate": 0.6667,
+    "incorrect_examples": [
+      {
+        "query": "who is the original singer for chicago",
+        "reference_answer": "Chicago has lead singers, Cetera, Kath, and Lamm.",
+        "answer": "houston said: ↑. I know CHICAGO had 3 lead singers, Cetera, Kath, and Lamm, up to 1985 or so, anyway, but I always thought Lamm did the early Hits, but then I read Kath sanf lead on Colour my world...",
+        "judge_reason": "The answer is a forum post asking a question rather than stating who the original singers are."
+      }
+    ]
+  },
+  "reliability": {
+    "check": "reliability / \"lying factor\" (answerable-vs-answered 2x2)",
+    "num_answerable_evaluated": 4,
+    "num_unanswerable_evaluated": 4,
+    "false_refusal_rate": 0.25,
+    "false_refusal_examples": [
+      {
+        "query": "what was the acropolis?",
+        "expected_answer": "An acropolis is any citadel or complex built on a high hill."
+      }
+    ],
+    "false_confidence_rate": 0.75,
+    "false_confidence_examples": [
+      {
+        "query": "who was president when mental hospitals were closed?",
+        "fabricated_answer": "In California, for example, the number of patients in state mental hospitals reached a peak of 37,500 in 1959 when Edmund G. Brown was Governor, fell to 22,000 when Ronald Reagan attained that office "
+      },
+      {
+        "query": "where did aluminum come from",
+        "fabricated_answer": "Aluminium was discovered by Hans Christian Oersted at 1825 in Denmark. Origin of name: from the Latin word alumen meaning alum. The ancient Greeks and Romans used alum in medicine as an astringent, an"
+      },
+      {
+        "query": "what time does the social security office in austin mn open?",
+        "fabricated_answer": "Most local Social Security offices are open 9 a.m. to 3 p.m. on Monday, Tuesday, Thursday, and Friday and 9 a.m. to Noon on Wednesday. A few small offices have different hours. View local office hours"
+      }
+    ]
+  },
+  "latency": {
+    "check": "latency",
+    "num_evaluated": 8,
+    "embed": {
+      "avg_ms": 2.44,
+      "p50_ms": 2.12,
+      "p95_ms": 4.07,
+      "p99_ms": 4.5
+    },
+    "search": {
+      "avg_ms": 0.24,
+      "p50_ms": 0.08,
+      "p95_ms": 1.15,
+      "p99_ms": 1.18
+    },
+    "retrieval_total": {
+      "avg_ms": 2.4,
+      "p50_ms": 2.1,
+      "p95_ms": 3.55,
+      "p99_ms": 3.88
+    },
+    "generation": {
+      "avg_ms": 699.54,
+      "p50_ms": 931.35,
+      "p95_ms": 934.08,
+      "p99_ms": 934.22
+    },
+    "retrieval_latency_budget_ms": 200,
+    "retrieval_within_budget": true,
+    "generation_latency_target_ms": 1500.0,
+    "generation_within_target": true
+  }
+}
