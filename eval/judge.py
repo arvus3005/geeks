@@ -39,6 +39,7 @@ GEMINI_API_KEY (loaded via the target project's .env, see eval/target.py).
 """
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass
 
@@ -46,7 +47,28 @@ from eval import target
 
 JUDGE_MODEL_GEMINI = os.environ.get("EVAL_JUDGE_MODEL_GEMINI", "gemini-3.6-flash")
 
+# Gemini's free tier caps at 5 requests/minute per model -- well below what
+# judge_workers concurrency would otherwise fire. The SDK's own retry logic
+# only backs off for a few seconds, not the ~60s a quota window actually
+# needs, so bursts still fail outright. This lock+timestamp pair serializes
+# every judge call (regardless of how many worker threads are calling in)
+# behind a minimum spacing, so the whole suite stays under quota instead of
+# raising 429s. 13s spacing -> ~4.6 req/min, just under the 5/min ceiling.
+_MIN_INTERVAL_S = float(os.environ.get("EVAL_JUDGE_MIN_INTERVAL_S", "13"))
+_rate_lock = threading.Lock()
+_last_call_ts = 0.0
+
 _gemini_client = None
+
+
+def _rate_limit() -> None:
+    global _last_call_ts
+    with _rate_lock:
+        now = time.monotonic()
+        wait = _last_call_ts + _MIN_INTERVAL_S - now
+        if wait > 0:
+            time.sleep(wait)
+        _last_call_ts = time.monotonic()
 
 
 class JudgeNotConfigured(RuntimeError):
@@ -105,6 +127,7 @@ def _call_gemini(system_prompt: str, user_content: str) -> JudgeVerdict:
     if _gemini_client is None:
         _gemini_client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
+    _rate_limit()
     t0 = time.perf_counter()
     response = _gemini_client.models.generate_content(
         model=JUDGE_MODEL_GEMINI,
