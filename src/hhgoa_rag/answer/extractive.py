@@ -41,10 +41,30 @@ _STOPWORDS = frozenset(
 # more reliable) reranker ever got to score them -- compounding with the
 # reranker's own MIN_RERANKER_SCORE gate and pushing abstain rate to 57.5%
 # on real traffic, well above what the reranker's own measured score
-# distribution implied it should be (~30%). 0.1 keeps this as what it's
-# actually for now -- skipping reranker calls on genuine zero-overlap
-# noise, not as a second independent relevance judgment competing with a
-# stronger one.
+# distribution implied it should be (~30%).
+#
+# TRIED 0.0, 2026-08-22, REVERTED SAME DAY: eval/diagnose_real_refusal_breakdown.py
+# found this filter, even at 0.1, still vetoing 2/40 (5%) of real
+# answerable queries before the reranker scored them ("where is americus
+# ga", "when was hangzhou established") against the ACTUAL production
+# retriever. Lowering to 0.0 (pure pass-through) was reasoned safe on the
+# theory that MIN_RERANKER_SCORE below is the real accept/reject boundary
+# and doesn't change -- but re-measuring the SAME 40 real queries after the
+# change showed the real accept rate went DOWN, 70.0% -> 67.5%, not up.
+# Root cause: extract_answer's own short-circuit (stops scoring at the
+# FIRST candidate to clear MIN_RERANKER_SCORE, in retrieval-rank order,
+# not the best-of-all-candidates) means letting more candidates through
+# this filter can change WHICH candidate gets picked, not just whether
+# one does -- and for several real queries ("compatibility definition"
+# among them) the newly-picked candidate produced an answer that then
+# failed the DOWNSTREAM query_overlap gate in verify_grounding, where the
+# previously-picked (lexically-prefiltered-survivor) answer had not.
+# Sound reasoning in isolation, contradicted by real measurement -- same
+# lesson MIN_RERANKER_SCORE's own history above already taught once today,
+# now confirmed on a second threshold. Reverted to the last value actually
+# validated as net-positive rather than ship a change real data didn't
+# support, with the deadline too close to redesign the short-circuit
+# interaction safely.
 MIN_QUERY_OVERLAP = 0.1
 
 # Two earlier gates (2026-08-22, superseded -- see git history) were tried
