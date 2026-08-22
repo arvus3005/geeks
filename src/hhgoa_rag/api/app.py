@@ -77,7 +77,10 @@ async def lifespan(app: FastAPI):
     logger.info("Lifespan shutdown complete")
 
 
-from .routes import health, query, system  # noqa: E402
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+from .routes import health, query, system, voice  # noqa: E402
 
 app = FastAPI(title="HH Goa RAG API", version="0.1.0", lifespan=lifespan)
 
@@ -91,3 +94,10 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(query.router)
 app.include_router(system.router)
+app.include_router(voice.router)
+
+# Mount static web frontend
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+if not STATIC_DIR.exists():
+    STATIC_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
