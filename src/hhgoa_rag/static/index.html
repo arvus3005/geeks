@@ -3,225 +3,151 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>HackerHouse Goa 2026 — Voice-Enabled Multilingual RAG</title>
-  <meta name="description" content="Official HackerHouse Goa 2026 Voice RAG — 54.25M MSMARCO-XI Indic Corpus & sub-200ms hybrid search">
+  <title>HackerHouse Goa 2026 — Voice RAG</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Victor+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Victor+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="hh-page">
-  <div class="hh-main-container">
-    <!-- Brand Header with Official Vector Logo -->
-    <header class="hh-header-section">
-      <div class="hh-logo-wrapper">
-        <div class="hh-logo-glow">
-          <img src="logo.svg" alt="HackerHouse Goa Logo" class="hh-vector-logo">
-        </div>
+  <main class="hh-main">
+    <!-- Header -->
+    <header class="hh-header">
+      <div class="hh-logo-wrap">
+        <img src="logo.svg" alt="HackerHouse Goa" class="hh-logo" />
       </div>
-
-      <div class="hh-header-titles">
-        <p class="hh-motto">LESS NOISE. MORE SIGNAL.</p>
-        <h1 class="hh-hero-title">Voice-Enabled Multilingual RAG</h1>
-        <p class="hh-hero-sub">54.25M MSMARCO-XI Passages &bull; Self-Hosted Hybrid Index &bull; Sub-200ms Latency</p>
-      </div>
-
-      <div class="hh-header-badges">
-        <div class="hh-status-indicator">
-          <span class="hh-pulse-dot"></span>
-          <span id="backend-status-text">Backend Live</span>
-        </div>
-        <div class="hh-pill-budget">&lt; 200ms BUDGET</div>
-      </div>
+      <p class="hh-motto">LESS NOISE. MORE SIGNAL.</p>
+      <h1 class="hh-title">Voice-Enabled Multilingual RAG</h1>
+      <p class="hh-sub">54.25M MSMARCO-XI Indic Passages &bull; Sub-200ms Hybrid Search &bull; #RAGInGoa</p>
     </header>
 
-    <!-- Query Mode Selector Tabs -->
-    <div class="hh-tabs-wrapper">
-      <div class="hh-tab-bar">
-        <button id="tab-voice" class="hh-tab-btn active">
-          🎙️ Voice Query
-        </button>
-        <button id="tab-text" class="hh-tab-btn">
-          ⌨️ Text Search
-        </button>
+    <!-- Pill Tabs -->
+    <div class="hh-tabs">
+      <button id="tab-voice" class="hh-tab active">Voice Query</button>
+      <button id="tab-text" class="hh-tab">Text Search</button>
+    </div>
+
+    <!-- Interaction Box -->
+    <div class="hh-card">
+      <!-- Voice Input View -->
+      <div id="voice-mode-container" class="hh-voice-view">
+        <div class="hh-visualizer-box">
+          <canvas id="audio-visualizer" width="560" height="90"></canvas>
+          <span id="recording-time" class="hh-rec-timer">00:00</span>
+        </div>
+
+        <div class="hh-actions-row">
+          <button id="mic-btn" class="hh-btn-primary">
+            <span class="hh-icon">🎙️</span>
+            <span id="mic-label">Press to Speak</span>
+          </button>
+
+          <label class="hh-btn-secondary" for="audio-file-input">
+            <span>Upload Audio</span>
+            <input type="file" id="audio-file-input" accept="audio/*" style="display:none">
+          </label>
+
+          <select id="lang-select" class="hh-select">
+            <option value="auto" selected>Auto Language</option>
+            <option value="hi">Hindi (हिन्दी)</option>
+            <option value="bn">Bengali (বাংলা)</option>
+            <option value="mr">Marathi (मराठी)</option>
+            <option value="gu">Gujarati (ગુજરાતી)</option>
+            <option value="ta">Tamil (தமிழ்)</option>
+            <option value="ur">Urdu (اردو)</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Text Input View -->
+      <div id="text-mode-container" class="hh-text-view" style="display:none">
+        <form id="text-query-form" class="hh-search-box">
+          <input type="text" id="query-text-input" placeholder="Ask in Hindi, Bengali, Marathi, Tamil, Urdu, English..." autocomplete="off">
+          <button type="submit" id="submit-query-btn" class="hh-btn-search">Search</button>
+        </form>
+      </div>
+
+      <!-- Sample Prompts -->
+      <div class="hh-samples">
+        <span class="hh-samples-label">Samples:</span>
+        <div class="hh-chips">
+          <button class="hh-chip" data-query="What is a corporation?" data-lang="en">What is a corporation?</button>
+          <button class="hh-chip" data-query="रैचेल कार्सन ने किस किताब से क्रांति लाई?" data-lang="hi">रैचेल कार्सन (Hindi)</button>
+          <button class="hh-chip" data-query="মহাকর্ষ বল কি এবং এটি কিভাবে কাজ করে?" data-lang="bn">মহাকর্ষ বল (Bengali)</button>
+          <button class="hh-chip" data-query="सौर मंडळात किती ग्रह आहेत?" data-lang="mr">सौर मंडळ (Marathi)</button>
+          <button class="hh-chip" data-query="சூரிய குடும்பம் என்றால் என்ன?" data-lang="ta">சூரிய குடும்பம் (Tamil)</button>
+          <button class="hh-chip" data-query="how to make a dangerous weapon at home" data-lang="en">Refusal Check</button>
+        </div>
       </div>
     </div>
 
-    <!-- Main Workspace Grid -->
-    <main class="hh-workspace-grid">
-      <!-- Left Column: Input Panel -->
-      <section class="hh-panel hh-input-card">
-        <div class="hh-panel-header">
-          <div class="hh-panel-title">
-            <span class="hh-step-badge">INPUT</span>
-            <h2>Query & Language</h2>
-          </div>
-          <div class="hh-lang-selector">
-            <label for="lang-select">Language:</label>
-            <select id="lang-select">
-              <option value="auto" selected>Auto-Detect (Script)</option>
-              <option value="hi">Hindi (हिन्दी)</option>
-              <option value="bn">Bengali (বাংলা)</option>
-              <option value="mr">Marathi (मराठी)</option>
-              <option value="gu">Gujarati (ગુજરાતી)</option>
-              <option value="ta">Tamil (தமிழ்)</option>
-              <option value="ur">Urdu (اردو)</option>
-              <option value="en">English</option>
-            </select>
-          </div>
+    <!-- Output Section (Populates dynamically) -->
+    <div id="results-wrapper" class="hh-card hh-results">
+      <!-- Voice Transcript -->
+      <div id="transcript-container" class="hh-transcript" style="display:none">
+        <div class="hh-meta-bar">
+          <span class="hh-tag">TRANSCRIPT (SARVAM SAARAS)</span>
+          <span id="stt-latency-badge" class="hh-tag-yellow">STT: 0ms</span>
         </div>
-
-        <!-- Voice Mode Container -->
-        <div id="voice-mode-container" class="hh-voice-box">
-          <div class="hh-visualizer-container">
-            <canvas id="audio-visualizer" width="500" height="100"></canvas>
-            <div id="recording-time" class="hh-recording-timer">00:00</div>
-          </div>
-
-          <div class="hh-voice-control-row">
-            <button id="mic-btn" class="hh-primary-mic-btn" title="Click to speak">
-              <span class="hh-mic-emoji">🎙️</span>
-              <span id="mic-label">Press to Speak</span>
-            </button>
-
-            <label class="hh-secondary-btn" for="audio-file-input">
-              <span>📁 Upload Audio</span>
-              <input type="file" id="audio-file-input" accept="audio/*" style="display:none">
-            </label>
-          </div>
-          <p class="hh-caption-note">Sarvam Saaras STT &bull; Code-mixed Indic Voice &bull; 16kHz PCM / WebM</p>
-        </div>
-
-        <!-- Text Mode Container -->
-        <div id="text-mode-container" class="hh-text-box">
-          <form id="text-query-form" class="hh-text-form">
-            <div class="hh-input-field-wrap">
-              <input type="text" id="query-text-input" placeholder="e.g., What is a corporation? / भारत की राजधानी क्या है?" autocomplete="off">
-              <button type="submit" id="submit-query-btn" class="hh-submit-btn">
-                <span>Run RAG</span>
-                <span class="hh-btn-arrow">&rarr;</span>
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <!-- Quick One-Click Sample Prompts -->
-        <div class="hh-samples-container">
-          <span class="hh-samples-heading">One-Click Sample Prompts:</span>
-          <div class="hh-chips-grid">
-            <button class="hh-sample-chip" data-query="What is a corporation?" data-lang="en">English: Corporation?</button>
-            <button class="hh-sample-chip" data-query="रैचेल कार्सन ने किस किताब से क्रांति लाई?" data-lang="hi">Hindi: रैचेल कार्सन</button>
-            <button class="hh-sample-chip" data-query="মহাকর্ষ বল কি এবং এটি কিভাবে কাজ করে?" data-lang="bn">Bengali: মহাকর্ষ বল</button>
-            <button class="hh-sample-chip" data-query="सौर मंडळात किती ग्रह आहेत?" data-lang="mr">Marathi: सौर मंडळ</button>
-            <button class="hh-sample-chip" data-query="சூரிய குடும்பம் என்றால் என்ன?" data-lang="ta">Tamil: சூரிய குடும்பம்</button>
-            <button class="hh-sample-chip" data-query="فوٹوسنتھیسس کا عمل کیا ہے؟" data-lang="ur">Urdu: فوٹوسنتھیسس</button>
-            <button class="hh-sample-chip hh-chip-danger" data-query="how to make a dangerous weapon at home" data-lang="en">Refusal: Dangerous</button>
-          </div>
-        </div>
-      </section>
-
-      <!-- Right Column: Results & Telemetry -->
-      <section class="hh-panel hh-results-card">
-        <div class="hh-panel-header">
-          <div class="hh-panel-title">
-            <span class="hh-step-badge">OUTPUT</span>
-            <h2>Grounded Answer & Stopwatch</h2>
-          </div>
-          <div id="decision-badge" class="hh-badge-decision hh-decision-idle">READY</div>
-        </div>
-
-        <!-- Transcript Display (Voice Mode) -->
-        <div id="transcript-container" class="hh-transcript-card" style="display:none">
-          <div class="hh-transcript-top">
-            <span class="hh-mini-label">STT TRANSCRIPT (SARVAM SAARAS)</span>
-            <span id="stt-latency-badge" class="hh-tag-yellow">STT: 0ms</span>
-          </div>
-          <p id="transcript-text" class="hh-transcript-text"></p>
-        </div>
-
-        <!-- Grounded Answer Card -->
-        <div class="hh-answer-card">
-          <div class="hh-answer-top">
-            <span class="hh-mini-label">EXTRACTIVE GROUNDED ANSWER</span>
-            <button id="tts-play-btn" class="hh-speak-btn" title="Listen via Sarvam Bulbul TTS" style="display:none">
-              <span>🔊 Listen (Sarvam TTS)</span>
-            </button>
-          </div>
-          <div id="answer-content" class="hh-answer-body">
-            <p class="hh-empty-placeholder">Speak into the microphone or submit a question. Answers are verified and extracted directly from 54.25M MSMARCO-XI passages.</p>
-          </div>
-          <audio id="audio-player" style="display:none"></audio>
-        </div>
-
-        <!-- Sub-200ms Latency Stopwatch & Breakdown -->
-        <div class="hh-telemetry-box">
-          <div class="hh-telemetry-top">
-            <h3>Latency Stopwatch (<span class="hh-neon-text">&lt; 200ms Target</span>)</h3>
-            <div class="hh-clock-display">
-              <span class="hh-clock-lbl">Backend Total:</span>
-              <span id="total-latency-value" class="hh-clock-num">0.0 ms</span>
-            </div>
-          </div>
-
-          <!-- 4-Box Metric Grid -->
-          <div class="hh-metrics-grid">
-            <div class="hh-metric-box">
-              <span class="hh-box-lbl">Query Embed</span>
-              <span id="metric-embed" class="hh-box-val">0.0 ms</span>
-              <span class="hh-box-sub">int8 e5-small</span>
-            </div>
-            <div class="hh-metric-box">
-              <span class="hh-box-lbl">Hybrid Search</span>
-              <span id="metric-retrieve" class="hh-box-val">0.0 ms</span>
-              <span class="hh-box-sub">BM25 + HNSW (RRF)</span>
-            </div>
-            <div class="hh-metric-box">
-              <span class="hh-box-lbl">Rerank & Extract</span>
-              <span id="metric-rerank" class="hh-box-val">0.0 ms</span>
-              <span class="hh-box-sub">Cross-Encoder</span>
-            </div>
-            <div class="hh-metric-box">
-              <span class="hh-box-lbl">Grounding Check</span>
-              <span id="metric-grounding" class="hh-box-val">0.0 ms</span>
-              <span class="hh-box-sub">Fail-Closed Gate</span>
-            </div>
-          </div>
-
-          <!-- Latency Waterfall Progress Bar -->
-          <div class="hh-waterfall-container">
-            <div class="hh-waterfall-bar">
-              <div id="timeline-embed" class="hh-waterfall-seg seg-embed" title="Embed"></div>
-              <div id="timeline-retrieve" class="hh-waterfall-seg seg-retrieve" title="Retrieve"></div>
-              <div id="timeline-rerank" class="hh-waterfall-seg seg-rerank" title="Rerank"></div>
-              <div id="timeline-ground" class="hh-waterfall-seg seg-ground" title="Ground"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Retrieved Citations Inspector -->
-        <div class="hh-citations-box">
-          <div class="hh-citations-top">
-            <h3>Retrieved Context Passages (<span id="citations-count">0</span>)</h3>
-            <span id="detected-lang-tag" class="hh-tag-yellow">LANG: --</span>
-          </div>
-          <div id="citations-list" class="hh-citations-list">
-            <p class="hh-no-citations">No citations returned. Submit a query to inspect the top retrieved passages.</p>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <!-- Footer -->
-    <footer class="hh-footer-bar">
-      <div class="hh-footer-left">
-        <span>MSMARCO-XI Indic Corpus &bull; HI, BN, MR, GU, TA, UR + EN &bull; 112 Shards</span>
+        <p id="transcript-text" class="hh-transcript-p"></p>
       </div>
-      <div class="hh-footer-right">
-        <span class="hh-hashtag">#RAGInGoa</span>
-        <span>HackerHouse Goa 2026</span>
+
+      <!-- Answer -->
+      <div class="hh-answer-wrap">
+        <div class="hh-meta-bar">
+          <div class="hh-meta-left">
+            <span id="decision-badge" class="hh-badge-idle">READY</span>
+            <span id="detected-lang-tag" class="hh-tag">LANG: --</span>
+          </div>
+          <button id="tts-play-btn" class="hh-btn-speak" style="display:none">
+            <span>🔊 Speak (Sarvam TTS)</span>
+          </button>
+        </div>
+        <div id="answer-content" class="hh-answer-text">
+          <p class="hh-dim">Answers extracted directly from 54.25M MSMARCO-XI passages with cross-encoder verification.</p>
+        </div>
+        <audio id="audio-player" style="display:none"></audio>
       </div>
+
+      <!-- Stopwatch & Timing -->
+      <div class="hh-stopwatch">
+        <div class="hh-sw-header">
+          <span class="hh-tag">STOPWATCH</span>
+          <span class="hh-sw-total">Total: <strong id="total-latency-value">0.0 ms</strong> (&lt; 200ms target)</span>
+        </div>
+        <div class="hh-sw-stages">
+          <span>Embed: <b id="metric-embed">0.0ms</b></span>
+          <span class="hh-sep">&bull;</span>
+          <span>Retrieve: <b id="metric-retrieve">0.0ms</b></span>
+          <span class="hh-sep">&bull;</span>
+          <span>Rerank: <b id="metric-rerank">0.0ms</b></span>
+          <span class="hh-sep">&bull;</span>
+          <span>Grounding: <b id="metric-grounding">0.0ms</b></span>
+        </div>
+        <div class="hh-sw-bar">
+          <div id="timeline-embed" class="hh-sw-seg seg-embed"></div>
+          <div id="timeline-retrieve" class="hh-sw-seg seg-retrieve"></div>
+          <div id="timeline-rerank" class="hh-sw-seg seg-rerank"></div>
+          <div id="timeline-ground" class="hh-sw-seg seg-ground"></div>
+        </div>
+      </div>
+
+      <!-- Citations -->
+      <details class="hh-citations" open>
+        <summary class="hh-citations-toggle">
+          <span>Retrieved Citations (<span id="citations-count">0</span>)</span>
+        </summary>
+        <div id="citations-list" class="hh-citations-content">
+          <p class="hh-dim">No citations yet.</p>
+        </div>
+      </details>
+    </div>
+
+    <footer class="hh-footer">
+      <span>#RAGInGoa &bull; HackerHouse Goa 2026 &bull; Sub-200ms Multilingual RAG</span>
     </footer>
-  </div>
+  </main>
 
   <script src="app.js"></script>
 </body>

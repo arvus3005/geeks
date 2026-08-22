@@ -1,14 +1,6 @@
 /**
- * HH Goa 2026 Multilingual Voice RAG — Official Theme Client Application
- * Theme: HackerHouse Goa 2026 (Emerald / Neon Yellow / Hot Pink)
- *
- * Features:
- * - Real-time Web Audio API frequency waveform visualizer (Yellow & Pink neon)
- * - MediaRecorder audio capture & audio file upload
- * - Tab switcher (Voice Query vs Text Search)
- * - Sarvam AI Saaras STT & Bulbul TTS integration
- * - Sub-200ms latency stopwatch & waterfall stage breakdown
- * - Multilingual Indic script routing & citations inspector
+ * HH Goa 2026 Multilingual Voice RAG — Official Client Application
+ * Theme: HackerHouse Goa 2026 (Clean Handcrafted Single-Column Layout)
  */
 
 (function () {
@@ -31,7 +23,6 @@
   const canvas = document.getElementById('audio-visualizer');
   const canvasCtx = canvas.getContext('2d');
   const timerDisplay = document.getElementById('recording-time');
-  const statusText = document.getElementById('backend-status-text');
   
   const transcriptBox = document.getElementById('transcript-container');
   const transcriptText = document.getElementById('transcript-text');
@@ -67,7 +58,7 @@
   let timerInterval = null;
   let currentAudioBase64 = null;
 
-  // Tabs Switching
+  // Tabs
   tabVoice.addEventListener('click', () => {
     tabVoice.classList.add('active');
     tabText.classList.remove('active');
@@ -84,10 +75,10 @@
     queryTextInput.focus();
   });
 
-  // Initialize Canvas Visualizer
+  // Canvas Waveform
   function initCanvas() {
-    canvas.width = canvas.parentElement.clientWidth || 500;
-    canvas.height = canvas.parentElement.clientHeight || 100;
+    canvas.width = canvas.parentElement.clientWidth || 560;
+    canvas.height = canvas.parentElement.clientHeight || 90;
     drawIdleVisualizer();
   }
 
@@ -96,19 +87,17 @@
     const h = canvas.height;
     canvasCtx.clearRect(0, 0, w, h);
     
-    // Draw subtle neon resting wave
     canvasCtx.beginPath();
     canvasCtx.strokeStyle = 'rgba(254, 225, 1, 0.4)';
     canvasCtx.lineWidth = 2;
     canvasCtx.moveTo(0, h / 2);
     for (let x = 0; x < w; x++) {
-      const y = h / 2 + Math.sin(x * 0.04) * 4;
+      const y = h / 2 + Math.sin(x * 0.04) * 3;
       canvasCtx.lineTo(x, y);
     }
     canvasCtx.stroke();
   }
 
-  // Live Audio Frequency Visualizer (HH Goa Yellow & Pink Glow)
   function drawLiveVisualizer() {
     if (!isRecording || !analyser) return;
 
@@ -128,8 +117,8 @@
       const barHeight = (dataArray[i] / 255) * h * 0.85;
 
       const gradient = canvasCtx.createLinearGradient(0, h, 0, h - barHeight);
-      gradient.addColorStop(0, '#fee101'); // Neon Yellow
-      gradient.addColorStop(1, '#ff0080'); // Hot Pink
+      gradient.addColorStop(0, '#fee101');
+      gradient.addColorStop(1, '#ff0080');
 
       canvasCtx.fillStyle = gradient;
       canvasCtx.fillRect(x, h - barHeight, barWidth - 1, barHeight);
@@ -138,7 +127,7 @@
     }
   }
 
-  // Audio Recording Handlers
+  // Recording
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -176,8 +165,8 @@
       timerInterval = setInterval(updateTimer, 1000);
       drawLiveVisualizer();
     } catch (err) {
-      console.error('Microphone access denied:', err);
-      alert('Could not access microphone. Please enable audio permissions or upload an audio file.');
+      console.error('Microphone error:', err);
+      alert('Could not access microphone. Please allow audio permissions.');
     }
   }
 
@@ -200,9 +189,9 @@
     timerDisplay.textContent = `${mins}:${secs}`;
   }
 
-  // Voice Query Submission
+  // Voice Query
   async function handleVoiceSubmit(audioBlob) {
-    setLoadingState(true, 'Transcribing via Sarvam Saaras & running RAG…');
+    setLoadingState(true, 'Transcribing & retrieving answer…');
     const formData = new FormData();
     formData.append('file', audioBlob, 'query.wav');
     
@@ -233,10 +222,10 @@
     }
   }
 
-  // Text Query Submission
+  // Text Query
   async function handleTextSubmit(text, lang) {
     if (!text || !text.trim()) return;
-    setLoadingState(true, 'Searching 54.25M MSMARCO-XI index…');
+    setLoadingState(true, 'Retrieving from 54.25M MSMARCO-XI index…');
     transcriptBox.style.display = 'none';
 
     const payload = {
@@ -267,14 +256,12 @@
 
   // Render Responses
   function renderVoiceResponse(data) {
-    // Transcript
     transcriptBox.style.display = 'block';
     transcriptText.textContent = `"${data.transcript || 'No transcript'}"`;
     sttLatencyBadge.textContent = `STT: ${(data.stt_latency_ms || 0).toFixed(1)}ms`;
 
     renderCommonData(data);
 
-    // Audio Playback
     if (data.audio_base64) {
       currentAudioBase64 = data.audio_base64;
       ttsPlayBtn.style.display = 'inline-flex';
@@ -296,18 +283,18 @@
 
   function renderCommonData(data) {
     // Decision Badge
-    decisionBadge.className = 'hh-badge-decision';
+    decisionBadge.className = '';
     if (data.decision === 'allow') {
-      decisionBadge.classList.add('hh-decision-allow');
+      decisionBadge.className = 'hh-badge-allow';
       decisionBadge.textContent = 'ALLOWED (GROUNDED)';
     } else if (data.decision === 'abstain') {
-      decisionBadge.classList.add('hh-decision-abstain');
+      decisionBadge.className = 'hh-badge-abstain';
       decisionBadge.textContent = `ABSTAINED (${(data.reason_code || 'UNGROUNDED').toUpperCase()})`;
     } else if (data.decision === 'refuse') {
-      decisionBadge.classList.add('hh-decision-refuse');
+      decisionBadge.className = 'hh-badge-refuse';
       decisionBadge.textContent = `REFUSED (${(data.reason_code || 'UNSAFE').toUpperCase()})`;
     } else {
-      decisionBadge.classList.add('hh-decision-refuse');
+      decisionBadge.className = 'hh-badge-refuse';
       decisionBadge.textContent = 'ERROR';
     }
 
@@ -315,11 +302,11 @@
     if (data.answer) {
       answerContent.innerHTML = `<p>${escapeHtml(data.answer)}</p>`;
     } else if (data.decision === 'abstain') {
-      answerContent.innerHTML = `<p class="hh-empty-placeholder" style="color:var(--hh-yellow)"><b>Pipeline Abstained:</b> Reason code <code>${escapeHtml(data.reason_code)}</code>. Cross-encoder relevance floor did not clear for candidate passages.</p>`;
+      answerContent.innerHTML = `<p class="hh-dim" style="color:var(--yellow)"><b>Pipeline Abstained:</b> Reason code <code>${escapeHtml(data.reason_code)}</code>.</p>`;
     } else if (data.decision === 'refuse') {
-      answerContent.innerHTML = `<p class="hh-empty-placeholder" style="color:var(--hh-pink)"><b>Guardrail Refusal:</b> Reason code <code>${escapeHtml(data.reason_code)}</code>.</p>`;
+      answerContent.innerHTML = `<p class="hh-dim" style="color:var(--pink)"><b>Guardrail Refusal:</b> Reason code <code>${escapeHtml(data.reason_code)}</code>.</p>`;
     } else {
-      answerContent.innerHTML = `<p class="hh-empty-placeholder" style="color:#f43f5e">${escapeHtml((data.error && data.error.message) || 'Query failed')}</p>`;
+      answerContent.innerHTML = `<p class="hh-dim" style="color:#f43f5e">${escapeHtml((data.error && data.error.message) || 'Query failed')}</p>`;
     }
 
     // Telemetry & Latencies
@@ -327,12 +314,12 @@
     const total = data.total_backend_ms || stages.total_backend || 0;
     
     totalLatencyVal.textContent = `${total.toFixed(1)} ms`;
-    metricEmbed.textContent = `${(stages.query_embed || 0).toFixed(1)} ms`;
-    metricRetrieve.textContent = `${(stages.local_hybrid_retrieve || 0).toFixed(1)} ms`;
-    metricRerank.textContent = `${(stages.answer_extract || 0).toFixed(1)} ms`;
-    metricGrounding.textContent = `${(stages.grounding_verify || 0).toFixed(1)} ms`;
+    metricEmbed.textContent = `${(stages.query_embed || 0).toFixed(1)}ms`;
+    metricRetrieve.textContent = `${(stages.local_hybrid_retrieve || 0).toFixed(1)}ms`;
+    metricRerank.textContent = `${(stages.answer_extract || 0).toFixed(1)}ms`;
+    metricGrounding.textContent = `${(stages.grounding_verify || 0).toFixed(1)}ms`;
 
-    // Timeline Waterfall Widths
+    // Timeline Bar
     const safeTotal = Math.max(total, 1);
     timelineEmbed.style.width = `${((stages.query_embed || 0) / safeTotal) * 100}%`;
     timelineRetrieve.style.width = `${((stages.local_hybrid_retrieve || 0) / safeTotal) * 100}%`;
@@ -345,17 +332,17 @@
     citationsCount.textContent = citations.length;
 
     if (citations.length === 0) {
-      citationsList.innerHTML = '<p class="hh-no-citations">No citations returned for this query.</p>';
+      citationsList.innerHTML = '<p class="hh-dim">No citations returned for this query.</p>';
     } else {
       citationsList.innerHTML = citations
         .map(
           (c, idx) => `
-          <div class="hh-citation-card">
-            <div class="hh-citation-meta">
-              <span class="hh-citation-id">#${idx + 1} &bull; ${escapeHtml(c.passage_id || 'passage')}</span>
-              <span class="hh-citation-score">RRF: ${(c.score || 0).toFixed(4)} &bull; ${c.language.toUpperCase()}</span>
+          <div class="hh-citation-item">
+            <div class="hh-citation-header">
+              <span><b>#${idx + 1}</b> ${escapeHtml(c.passage_id || 'passage')}</span>
+              <span>RRF: ${(c.score || 0).toFixed(4)} &bull; ${c.language.toUpperCase()}</span>
             </div>
-            <p class="hh-citation-text">${escapeHtml(c.text || '')}</p>
+            <p class="hh-citation-body">${escapeHtml(c.text || '')}</p>
           </div>
         `
         )
@@ -386,23 +373,20 @@
   function setLoadingState(loading, message) {
     if (loading) {
       submitBtn.disabled = true;
-      submitBtn.innerHTML = `<span>Searching…</span>`;
-      decisionBadge.className = 'hh-badge-decision hh-decision-idle';
+      submitBtn.textContent = 'Searching…';
+      decisionBadge.className = 'hh-badge-idle';
       decisionBadge.textContent = 'RUNNING';
-      answerContent.innerHTML = `<p class="hh-empty-placeholder">${escapeHtml(message || 'Processing…')}</p>`;
+      answerContent.innerHTML = `<p class="hh-dim">${escapeHtml(message || 'Processing…')}</p>`;
     } else {
       submitBtn.disabled = false;
-      submitBtn.innerHTML = `
-        <span>Run RAG</span>
-        <span class="hh-btn-arrow">&rarr;</span>
-      `;
+      submitBtn.textContent = 'Search';
     }
   }
 
   function renderError(message) {
-    decisionBadge.className = 'hh-badge-decision hh-decision-refuse';
+    decisionBadge.className = 'hh-badge-refuse';
     decisionBadge.textContent = 'ERROR';
-    answerContent.innerHTML = `<p class="hh-empty-placeholder" style="color:var(--hh-pink)">Request failed: ${escapeHtml(message)}</p>`;
+    answerContent.innerHTML = `<p class="hh-dim" style="color:var(--pink)">Request failed: ${escapeHtml(message)}</p>`;
   }
 
   function escapeHtml(str) {
@@ -410,20 +394,6 @@
     return str.replace(/[&<>"']/g, function (m) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
     });
-  }
-
-  // Health Check at Startup
-  async function checkHealth() {
-    try {
-      const res = await fetch('/health/ready');
-      if (res.ok) {
-        statusText.textContent = 'Backend Live (<200ms)';
-      } else {
-        statusText.textContent = 'Backend Warming';
-      }
-    } catch {
-      statusText.textContent = 'Backend Offline';
-    }
   }
 
   // Event Listeners
@@ -449,7 +419,7 @@
     handleTextSubmit(q, lang);
   });
 
-  document.querySelectorAll('.hh-sample-chip').forEach((chip) => {
+  document.querySelectorAll('.hh-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const q = chip.dataset.query;
       const lang = chip.dataset.lang;
@@ -473,5 +443,4 @@
 
   // Initialize
   initCanvas();
-  checkHealth();
 })();
