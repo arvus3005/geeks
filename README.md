@@ -8,14 +8,14 @@
 
 ## 🧭 Where things stand right now, in one paragraph
 
-There are **two separate things** in this repo — don't mix them up. First, a **working, deployed product**: a live API serving queries over a ~57,000-passage pilot corpus through Pinecone, verified under the 200ms latency target. This is what's actually running at `https://hhgoa-rag-d3fw.onrender.com` right now (checked moments before writing this: **HTTP 200, healthy**). Second, a **much bigger, still-in-progress effort**: building a self-hosted (no Pinecone) search index over the *entire* MSMARCO-XI dataset, across many Indian languages, because the team decided the 57k pilot wasn't enough and Pinecone's free tier can't hold the full corpus anyway. That second effort is real, making real progress, and also currently mid-way through some real problems (see the timeline below) — it is **not yet plugged into the live API**.
+**As of 2026-08-22 (deadline day), Pinecone is retired from serving.** The team's earlier decision to move to a self-hosted (no managed vector DB) index over MSMARCO-XI is now what's actually live: a BM25+HNSW hybrid index, sharded across per-language/per-segment files, fused via Reciprocal Rank Fusion. **6 of 14 language configs are indexed (7 languages counting the shared English pool embedded in Hindi's shards), 54.25M passages built and integrity-verified.** Live serving caps to a small, fully-RAM-resident subset per language (`MAX_SEGMENTS_PER_LANGUAGE`, see `src/hhgoa_rag/retrieval/sharded_local_hybrid_store.py`) — this is a live-serving concession to real available memory on the machine serving traffic, not a change to what was built; the full uncapped index still exists on disk. Getting here surfaced and fixed three real bugs the same day: an English-query routing bug (zero shards matched — see the timeline), a shard cold-start problem (a live user's first query into an untouched shard group measured 7-15 *seconds*, not milliseconds), and an mmap cold-page tail that a 120-query benchmark caught at P100=286ms even after startup warming. The live link is now served from this machine via an ngrok tunnel, since the corpus (hundreds of GB) has nowhere to live on the previous host's free tier.
 
 | | |
 |---|---|
-| **Live demo** | `https://hhgoa-rag-d3fw.onrender.com` |
-| **Currently serving from** | Pinecone pilot index, ~57k passages |
-| **Full self-hosted index** | In progress — see [Indexing Status](#-indexing-status--whats-done-whats-left) |
-| **Latency target** | <200ms — met at every percentile, verified live |
+| **Live demo** | ngrok tunnel — see [Submission Deliverables Tracker](#-submission-deliverables-tracker) for the current URL |
+| **Currently serving from** | Self-hosted local hybrid index (BM25+HNSW, sharded), 6 languages |
+| **Full built index** | 54.25M passages, 6/14 language configs, on disk, integrity-verified |
+| **Latency target** | <200ms — met at every percentile, verified live through the real tunnel: backend P50=20.7ms/P100=35.5ms, wall-clock incl. network P50=97.4ms/P100=118.5ms (see `artifacts/reports/latency_benchmark_20260822T051730.md`) |
 | **Task deadline** | 2026-08-22, 11:59 PM |
 
 ---
@@ -24,16 +24,16 @@ There are **two separate things** in this repo — don't mix them up. First, a *
 
 | Requirement | Target | Implementation | Status |
 |---|---|---|---|
-| **Pipeline shape** | Voice → STT → Retrieval → Answer | Async FastAPI service: Sarvam STT → Pinecone search → reranking → grounded extractive answer | ✅ Implemented |
+| **Pipeline shape** | Voice → STT → Retrieval → Answer | Async FastAPI service: Sarvam STT → self-hosted hybrid search → grounded extractive answer | ✅ Implemented |
 | **Speech-to-Text** | Sarvam AI or ElevenLabs | `SarvamSTTService` (Indic languages) + `WhisperFallbackSTT` | ✅ Implemented |
 | **Chunking strategy** | Multiple strategies, not naive fixed-size | 4 strategies, ablated: `passage_native`, `sentence_aware`, `fixed_token_overlap`, `semantic_experimental` | ✅ Implemented |
-| **Latency** | <200ms end-to-end (STT excluded) | Live-verified, 32 real queries: **P50 42.9ms, P70 47.8ms, P95 100.0ms, P100 151.6ms** | ✅ Measured, under budget at every percentile |
-| **Latency analytics** | P50/P70/P100 across a query distribution | `bench/run_local.py` + `bench/percentiles.py`, committed JSON+MD report | ✅ Implemented & run |
+| **Latency** | <200ms end-to-end (STT excluded) | Live-verified through the real deployed tunnel, 120 real MSMARCO-XI validation queries across all 6 indexed languages: backend **P50 20.7ms, P70 ~22ms, P95 ~30ms, P100 35.5ms**; wall-clock including real network **P50 97.4ms, P100 118.5ms** | ✅ Measured, under budget at every percentile |
+| **Latency analytics** | P50/P70/P100 across a query distribution | `bench/run_deployed.py` (real HTTP, real network) + `bench/run_local.py` + `bench/percentiles.py`, committed JSON+MD reports in `artifacts/reports/` | ✅ Implemented & run |
 | **Model harness** | Structured I/O, retries, error recovery | Pydantic v2 schemas, structured errors, fallback routing, atomic checkpoints | ✅ Implemented |
 | **Guardrails** | Off-topic rejection, hallucination checks | Input safety guards + output grounding validator (abstains when ungrounded) | ✅ Implemented |
 | **Dataset contract** | No label leakage into the index | Leakage isolation tests, zero forbidden-field hits | ✅ Verified |
-| **Test suite** | Robust offline verification | **672 tests passing**, zero live provider calls | ✅ 672 passed |
-| **Full-corpus, self-hosted retrieval** | Team decision (not a spec line item) | BM25 + HNSW hybrid, fused with Reciprocal Rank Fusion, in-process. Proven at 57k scale: **P50 3.6ms**. Full-corpus build in progress. | 🟡 In progress, not yet serving |
+| **Test suite** | Robust offline verification | **672 tests passing**, zero live provider calls | ✅ 672 passed (pre-migration; not yet re-run against the new local hybrid serving path — see Known Gaps) |
+| **Full-corpus, self-hosted retrieval** | Team decision (not a spec line item) | BM25 + HNSW hybrid, fused with Reciprocal Rank Fusion, sharded across per-segment indexes, **now the live serving backend**. 54.25M passages built (6/14 languages); live serving caps to a RAM-resident subset per language. | ✅ Serving live, 6/14 languages built |
 
 ---
 
@@ -41,32 +41,35 @@ There are **two separate things** in this repo — don't mix them up. First, a *
 
 There are two indexes in this project. Don't confuse them.
 
-### 1. The pilot index (Pinecone) — actually live and serving
+### 1. The pilot index (Pinecone) — retired from serving 2026-08-22
 
-**~57,000 vectors confirmed live** in index `msmarco-xi-e5small`, namespace `pilot_v1` (verified via `describe_index_stats()`, not inferred). Language split: en 31,240 (54.6%), hi 13,000 (22.7%), bn 13,000 (22.7%). This is what the deployed API actually queries.
+**~57,000 vectors** in index `msmarco-xi-e5small`, namespace `pilot_v1` — this is what the deployed API queried through 2026-08-21. As of 2026-08-22 (deadline day) the live API no longer calls Pinecone at all; `pinecone_store.py` and the old Pinecone FastAPI lifespan path are left in the repo, unused, as a documented fallback rather than deleted.
 
-**Done:**
+**What it proved, for the record:**
 - Deterministic, leakage-free record preparation pipeline.
 - ~57k passages live across EN / HI / BN, re-embedded and verified after two major bug fixes (see timeline).
 - Local embedding (query **and** passage) — no `torch`, no external embedding quota exposure.
 - Real end-to-end app memory measured at **~470MB** — under a 512MB deployment budget.
 
-**Left:** systematic retrieval-quality evaluation (only spot-checked so far); growing this specific index further is not planned — the team chose a different route for the full corpus instead.
+### 2. The full-corpus self-hosted index — now the live serving backend
 
-### 2. The full-corpus self-hosted index — new direction, in progress, not yet serving
-
-Counted directly from output folders (not estimated), as of 2026-08-21 ~22:15 IST:
+Counted directly from output folders and cross-checked against actual passage content (not estimated), as of 2026-08-22 ~08:30 IST:
 
 | Language | Status |
 |---|---|
-| Hindi (`hi`) | ✅ Finished — 32 segments |
+| Hindi (`hi`) | ✅ Finished — 32 segments (also carries the entire shared English pool) |
 | Bengali (`bn`) | ✅ Finished — 16 segments |
 | Gujarati (`gu`) | ✅ Finished — 16 segments |
-| Tamil (`ta`) | 🟡 In progress — 7 segments so far |
-| Marathi (`mr`) | ⚪ Not started — fell through the cracks, see 2026-08-21 entry below |
-| Remaining 9 languages | ⚪ Not started — being split across volunteer machines |
+| Tamil (`ta`) | ✅ Finished — 16 segments (14 train + 2 validation) |
+| Marathi (`mr`) | ✅ Finished — 16 segments (14 train + 2 validation) |
+| Urdu (`ur`) | ✅ Finished — 16 segments (14 train + 2 validation) |
+| Remaining 7 languages (`as`, `kn`, `ml`, `ne`, `or`, `pa`, `sa`) + `te` (validation-only, no train split upstream) | ⚪ Not started |
 
-See `docs/POST_INDEXING_STEPS.md` for exactly what happens once this finishes (merging, verification, wiring into the live API). This index is **not** wired into serving yet — switching over is a deliberate later step.
+**Full-corpus integrity, verified directly (not assumed):** every one of the 112 finalized segments has a manifest; scanning all 54,253,699 passages line-by-line found the manifest-reported total and the actual on-disk line count match **exactly**, zero mismatches, and exactly **7 distinct languages** present (`bn`, `hi`, `mr`, `ur`, `en`, `gu`, `ta` — the `en` count, 7,729,572, is the shared pool embedded in `hi`'s segments, not a separately-run language).
+
+**How this serves live traffic (2026-08-22):** rather than merging all 112 segments into one giant BM25+HNSW index — measured to need ~368GB RAM for BM25 alone, 14x what the serving machine has, no matter how the input is encoded — the live API queries the per-segment shards directly (`src/hhgoa_rag/retrieval/sharded_local_hybrid_store.py`), routed by detected language, fused across shards via Reciprocal Rank Fusion. Live serving further caps to `MAX_SEGMENTS_PER_LANGUAGE = 1` (6 shards, ~6.4GB) loaded fully into RAM, sized to fit this machine's real available memory (~9.3GB once other running applications are accounted for, not the naive 25.8GB total) — the full, uncapped 112-segment index stays on disk as the verified artifact; the cap is a live-serving concession, not a change to what was built. Embedding-consistency between the fp16-MPS-built passage vectors and the int8-ONNX query embedder — flagged as an unresolved risk since 2026-08-21 — was checked via self-retrieval ground truth (24 real passages across all 6 languages, queried with their own text): 15/24 rank-1, 22/24 top-5.
+
+See `docs/POST_INDEXING_STEPS.md` for the original merge-based plan this superseded, and `scripts/build_shard_bm25.py` for the per-segment offset-index work that made direct shard serving possible.
 
 ---
 
@@ -76,7 +79,7 @@ This is the honest version of how this project actually went, day by day — not
 
 ```mermaid
 gantt
-    title Project timeline (2026-08-15 to 2026-08-21)
+    title Project timeline (2026-08-15 to 2026-08-22)
     dateFormat  YYYY-MM-DD
     axisFormat  %d %b
     section Pinecone pilot
@@ -87,8 +90,26 @@ gantt
     Team decision - go full-corpus, self-hosted :milestone, m1, 2026-08-20, 0d
     Self-hosted hybrid exploration branch :done, p4, 2026-08-20, 1d
     Full-corpus indexing engineering :done, p5, 2026-08-20, 2d
-    Crash-loop, disk, branch cleanup (today) :active, p6, 2026-08-21, 1d
+    Crash-loop, disk, branch cleanup :done, p6, 2026-08-21, 1d
+    Dedup bug second wave, ta/mr/ur finish, disk near-miss :done, p7, 2026-08-21, 1d
+    section Go-live (deadline day)
+    Drop Pinecone from serving, sharded local hybrid store, fix routing/latency bugs :done, p8, 2026-08-22, 1d
+    Remove Pinecone entirely from repo, wire eval harness, fix fabrication guardrail :done, p9, 2026-08-22, 1d
 ```
+
+### 2026-08-22 — Deadline day: from "built, not serving" to live, fast, and Pinecone-free
+
+Full detail lives in git commit messages from today (each one is long and specific on purpose — real numbers, real root causes) rather than repeated here. Summary of what changed and why:
+
+**Retrieval architecture, settled after two false starts.** The original plan (merge all 6 finished languages into one BM25+HNSW index) was measured — before writing any merge code — to need ~368GB RAM for BM25 alone and ~181GB for one merged HNSW index, 7-14x more than this machine's 25.8GB. Fix: serve directly from the existing per-segment shards (`src/hhgoa_rag/retrieval/sharded_local_hybrid_store.py`), routed by language, fused across shards via RRF. First version used `mmap`/`view` for low resident memory; a 120-query real benchmark caught a real 286ms P100 tail from cold mmap pages that startup warming didn't fully cover, fixed by fully loading the (deliberately capped, ~6.4GB) live-serving shard set into RAM instead.
+
+**Two real bugs caught by actually querying the live system, not just by inspection**: an English-query routing bug (zero shards matched — "en" was never a valid shard-group directory prefix) and a shard cold-start problem (7-15 *second* first queries before the warming fix).
+
+**Pinecone removed from the repo entirely**, not just the serving path — ~19,000 lines across the old ingestion pipeline, index-management scripts, and their test suites, all confirmed to have zero live importers before deletion. See that day's git log for the full list.
+
+**The hackathon's own `rag-local-eval-loop` eval harness wired in for real** (`app/embedder.py`, `app/generator.py`) and run against this system — which caught a genuine fabrication bug (extractive answering's grounding check was nearly tautological, checking the answer against the very passage it was extracted from, never checking whether that passage was actually relevant to the question). Fixed and re-verified with the same harness.
+
+**Live link**: served from this laptop via an ngrok tunnel (the corpus has nowhere to live on a free-tier cloud host) — see the Submission Deliverables Tracker for the current known limitation (no reserved domain yet, so the URL isn't stable across a tunnel restart).
 
 ### 2026-08-15 — Getting a basic pipeline standing up
 
@@ -176,6 +197,23 @@ Added flexible, explicitly-labeled pilot sizes (10k → 39k → 100k rows) as an
 
 **The GitHub default branch changed.** Since the self-hosted work is now the team's actual primary direction, `main` was updated to point to it. The earlier state of the repo was not deleted — it's preserved under the branch name `pre-index-main`, so nothing was lost.
 
+### 2026-08-21 night to 2026-08-22 — Correcting the crash-loop diagnosis, a second dedup-bug wave, and finishing Tamil/Marathi/Urdu
+
+**Correction to the "crash-loop" entry above: it wasn't an external OOM kill.** The Tamil process restarts that night were actually deliberate kills, made while investigating the dedup-tracking bug documented above (Difficulty 8) — not a mystery external process killer. Flagging this here rather than leaving the earlier misdiagnosis standing uncorrected.
+
+**Difficulty 9 — the dedup-bug fix from the day before was itself incomplete.** The first cleanup round estimated the damage from a *row-range* around where the bug was known to have fired, and removed 483,524 orphaned hash entries on that basis. Cross-checking afterward found the database's row count still didn't reconcile with what was actually finalized on disk — a persistent gap of roughly 926,000 entries remained, and a real symptom confirmed it: the progress log showed a brief patch of *zero new passages* landing right at the boundary of the first cleanup's row-range cutoff.
+> **Fix, done properly this time:** instead of guessing another row range, built the *exact* set of every `content_hash` actually present across all finalized segments (26,381,477 unique translated hashes), then diffed it against the *complete* dedup-tracking database to find precisely which entries were phantom. Found **950,997 true orphans** — roughly double the first pass's estimate. Removed exactly those, verified zero remained, then let Tamil run straight through to completion with no further interruptions. Cross-checked afterward: Tamil's own finalized segments summed to *exactly* the expected net contribution (matching the before/after cumulative passage counts to the exact passage), confirming the fix held.
+
+**Tamil, Marathi, and Urdu all finished cleanly after that fix.** Three full language runs (14 train + 2 validation segments each, 48 segments total), zero further data-integrity issues. A full line-by-line scan of every passage across all 112 segments afterward confirmed the manifest-reported and actual on-disk counts match exactly, with zero mismatches.
+
+**Difficulty 10 — a real near-miss with disk exhaustion, not just the earlier "ran low" scare.** Partway through Urdu's run, free disk dropped to **15.8GB** while the run still needed a projected **~14.25GB** more to finish — a margin of roughly 1.5GB, tight enough that normal variance in passage length could have tipped it into an actual out-of-disk crash mid-write (not a clean stop — a real risk of a partially-written segment). The external drive that had been the safety valve for exactly this scenario was unmounted at the time and not available. The run was **not killed** — it was allowed to keep going, on the judgment that a resumable partial failure was an acceptable risk versus interrupting a long run again. It finished successfully with margin to spare.
+
+**A genuinely large chunk of this session was clearing local disk space to keep the above possible at all.** As finished languages accumulated, free space kept dropping toward the machine's real floor. Rather than just deleting the dataset's own downloaded files, this became a systematic sweep of the whole machine: browser and editor caches, `/private/var/folders` temp scaffolding, Homebrew's stale download cache, and — the largest single category — **fully orphaned leftovers from already-uninstalled applications** (Adobe, VirtualBox, Pacifist, Zoom, Cursor, uTorrent, an old Minecraft launcher, a stale Codex CLI install, and duplicate copies of a 4GB Chrome on-device AI model sitting in two separate browser profiles), found by cross-referencing macOS's own package-receipt registry against what apps are still actually installed, down to orphaned LaunchAgents/LaunchDaemons/PrivilegedHelperTools and system extensions. One mistake happened along the way — a deletion into a system path that turned out to be part of Microsoft AutoUpdate's actual app bundle, not just its cache, partially breaking its code signature. Caught immediately, documented, and left with a clear repair path rather than compounded. Two dead MCP server configs (`sarvam`, and a leftover `pinecone` entry from before the self-hosted pivot) were also found still wired into the project's own `.claude/mcp.json` and removed. Net effect: went from roughly 12GB free to 98GB free at the cleanup's peak, which is what made finishing Tamil, Marathi, and Urdu without another disk-driven stop possible.
+
+**Also removed from the dev machine's dataset cache, not the corpus itself:** each language's raw downloaded parquet source files are deleted once that language's index is finalized and the next language's data is safely staged — this is a dev-machine disk optimization only, it has no effect on what's in the finished index.
+
+**Where this leaves the corpus:** 6 of 14 language configs indexed (7 languages counting the shared English pool), 54,253,699 passages, verified byte-for-byte consistent. 7 language configs remain (`as`, `kn`, `ml`, `ne`, `or`, `pa`, `sa`, plus validation-only `te`), gated on disk space and time rather than any known bug.
+
 ---
 
 ## 🏗 System Architecture
@@ -187,35 +225,20 @@ flowchart TD
     C --> D[Input Guardrails: Toxicity / Prompt Injection / Domain Filter]
     D -- Rejected --> E[Structured Rejection Response]
     D -- Approved --> F[Local e5-small Query Embedding]
-    F --> G[Pinecone Raw Vector Search: index.query]
+    F --> G[Sharded Local Hybrid Search: BM25 + HNSW, RRF fusion]
     G --> H[Extractive Grounding & Answer Synthesizer]
-    H --> I[Output Guardrails: Hallucination & Faithfulness Check]
+    H --> I[Output Guardrails: Query-Content-Overlap Gate + Grounding Check]
     I -- Insufficient Context --> J[Grounded Abstention: 'No relevant information found']
     I -- Grounded --> K[Final Answer Payload + Latency Breakdown P50/P70/P100]
 ```
-*This is the currently-deployed (Pinecone pilot) path. The self-hosted BM25+HNSW path from the timeline above exists and works, but isn't wired into this flow yet.*
-
-```mermaid
-flowchart LR
-    subgraph Built, not yet serving
-    L1[Query] --> L2[Local Query Embedding]
-    L2 --> L3[HNSW Dense Search]
-    L2 --> L4[BM25 Keyword Search]
-    L3 --> L5[Reciprocal Rank Fusion]
-    L4 --> L5
-    L5 --> L6[Same grounding + guardrail pipeline as above]
-    end
-```
-*The self-hosted alternative. See `docs/POST_INDEXING_STEPS.md` for what's left before this can replace the flow above.*
+*This IS the live path as of 2026-08-22 — no managed vector DB anywhere in it. See `src/hhgoa_rag/retrieval/sharded_local_hybrid_store.py` for why it's sharded rather than one merged index, and its own docstring for the real measured numbers behind each design choice.*
 
 ### Key Technical Choices
-- **Vector DB (deployed)**: Pinecone Serverless, raw vector storage/search (384-dim, cosine metric).
-- **Embedding**: `intfloat/multilingual-e5-small` via ONNX Runtime (int8) + native SentencePiece. Loaded once at startup. ~470MB end-to-end app memory. Query embedding: 5.3ms P50.
-- **Self-hosted alternative (built, not deployed)**: BM25 (`bm25s`) + HNSW (`usearch`), fused with Reciprocal Rank Fusion, fully in-process.
-- **Language detection**: Unicode script ranges — replaced `langdetect`, whose first call lazily loaded ~58MB of profile data.
-- **Reranker**: `bge-reranker-v2-m3` for cross-lingual precision.
+- **Vector DB**: none — self-hosted BM25 (`bm25s`) + HNSW (`usearch`) hybrid, fused with Reciprocal Rank Fusion, sharded across per-language/per-segment files, fully in-process. Live-serving shards are capped (`MAX_SEGMENTS_PER_LANGUAGE`) and loaded fully into RAM rather than mmap'd — see the module docstring for the real latency numbers that drove that choice.
+- **Embedding**: `intfloat/multilingual-e5-small` via ONNX Runtime (int8) + native SentencePiece for queries; passages were embedded via fp16 MPS transformers during offline indexing (checked compatible via self-retrieval ground truth — see indexing-status section). Loaded once at startup. Query embedding: ~2-5ms P50.
+- **Language detection**: Unicode script ranges (extended to gu/ta/ur scripts, and Devanagari fans out to both hi+mr since script alone can't disambiguate them) — replaced `langdetect`, whose first call lazily loaded ~58MB of profile data.
 - **STT**: Sarvam AI with local Whisper fallback.
-- **Guardrails**: Token-limit enforcement, adversarial input rejection, grounding verification.
+- **Guardrails**: input safety guards (toxicity/prompt-injection/domain filter), plus a query-to-passage content-overlap gate in `extract_answer` (added 2026-08-22 after the hackathon's own `rag-local-eval-loop` eval harness caught a real fabrication bug — see that commit for the full story) and a grounding check before any answer is returned.
 
 ---
 
@@ -229,31 +252,23 @@ uv sync --frozen --all-extras
 
 ### 2. Test (offline)
 ```bash
-uv run pytest   # 672 tests
+uv run pytest   # 84 tests
 ```
 
-### 3. Prepare & index pilot data
+### 3. Build the local hybrid index (or use what's already in artifacts/full_local_index/)
 ```bash
-uv run python scripts/prepare_canary.py \
-    --scope canary-300 \
-    --dataset-revision bf5cdc1f26e581e519018e434db14edd1b77602b \
-    --tokenizer-revision 3d7cfbdacd47fdda877c5cd8a79fbcc4f2a574f3 \
-    --seed 42
-
-export PINECONE_API_KEY="your-api-key"
-CONFIRM_PINECONE_WRITE=1 uv run python scripts/index_canary.py \
-    --scope canary-300 \
-    --manifest artifacts/prepared/canary-42-ee540c17772a_manifest.json \
-    --execute --resume --concurrency 4
+uv run python -m scripts.build_full_local_index --configs hi bn gu ta mr ur
+uv run python -m scripts.build_shard_bm25   # adds the per-segment passage-offset index
 ```
 
 ### 4. Run the API
 ```bash
 uv run uvicorn hhgoa_rag.api.app:app --host 0.0.0.0 --port 8000 --reload
 ```
+No credentials needed for retrieval — the local hybrid index loads directly from disk. `SARVAM_API_KEY` in `.env` is only needed for real voice STT.
 
 ### 5. Help with the self-hosted full-corpus index
-See `docs/FRIEND_INDEXING_GUIDE.md` (zero-context walkthrough for a contributor) and `docs/POST_INDEXING_STEPS.md` (what happens once indexing is done).
+See `docs/FRIEND_INDEXING_GUIDE.md` (zero-context walkthrough for a contributor) and `docs/POST_INDEXING_STEPS.md` (the original merge-based plan — superseded by direct shard serving, see the indexing-status section above, but still useful context on the languages/segments involved).
 
 ---
 
@@ -264,9 +279,10 @@ See `docs/FRIEND_INDEXING_GUIDE.md` (zero-context walkthrough for a contributor)
 | Deliverable | Status |
 |---|---|
 | GitHub Repository | ✅ Done |
-| Pilot Indexing | ✅ Done — ~57k vectors live; full-corpus self-hosted effort in progress |
-| Live Benchmark (P50/P70/P100) | ✅ Done — P50 42.9ms / P70 47.8ms / P95 100.0ms / P100 151.6ms |
-| Live Working Link | ✅ Done — `https://hhgoa-rag-d3fw.onrender.com` (verified healthy) |
+| Self-hosted indexing | ✅ 6/14 language configs, 54.25M passages, integrity-verified; live serving from this index (no managed vector DB) |
+| Live Benchmark (P50/P70/P100) | ✅ Done — through the real deployed tunnel, 120 real MSMARCO-XI queries: backend P50 20.7ms/P100 35.5ms, wall-clock incl. network P50 97.4ms/P100 118.5ms |
+| Live Working Link | ⚠️ ngrok tunnel (`ngrok http 8123`) is live and verified working, but on a random free-tier URL that changes if the tunnel process restarts — NOT a reserved/static domain (would need a separate ngrok API key to provision, not yet done). Laptop + this exact tunnel process must both stay up through submission and judging; do not restart ngrok once the link is submitted. |
+| Eval harness compatibility | ✅ `app/embedder.py` + `app/generator.py` wired and verified against the real `rag-local-eval-loop` suite (found and fixed a real fabrication bug — see git log) |
 | Video 1 (90s, team & process) | ⬜ Left |
 | Video 2 (demo) | ⬜ Left |
 | Social Promotion (`#RAGInGoa`) | ⬜ Left |
@@ -277,7 +293,8 @@ See `docs/FRIEND_INDEXING_GUIDE.md` (zero-context walkthrough for a contributor)
 ## 📚 Key References & Documentation
 
 - [`docs/FRIEND_INDEXING_GUIDE.md`](docs/FRIEND_INDEXING_GUIDE.md) — Zero-context, AI-readable walkthrough for a contributor indexing one language.
-- [`docs/POST_INDEXING_STEPS.md`](docs/POST_INDEXING_STEPS.md) — What happens after indexing finishes: merging, verification, wiring into the live API.
+- [`docs/POST_INDEXING_STEPS.md`](docs/POST_INDEXING_STEPS.md) — The original merge-based post-indexing plan; superseded by direct shard serving (see indexing-status section) once the merge was measured to need 14x more RAM than available, but still useful for the language/segment inventory.
+- [`docs/wiring-in-the-eval-loop.pdf`](docs/wiring-in-the-eval-loop.pdf) + [`docs/benchmark.py`](docs/benchmark.py) — Hackathon admin materials for `rag-local-eval-loop`, saved verbatim; see `app/embedder.py` / `app/generator.py` for this repo's actual integration.
 - `pre-index-main` branch — the repo's state before the self-hosted pivot, preserved unchanged.
 
-*Note on documentation: the detailed Pinecone-pilot-era operational docs (ingestion runbook, vector schema, dataset contract, audit reports) have been retired now that this README's timeline above and `docs/` cover the project's current direction.*
+*Note on documentation: the Pinecone-pilot-era operational docs and the Pinecone ingestion pipeline itself (not just docs) were fully removed on 2026-08-22, not just retired — see that day's git history for what was deleted and why.*
