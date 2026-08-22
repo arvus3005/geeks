@@ -1,6 +1,8 @@
-"""Text-to-Speech (TTS) adapter using Sarvam AI's Bulbul v1 model for Indic languages.
+"""Text-to-Speech (TTS) adapter using Sarvam AI's Bulbul v3 model for Indic languages.
 
-Supports hi-IN, bn-IN, gu-IN, ta-IN, mr-IN, ur-IN, en-IN.
+Supports hi, bn, gu, ta, mr, ur, en, te, kn, ml, or, pa (see SARVAM_LANG_MAP
+below for the exact wire codes) -- not as/ne/sa, which have no Sarvam TTS
+mapping at all.
 """
 
 from __future__ import annotations
@@ -14,7 +16,13 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponen
 
 logger = logging.getLogger(__name__)
 
-# Map ISO 639-1 language codes to Sarvam language codes
+# Map this project's own internal language codes (language_routing.py's
+# SUPPORTED_LANGUAGES/INDEXED_LANGUAGES) to Sarvam's wire codes. Odia is keyed
+# on "or" here, not Sarvam's own "od" -- see the 2026-08-22 note in
+# src/hhgoa_rag/stt/sarvam.py's SARVAM_STT_LANG_MAP for the real bug this
+# fixes: synthesize()'s `language` argument arrives as this project's internal
+# code (e.g. `detected_lang`), so keying on Sarvam's own code here meant an
+# Odia response silently fell back to English TTS.
 SARVAM_LANG_MAP: dict[str, str] = {
     "hi": "hi-IN",
     "bn": "bn-IN",
@@ -26,7 +34,7 @@ SARVAM_LANG_MAP: dict[str, str] = {
     "te": "te-IN",
     "kn": "kn-IN",
     "ml": "ml-IN",
-    "od": "od-IN",
+    "or": "od-IN",
     "pa": "pa-IN",
 }
 

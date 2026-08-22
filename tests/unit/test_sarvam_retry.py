@@ -15,6 +15,46 @@ def _adapter() -> SarvamSTTAdapter:
     return SarvamSTTAdapter(api_key="test-key")
 
 
+def _capturing_handler(captured: dict):
+    def handler(request: httpx.Request) -> httpx.Response:
+        # multipart/form-data body -- find the language_code PART specifically
+        # (by its Content-Disposition name), not just "the first value line" --
+        # that grabbed whichever field happened to come first (e.g. "model").
+        parts = request.read().decode("utf-8", errors="ignore").split("\r\n\r\n")
+        for i, part in enumerate(parts[:-1]):
+            if 'name="language_code"' in part:
+                captured["language_code"] = parts[i + 1].split("\r\n")[0]
+                break
+        return httpx.Response(200, json={"transcript": "ok", "language_code": "or-IN"})
+    return handler
+
+
+@pytest.mark.parametrize(
+    "language_hint,expected_lang_code",
+    [
+        ("hi", "hi-IN"),
+        ("or", "od-IN"),  # this project's own internal code for Odia everywhere
+        # else (language_routing.py's SUPPORTED_LANGUAGES/INDEXED_LANGUAGES) is
+        # "or", not Sarvam's own "od" -- language_hint arrives from the same
+        # source (api/routes/*.py's language_hint field) for both retrieval
+        # routing AND this STT call, so it must resolve through THIS map using
+        # "or", not require callers to already know Sarvam's own code.
+        ("od", None),  # Sarvam's own code is not a valid INPUT to this adapter
+        ("as", None),  # not wired at all -- falls back to auto-detect, not a crash
+    ],
+)
+@pytest.mark.asyncio
+async def test_language_hint_resolves_to_sarvam_lang_code(language_hint, expected_lang_code):
+    captured: dict = {}
+    adapter = _adapter()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(_capturing_handler(captured))) as client:
+        await adapter._post(client, b"audio", language_hint)
+    if expected_lang_code is None:
+        assert captured["language_code"] == "unknown"
+    else:
+        assert captured["language_code"] == expected_lang_code
+
+
 @pytest.mark.asyncio
 async def test_succeeds_first_try_no_retry():
     calls = {"n": 0}

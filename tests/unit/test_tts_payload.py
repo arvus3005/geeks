@@ -8,7 +8,20 @@ httpx.MockTransport so no real network call or credential is needed.
 import httpx
 import pytest
 
-from hhgoa_rag.stt.tts import SarvamTTSAdapter
+from hhgoa_rag.stt.tts import SARVAM_LANG_MAP, SarvamTTSAdapter
+
+
+def test_internal_odia_code_resolves_to_sarvam_wire_code():
+    # Real 2026-08-22 bug: this map's key used to be "od" (Sarvam's own wire
+    # code), but language_routing.py's SUPPORTED_LANGUAGES/INDEXED_LANGUAGES --
+    # and everything upstream that produces the `detected_lang` passed into
+    # synthesize(text, language=detected_lang) -- use "or" as the internal
+    # code for Odia. Looking up "or" missed the map entirely and silently fell
+    # back to English TTS for every Odia response. Same class of bug as
+    # sarvam.py's STT map, fixed the same way: key on this project's own
+    # internal code, not Sarvam's.
+    assert SARVAM_LANG_MAP.get("or") == "od-IN"
+    assert "od" not in SARVAM_LANG_MAP  # Sarvam's own code is not a valid caller input
 
 
 @pytest.mark.asyncio

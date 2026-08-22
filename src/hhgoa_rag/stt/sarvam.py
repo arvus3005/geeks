@@ -112,7 +112,16 @@ SARVAM_STT_LANG_MAP: dict[str, str] = {
     "kn": "kn-IN",
     "ml": "ml-IN",
     "pa": "pa-IN",
-    "od": "od-IN",
+    # Sarvam's own wire code for Odia is "od-IN", but every other module in
+    # this codebase (language_routing.py's SUPPORTED_LANGUAGES/INDEXED_LANGUAGES,
+    # dataset/models.py) uses "or" as the internal code -- and language_hint
+    # arrives from the same api/routes/*.py field for BOTH retrieval routing
+    # and this STT call, so it must be keyed on "or" here too. Found 2026-08-22:
+    # the key used to be "od", so an explicit language_hint=or API call fell
+    # through this lookup to lang_code="unknown" instead of "od-IN" -- not
+    # reachable via the shipped web UI (no Odia option in its dropdown), but a
+    # real gap for any direct API caller.
+    "or": "od-IN",
 }
 
 
