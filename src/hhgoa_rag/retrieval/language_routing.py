@@ -83,7 +83,8 @@ def get_language_filter(detected_lang: str, hint: str | None) -> list[str]:
     other indexed language's English fallback, both route to the "hi"
     shard group -- that's the only place English passages are indexed.
     """
-    lang = hint or detected_lang or "en"
+    raw = hint or detected_lang or "en"
+    lang = raw.split("-")[0].lower()
     if lang in ("en", "hi", "mr"):
         return ["hi", "mr"]  # covers English pool + Devanagari ambiguity, see _SCRIPT_TO_LANGS
     if lang in INDEXED_LANGUAGES:
