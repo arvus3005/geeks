@@ -27,7 +27,19 @@ SUPPORTED_LANGUAGES = {
 # Languages that actually have a built local index shard as of 2026-08-22
 # (see README's indexing-status table). Querying a language outside this
 # set falls back to "en" rather than a shard that doesn't exist.
-INDEXED_LANGUAGES = {"hi", "bn", "gu", "ta", "mr", "ur", "en"}
+INDEXED_LANGUAGES = {"hi", "bn", "gu", "ta", "mr", "ur", "ne", "en"}
+
+# Subset of INDEXED_LANGUAGES built from a row-capped (--max-rows-per-config)
+# run, per CLAUDE.md's "every sample artifact must be labeled smoke, pilot,
+# or experiment" rule -- these are real, servable shards, just not the full
+# corpus for that language (unlike the other 6, which are). "ne" specifically
+# was a full run trimmed to its first 500k-passage segment after the full
+# build's real disk footprint (measured ~73.5GB projected, 2x mr/ur's density)
+# turned out not to fit -- same "not the full corpus" status as the rest of
+# this set for serving/labeling purposes, even though it started as a full
+# attempt. Consulted by system.py's status endpoint and README -- keep this
+# updated as more pilot languages are added.
+PILOT_LANGUAGES: set[str] = {"ne"}
 
 
 def detect_script(text: str) -> str:
@@ -44,14 +56,16 @@ def detect_script(text: str) -> str:
     return "Latin"
 
 
-# Devanagari is shared by Hindi and Marathi -- there is no script-level way
-# to tell them apart without a real statistical language ID model (deliberately
-# not used here, see detect_language's docstring). Query BOTH shards for
-# Devanagari text; the local hybrid store's per-shard fan-out cost is small
-# enough (measured ~70ms for a single 32-shard language) that querying two
-# languages' shards together is still comfortably inside the 200ms budget.
+# Devanagari is shared by Hindi, Marathi, AND (since 2026-08-22) Nepali --
+# there is no script-level way to tell them apart without a real statistical
+# language ID model (deliberately not used here, see detect_language's
+# docstring). Query ALL THREE shards for Devanagari text with no explicit
+# hint; the local hybrid store's per-shard fan-out cost is small enough
+# (measured ~70ms for a single 32-shard language, and the fan-out is now
+# thread-pooled -- see sharded_local_hybrid_store.search) that a third shard
+# is still comfortably inside the 200ms budget.
 _SCRIPT_TO_LANGS = {
-    "Devanagari": ["hi", "mr"],
+    "Devanagari": ["hi", "mr", "ne"],
     "Bengali": ["bn"],
     "Gujarati": ["gu"],
     "Tamil": ["ta"],
@@ -85,8 +99,8 @@ def get_language_filter(detected_lang: str, hint: str | None) -> list[str]:
     """
     raw = hint or detected_lang or "en"
     lang = raw.split("-")[0].lower()
-    if lang in ("en", "hi", "mr"):
-        return ["hi", "mr"]  # covers English pool + Devanagari ambiguity, see _SCRIPT_TO_LANGS
+    if lang in ("en", "hi", "mr", "ne"):
+        return ["hi", "mr", "ne"]  # covers English pool + 3-way Devanagari ambiguity
     if lang in INDEXED_LANGUAGES:
         return [lang, "hi"]  # own-language shard + hi for the English pool
     if lang in SUPPORTED_LANGUAGES:
