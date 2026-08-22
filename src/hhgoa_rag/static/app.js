@@ -1,11 +1,13 @@
 /**
- * HH Goa 2026 Multilingual Voice RAG — Client Application
+ * HH Goa 2026 Multilingual Voice RAG — Official Theme Client Application
+ * Theme: HackerHouse Goa 2026 (Emerald / Neon Yellow / Hot Pink)
+ *
  * Features:
- * - Real-time Web Audio API frequency waveform visualizer
- * - MediaRecorder audio recording & audio file upload
- * - Sarvam STT & Bulbul TTS integration
- * - Sub-200ms latency & stage telemetry dashboard
- * - Dynamic multilingual script routing & citations inspector
+ * - Real-time Web Audio API frequency waveform visualizer (Yellow & Pink neon)
+ * - MediaRecorder audio capture & audio file upload
+ * - Sarvam AI Saaras STT & Bulbul TTS integration
+ * - Sub-200ms latency stopwatch & waterfall stage breakdown
+ * - Multilingual Indic script routing & citations inspector
  */
 
 (function () {
@@ -71,9 +73,9 @@
     const h = canvas.height;
     canvasCtx.clearRect(0, 0, w, h);
     
-    // Draw a subtle resting wave
+    // Draw subtle neon resting wave
     canvasCtx.beginPath();
-    canvasCtx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+    canvasCtx.strokeStyle = 'rgba(254, 225, 1, 0.35)';
     canvasCtx.lineWidth = 2;
     canvasCtx.moveTo(0, h / 2);
     for (let x = 0; x < w; x++) {
@@ -83,7 +85,7 @@
     canvasCtx.stroke();
   }
 
-  // Live Audio Frequency Visualizer
+  // Live Audio Frequency Visualizer (HH Goa Yellow & Pink Glow)
   function drawLiveVisualizer() {
     if (!isRecording || !analyser) return;
 
@@ -103,8 +105,8 @@
       const barHeight = (dataArray[i] / 255) * h * 0.85;
 
       const gradient = canvasCtx.createLinearGradient(0, h, 0, h - barHeight);
-      gradient.addColorStop(0, '#38bdf8');
-      gradient.addColorStop(1, '#818cf8');
+      gradient.addColorStop(0, '#fee101'); // Neon Yellow
+      gradient.addColorStop(1, '#ff0080'); // Hot Pink
 
       canvasCtx.fillStyle = gradient;
       canvasCtx.fillRect(x, h - barHeight, barWidth - 1, barHeight);
@@ -177,7 +179,7 @@
 
   // Voice Query Submission
   async function handleVoiceSubmit(audioBlob) {
-    setLoadingState(true, 'Transcribing & running multilingual RAG…');
+    setLoadingState(true, 'Transcribing via Sarvam Saaras & running RAG…');
     const formData = new FormData();
     formData.append('file', audioBlob, 'query.wav');
     
@@ -204,14 +206,14 @@
       renderError(err.message);
     } finally {
       setLoadingState(false);
-      micLabel.textContent = 'Press to Speak';
+      micLabel.textContent = 'Hold or Click to Speak';
     }
   }
 
   // Text Query Submission
   async function handleTextSubmit(text, lang) {
     if (!text || !text.trim()) return;
-    setLoadingState(true, 'Retrieving from MSMARCO-XI & verifying…');
+    setLoadingState(true, 'Searching 54.25M MSMARCO-XI index…');
     transcriptBox.style.display = 'none';
 
     const payload = {
@@ -271,30 +273,30 @@
 
   function renderCommonData(data) {
     // Decision Badge
-    decisionBadge.className = 'decision-badge';
+    decisionBadge.className = 'hh-decision';
     if (data.decision === 'allow') {
-      decisionBadge.classList.add('badge-allow');
-      decisionBadge.textContent = 'Allowed (Answered)';
+      decisionBadge.classList.add('hh-badge-allow');
+      decisionBadge.textContent = 'ALLOWED (GROUNDED)';
     } else if (data.decision === 'abstain') {
-      decisionBadge.classList.add('badge-abstain');
-      decisionBadge.textContent = `Abstained (${data.reason_code || 'Ungrounded'})`;
+      decisionBadge.classList.add('hh-badge-abstain');
+      decisionBadge.textContent = `ABSTAINED (${(data.reason_code || 'UNGROUNDED').toUpperCase()})`;
     } else if (data.decision === 'refuse') {
-      decisionBadge.classList.add('badge-refuse');
-      decisionBadge.textContent = `Refused (${data.reason_code || 'Unsafe'})`;
+      decisionBadge.classList.add('hh-badge-refuse');
+      decisionBadge.textContent = `REFUSED (${(data.reason_code || 'UNSAFE').toUpperCase()})`;
     } else {
-      decisionBadge.classList.add('badge-refuse');
-      decisionBadge.textContent = 'Error';
+      decisionBadge.classList.add('hh-badge-refuse');
+      decisionBadge.textContent = 'ERROR';
     }
 
     // Answer Content
     if (data.answer) {
       answerContent.innerHTML = `<p>${escapeHtml(data.answer)}</p>`;
     } else if (data.decision === 'abstain') {
-      answerContent.innerHTML = `<p class="placeholder-text" style="color:var(--accent-amber)">System abstained from answering: <b>${escapeHtml(data.reason_code)}</b>. No sufficiently relevant passage was found in the indexed MSMARCO-XI corpus.</p>`;
+      answerContent.innerHTML = `<p class="hh-placeholder" style="color:var(--hh-amber)"><b>Pipeline Abstained:</b> Reason code <code>${escapeHtml(data.reason_code)}</code>. Cross-encoder relevance floor did not clear for candidate passages.</p>`;
     } else if (data.decision === 'refuse') {
-      answerContent.innerHTML = `<p class="placeholder-text" style="color:var(--accent-rose)">Request refused by guardrail: <b>${escapeHtml(data.reason_code)}</b>.</p>`;
+      answerContent.innerHTML = `<p class="hh-placeholder" style="color:var(--hh-pink)"><b>Guardrail Refusal:</b> Reason code <code>${escapeHtml(data.reason_code)}</code>.</p>`;
     } else {
-      answerContent.innerHTML = `<p class="placeholder-text" style="color:var(--accent-rose)">${escapeHtml((data.error && data.error.message) || 'Query failed')}</p>`;
+      answerContent.innerHTML = `<p class="hh-placeholder" style="color:var(--hh-rose)">${escapeHtml((data.error && data.error.message) || 'Query failed')}</p>`;
     }
 
     // Telemetry & Latencies
@@ -307,7 +309,7 @@
     metricRerank.textContent = `${(stages.answer_extract || 0).toFixed(1)} ms`;
     metricGrounding.textContent = `${(stages.grounding_verify || 0).toFixed(1)} ms`;
 
-    // Timeline Bar Widths
+    // Timeline Waterfall Widths
     const safeTotal = Math.max(total, 1);
     timelineEmbed.style.width = `${((stages.query_embed || 0) / safeTotal) * 100}%`;
     timelineRetrieve.style.width = `${((stages.local_hybrid_retrieve || 0) / safeTotal) * 100}%`;
@@ -315,22 +317,22 @@
     timelineGround.style.width = `${((stages.grounding_verify || 0) / safeTotal) * 100}%`;
 
     // Citations
-    detectedLangTag.textContent = `Lang: ${(data.detected_language || '--').toUpperCase()}`;
+    detectedLangTag.textContent = `LANG: ${(data.detected_language || '--').toUpperCase()}`;
     const citations = data.citations || [];
     citationsCount.textContent = citations.length;
 
     if (citations.length === 0) {
-      citationsList.innerHTML = '<p class="empty-citations">No citations returned for this query.</p>';
+      citationsList.innerHTML = '<p class="hh-empty-citations">No citations returned for this query.</p>';
     } else {
       citationsList.innerHTML = citations
         .map(
           (c, idx) => `
-          <div class="citation-card">
-            <div class="citation-meta">
-              <span class="citation-passage-id">#${idx + 1} &bull; ${escapeHtml(c.passage_id || 'passage')}</span>
-              <span class="citation-score">RRF Score: ${(c.score || 0).toFixed(4)} &bull; ${c.language.toUpperCase()}</span>
+          <div class="hh-citation-card">
+            <div class="hh-citation-meta">
+              <span class="hh-citation-id">#${idx + 1} &bull; ${escapeHtml(c.passage_id || 'passage')}</span>
+              <span class="hh-citation-score">RRF: ${(c.score || 0).toFixed(4)} &bull; ${c.language.toUpperCase()}</span>
             </div>
-            <p class="citation-text">${escapeHtml(c.text || '')}</p>
+            <p class="hh-citation-text">${escapeHtml(c.text || '')}</p>
           </div>
         `
         )
@@ -361,26 +363,23 @@
   function setLoadingState(loading, message) {
     if (loading) {
       submitBtn.disabled = true;
-      submitBtn.innerHTML = `<span>Running…</span>`;
-      decisionBadge.className = 'decision-badge badge-idle';
-      decisionBadge.textContent = 'Processing';
-      answerContent.innerHTML = `<p class="placeholder-text">${escapeHtml(message || 'Processing…')}</p>`;
+      submitBtn.innerHTML = `<span>Searching…</span>`;
+      decisionBadge.className = 'hh-decision hh-badge-idle';
+      decisionBadge.textContent = 'RUNNING';
+      answerContent.innerHTML = `<p class="hh-placeholder">${escapeHtml(message || 'Processing…')}</p>`;
     } else {
       submitBtn.disabled = false;
       submitBtn.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
-          <line x1="22" y1="2" x2="11" y2="13"/>
-          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
-        </svg>
-        Run RAG
+        <span>Run RAG</span>
+        <span class="hh-arrow">&rarr;</span>
       `;
     }
   }
 
   function renderError(message) {
-    decisionBadge.className = 'decision-badge badge-refuse';
-    decisionBadge.textContent = 'Error';
-    answerContent.innerHTML = `<p class="placeholder-text" style="color:var(--accent-rose)">Request failed: ${escapeHtml(message)}</p>`;
+    decisionBadge.className = 'hh-decision hh-badge-refuse';
+    decisionBadge.textContent = 'ERROR';
+    answerContent.innerHTML = `<p class="hh-placeholder" style="color:var(--hh-rose)">Request failed: ${escapeHtml(message)}</p>`;
   }
 
   function escapeHtml(str) {
@@ -395,9 +394,9 @@
     try {
       const res = await fetch('/health/ready');
       if (res.ok) {
-        statusText.textContent = 'Backend Online (<200ms)';
+        statusText.textContent = 'Backend Live (<200ms)';
       } else {
-        statusText.textContent = 'Backend Warming Up';
+        statusText.textContent = 'Backend Warming';
       }
     } catch {
       statusText.textContent = 'Backend Offline';
@@ -427,7 +426,7 @@
     handleTextSubmit(q, lang);
   });
 
-  document.querySelectorAll('.chip').forEach((chip) => {
+  document.querySelectorAll('.hh-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const q = chip.dataset.query;
       const lang = chip.dataset.lang;
