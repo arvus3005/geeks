@@ -3,7 +3,13 @@ reading actual eval-loop false-confidence examples (2026-08-22): website
 navigation boilerplate scored as relevant by the reranker, and answer
 sentences that are pure question-echoes."""
 
-from hhgoa_rag.answer.extractive import _content_tokens, _is_navigation_junk, _is_question_echo, extract_answer
+from hhgoa_rag.answer.extractive import (
+    _content_tokens,
+    _is_navigation_junk,
+    _is_pointer_sentence,
+    _is_question_echo,
+    extract_answer,
+)
 
 
 def _passage(text: str) -> dict:
@@ -18,6 +24,15 @@ def test_navigation_breadcrumb_is_junk():
 
 def test_normal_prose_is_not_junk():
     assert not _is_navigation_junk("A corporation is a legal entity separate from its owners.")
+
+
+def test_pointer_sentence_is_flagged():
+    assert _is_pointer_sentence("See the most popular majors at Clemson University.")
+    assert _is_pointer_sentence("Learn more about thermoplastic elastomers here.")
+
+
+def test_real_content_sentence_is_not_a_pointer():
+    assert not _is_pointer_sentence("Clemson University is known for engineering and business.")
 
 
 def test_pure_echo_sentence_is_flagged():

@@ -120,6 +120,20 @@ def _is_navigation_junk(text: str) -> bool:
     return bool(_NAV_JUNK_RE.search(text))
 
 
+# Pointer/referral sentences that name the topic without containing any
+# actual information about it -- e.g. "See the most popular majors at
+# Clemson University." answers nothing, it just tells the reader where an
+# answer might be. Found the same way as the other two filters: reading
+# real eval false-confidence examples individually, not guessing.
+_POINTER_RE = re.compile(
+    r"^(see|learn more|click here|find out more|read more|for more information)\b", re.IGNORECASE
+)
+
+
+def _is_pointer_sentence(sentence: str) -> bool:
+    return bool(_POINTER_RE.match(sentence.strip()))
+
+
 def _is_question_echo(sentence: str, query_tokens: set[str]) -> bool:
     """True if `sentence` adds zero content words beyond the query itself --
     i.e. it's a rephrasing of the question, not an answer to it. Found via
@@ -240,7 +254,7 @@ def extract_answer(
         # the real example that motivated this) -- best_sentence already
         # defaults to the whole passage, so if every sentence is an echo
         # this falls back to that instead of ever picking a non-answer.
-        if _is_question_echo(sentence, query_tokens):
+        if _is_question_echo(sentence, query_tokens) or _is_pointer_sentence(sentence):
             continue
         s = rerank_score(query, sentence)
         if s > best_sentence_score:
