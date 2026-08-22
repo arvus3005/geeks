@@ -97,19 +97,36 @@ MIN_QUERY_OVERLAP = 0.1
 # of the two failure modes, and false_refusal_rate was measured at only
 # 0.02 -- large unused headroom to trade for a lower false-confidence rate.
 #
-# Recalibrated 2026-08-22 via eval/diagnose_threshold_sweep.py: a real
-# risk-coverage sweep over every reranker score observed across the same
-# 100-example eval set (not two anecdotal percentiles), picking the
-# Youden's-J-maximizing operating point (threshold=0.42, J=0.52: proxy
-# false_refusal=0.10, proxy false_confidence=0.38, vs. 0.00/0.98 at the old
-# -2.0 floor on the same proxy scoring). That sweep scores every candidate
-# in each example's full pool, not just the top-3 the real pipeline
-# retrieves, so it is a shape check on the tradeoff, not an exact
-# prediction of the production rate -- re-run the full eval loop after
-# changing this constant to get the real number. Set to 0.4 (just inside
-# the J-optimal point, leaving a little margin before the steeper
-# false-refusal cost that starts past ~0.55 in that sweep).
-MIN_RERANKER_SCORE = 0.4
+# Recalibrated 2026-08-22 via eval/diagnose_threshold_sweep.py to 0.4 (a
+# real risk-coverage sweep over the eval loop's own 100-example set,
+# Youden's-J optimum) -- then REVERTED the same day after validating
+# against the REAL production retriever instead of just the eval loop's
+# isolated mini-index (eval/index_build.py builds a ~2391-chunk index from
+# only the 100 sampled examples' own candidates -- much smaller and
+# cleaner than the real 55M-passage corpus). eval/diagnose_real_production_threshold.py
+# ran 40 real MSMARCO-XI answerable queries through the ACTUAL production
+# retriever (app/retriever.py -> sharded_local_hybrid_store, not the eval
+# harness's index) and measured what each threshold really costs:
+#
+#   threshold=-2.0  declines  3/40 = 7.5%  of real answerable queries
+#   threshold= 0.0  declines 24/40 = 60.0%
+#   threshold= 0.4  declines 30/40 = 75.0%
+#
+# This is exactly the failure mode this file's own MIN_RERANKER_SCORE=0.0
+# history above already warned about: a threshold calibrated against a
+# clean/small evaluation set can look like a real improvement there and
+# still be a severe regression against the real, much noisier production
+# score distribution. 0.4 would have made the live system decline 3 out of
+# every 4 genuinely answerable real queries -- reverted to -2.0 rather than
+# shipping that. The eval loop's false_confidence_rate=0.88 finding is
+# still real (see the 2026-08-22 commits adding the sentence-level junk
+# filters above, which DO help and were validated as safe -- they only
+# affect which sentence gets picked within an already-accepted passage,
+# never the accept/decline gate itself); fixing the rest of it needs a
+# signal that doesn't share the reranker threshold's real-corpus fragility
+# (see verify_grounding() in guardrails/output_guards.py for where that
+# work continues), not a stricter version of the same threshold.
+MIN_RERANKER_SCORE = -2.0
 
 # Passages are scored sentence-by-sentence for the FINAL answer span (not
 # for the relevance gate above, which now runs on whole passages -- the
