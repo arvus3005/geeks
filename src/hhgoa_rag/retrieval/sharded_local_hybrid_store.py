@@ -314,7 +314,7 @@ def search(
 
     query_tokens = le._sp.encode(query_text, out_type=str)
     query_vec_np = np.array(query_vector, dtype=np.float32)
-    candidate_k = max(top_k * 3, 50)
+    candidate_k = max(top_k * 3, 30)
 
     # (shard_name, local_key) -> summed RRF score. RRF's score formula
     # (1/(k+rank)) only depends on each list's own rank, not corpus-wide
