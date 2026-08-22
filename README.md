@@ -33,7 +33,7 @@
 | **Model harness** | Structured I/O, retries, error recovery | Pydantic v2 schemas, structured errors, fallback routing, atomic checkpoints | ✅ Implemented |
 | **Guardrails** | Off-topic rejection, hallucination checks | Input safety guards + output grounding validator (abstains when ungrounded) | ✅ Implemented |
 | **Dataset contract** | No label leakage into the index | Leakage isolation tests, zero forbidden-field hits | ✅ Verified |
-| **Test suite** | Robust offline verification | **672 tests passing**, zero live provider calls | ✅ 672 passed (pre-migration; not yet re-run against the new local hybrid serving path — see Known Gaps) |
+| **Test suite** | Robust offline verification | **104 tests passing**, zero live provider calls | ✅ 104 passed (re-run against the current local hybrid serving path on 2026-08-22; the 672 figure was pre-migration and included ~20 now-deleted Pinecone-only test files — see Known Gaps) |
 | **Full-corpus, self-hosted retrieval** | Team decision (not a spec line item) | BM25 + HNSW hybrid, fused with Reciprocal Rank Fusion, sharded across per-segment indexes, **now the live serving backend**. 54.25M passages built (6/14 languages); live serving caps to a RAM-resident subset per language. | ✅ Serving live, 6/14 languages built |
 
 ---
@@ -97,6 +97,20 @@ gantt
     Drop Pinecone from serving, sharded local hybrid store, fix routing/latency bugs :done, p8, 2026-08-22, 1d
     Remove Pinecone entirely from repo, wire eval harness, fix fabrication guardrail :done, p9, 2026-08-22, 1d
 ```
+
+### 2026-08-22, afternoon — A live-breaking TTS bug, a startup-crash landmine, and starting language #7
+
+A batch of perf commits landed (ORJSON responses, GZip compression, retrieval `heapq.nlargest` + persistent file descriptors, STT connection pooling, an upgrade to Sarvam's `bulbul:v3` TTS model) followed by a review pass that caught real problems rather than just reading the diffs:
+
+**A live-breaking TTS bug, caught by hitting the real Sarvam API, not by inspection.** The `bulbul:v3` upgrade kept sending `pitch`/`loudness` in the request payload — Sarvam's real API rejects that combination with HTTP 400 ("Pitch and loudness parameters are currently not supported for the Bulbul V3 model"). Every voice response was silently failing (caught by a generic `except`, so no error surfaced to the caller). Confirmed live with a real API call, fixed by omitting those fields for v3, re-confirmed live with real audio returned successfully. A regression test (`tests/unit/test_tts_payload.py`) now asserts the exact payload shape per model version so this can't silently regress again.
+
+**A startup-crash landmine, found before it could fire.** Shard discovery/warmup (`sharded_local_hybrid_store.warm_all_shards`) pattern-matches directory names under `full_local_index/` with no check that a shard's files are actually finished writing — exactly the state a language mid-build is in. Demonstrated directly: a partially-written shard raised `FileNotFoundError` deep in startup, which (per the lifespan's own error handling) wouldn't crash the process outright but would mark the *entire* index not-ready — every language, not just the incomplete one — until manually fixed. Fixed by making warmup skip and log a bad shard instead of aborting the rest; verified directly that the six complete languages still warm and serve normally while an incomplete one is cleanly excluded.
+
+**Real, measured retrieval optimizations, plus one honestly-reverted attempt.** The query-time shard fan-out (BM25+HNSW per shard) now runs on a persistent thread pool instead of a sequential loop — measured 4.24ms → 2.53ms for the common 2-shard case (bm25s/usearch release the GIL for their native work), a real ~40% win, not a theoretical one. RRF top-k selection now breaks score ties deterministically on HNSW rank instead of leaving it undefined. A third idea — skip reranker calls on sentences with near-zero lexical overlap with the query — was implemented, then tested against 16 real queries through the live pipeline before shipping: it produced a genuine answer-quality regression in 1 of 9 multi-sentence cases (a correct but lexically-paraphrased answer sentence, scored 0.57 by the real reranker, would have been replaced by a worse one scored 0.10). Reverted; documented in the code as a negative result rather than silently dropped.
+
+**Housekeeping**: reclaimed ~24GB of local disk (two build-time-only dedup SQLite databases, the raw HuggingFace dataset cache, and obsolete FP16 e5-large weights from before the switch to int8 e5-small ONNX) — each verified to have zero live code references before deleting. Corrected a stale test-count claim in the requirements table below (672, a pre-Pinecone-removal figure, → 104, the real count after re-running the full suite today). Test coverage was also added for `/v1/query` (previously zero — only the voice/TTS routes had tests) and for the TTS payload bug above.
+
+**Language #7 (Nepali, `ne`) started building** in the background, same pipeline as the first 6. Deliberately *not* wired into serving yet (`language_routing.INDEXED_LANGUAGES` still excludes it) — adding it before the shard finishes would route Devanagari-script queries (which today means legitimate Hindi/Marathi traffic too, since they share that script) into fan-out against a shard that doesn't exist yet, breaking currently-working queries, not just leaving `ne` unavailable. Will be wired in once the build completes and is verified.
 
 ### 2026-08-22 — Deadline day: from "built, not serving" to live, fast, and Pinecone-free
 
