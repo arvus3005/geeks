@@ -27,6 +27,7 @@ dependencies = [
     "onnxruntime>=1.29.0",
     "bm25s>=0.3.10",
     "usearch>=2.26.0",
+    "tenacity>=9.1.4",
 ]
 
 [project.optional-dependencies]
