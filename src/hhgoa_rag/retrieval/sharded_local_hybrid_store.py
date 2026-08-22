@@ -18,38 +18,43 @@ The fix that actually fits: don't merge. Every finished language already
 lives as many small per-segment shards under artifacts/full_local_index/
 (this project already segments its indexing output specifically to bound
 peak build RAM — see scripts/build_full_local_index.py's SEGMENTING
-section). Each segment shard is independently small (~500k passages,
-~0.24GB BM25 resident + a usearch view is mmap-backed, not RAM-resident at
-all). At query time:
+section). At query time:
   1. Route to only the shards for the detected/requested language(s) (see
      language_routing.get_language_filter) — never all 112 shards.
-  2. Load each targeted shard via bm25s's `mmap=True` and usearch's
-     `view=True` (both keep resident memory low regardless of total
-     on-disk corpus size — this is the same mechanism a reference project
-     independently validated at smaller scale, see docs/POST_INDEXING_STEPS.md).
+  2. Live serving further caps to MAX_SEGMENTS_PER_LANGUAGE segments per
+     language (see that constant's own comment for the real memory
+     numbers behind the chosen value) and loads those FULLY into RAM
+     (usearch's `.load()`, bm25s's `mmap=False`) rather than mmap/view.
+     An mmap-based version of this module was tried first and measured
+     real cold-page latency spikes (P100=286ms across a 120-query,
+     6-language benchmark) even after startup "warming", because
+     different real queries traverse different regions of the HNSW graph
+     than a single dummy warmup search touches — mmap only avoids RAM
+     usage if you accept that variance. Since the live-serving set is
+     already capped small enough to fit fully resident (~6.4GB across 6
+     shards on a 25.8GB machine), fully loading it removes the variance
+     entirely instead of half-solving the memory problem and still eating
+     mmap's unpredictable cold-page cost.
   3. Search every targeted shard (dense + sparse), pool all candidates by
      their real RRF score (comparable across shards — same formula,
      doesn't depend on shard-local corpus statistics the way a raw BM25
      score or IDF would), take the global top-k.
 
-Real measured latency per shard (2026-08-22, this machine), WARM (i.e.
-after the shard's first touch -- see warm_all_shards below):
-  - HNSW (usearch, view mode, threads=1 per call): ~0.7ms/shard
-  - BM25 (bm25s, mmap=True):                        ~0.9ms/shard
-COLD (a shard's first-ever search after process start) is a different
-story: measured ~169ms for the first HNSW search alone on a real
-production shard (real disk I/O + page faults during graph traversal, not
-just the mmap setup itself -- .view() alone is only ~19ms; the cost is in
-the first search touching the pages). An early version of this module
-loaded shards lazily on first request, which meant a live user's first
-query into a not-yet-touched shard group could take 7-15+ SECONDS (48
-shards x ~200ms cold each) -- a real, measured failure of the <200ms
-target, not a theoretical one. Fixed by warm_all_shards(): call it once
-during FastAPI lifespan startup (see api/app.py) to eagerly open AND
-search every shard before the process reports ready, paying the ~24s
-one-time cost (112 shards x ~212ms) at boot instead of on a live request
--- this is also what CLAUDE.md's "load once at startup, never per-request"
-rule requires for the index client, not just the embedder.
+Real measured latency per shard (2026-08-22, this machine), WARM:
+  - HNSW (usearch, threads=1 per call): ~0.7ms/shard
+  - BM25 (bm25s):                        ~0.9ms/shard
+COLD (a shard's first-ever search after process start, under the earlier
+mmap/view design) was a different story: measured ~169ms for the first
+HNSW search alone on a real production shard (real disk I/O + page faults
+during graph traversal). An even earlier version of this module loaded
+shards lazily on first request, which meant a live user's first query into
+a not-yet-touched shard group could take 7-15+ SECONDS (48 shards x
+~200ms cold each) -- a real, measured failure of the <200ms target, not a
+theoretical one. Fixed in two steps: warm_all_shards() opens+searches
+every shard during FastAPI lifespan startup (see api/app.py) before the
+process reports ready, per CLAUDE.md's "load once at startup, never
+per-request" rule; and switching from mmap/view to full .load() (above)
+removed the remaining cold-page variance mmap alone couldn't fix.
 IMPORTANT: always pass threads=1 to usearch's .search() for single-query
 serving. Measured: default (multi-threaded) search cost ~30ms/call on a
 500k-vector shard vs ~0.7-8ms with threads=1 explicitly -- the thread-pool
@@ -239,10 +244,20 @@ def _get_shard(name: str) -> _ShardHandles:
         import bm25s
         from usearch.index import Index
 
+        # Fully load (not view/mmap) -- a real 120-query benchmark across
+        # all 6 languages measured P100=286ms with view() + a single warmup
+        # search per shard, because different real queries traverse
+        # different regions of the HNSW graph than one dummy warmup query
+        # touches, so some fraction of diverse traffic always hits a cold
+        # page under mmap. MAX_SEGMENTS_PER_LANGUAGE was deliberately capped
+        # to make the live-serving set small enough (~6.4GB across 6
+        # shards) to fully fit in RAM -- so actually load it fully instead
+        # of half-solving the memory problem AND still paying mmap's
+        # variable cold-page cost.
         hnsw = Index(ndim=EMBED_DIM, metric="cos", dtype="f32")
-        hnsw.view(str(shard_dir / "hnsw.usearch"))
+        hnsw.load(str(shard_dir / "hnsw.usearch"))
 
-        bm25 = bm25s.BM25.load(str(shard_dir / "bm25"), mmap=True, load_corpus=False)
+        bm25 = bm25s.BM25.load(str(shard_dir / "bm25"), mmap=False, load_corpus=False)
 
         offsets = np.load(shard_dir / "passages_offsets.npy", mmap_mode="r")
 
