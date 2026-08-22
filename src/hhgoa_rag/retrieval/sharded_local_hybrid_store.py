@@ -127,6 +127,16 @@ MAX_SEGMENTS_PER_LANGUAGE = 1
 
 
 import heapq
+from concurrent.futures import ThreadPoolExecutor
+
+# Persistent, created once at import time (per CLAUDE.md: load once at
+# startup, never per-request) -- a query-time shard fan-out is at most a
+# handful of languages (see language_routing.get_language_filter), so a
+# small fixed pool is enough; reused across every request rather than
+# spun up fresh each time, which is what actually made threading a net
+# win over the sequential loop (see search()'s comment for the measurement).
+_query_thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="shard-search")
+
 
 @dataclass
 class _ShardHandles:
@@ -197,7 +207,16 @@ def warm_all_shards(max_workers: int = 8) -> None:
     dummy_tokens = ["warmup"]
 
     def _warm_one(name: str) -> None:
-        handles = _get_shard(name)
+        try:
+            handles = _get_shard(name)
+        except Exception as exc:  # noqa: BLE001 -- a single unfinished/corrupt shard (e.g.
+            # one still being written by a concurrent indexing run) must not
+            # abort startup for every other language's shards. _get_shard
+            # never caches a failed load, so this shard is simply retried
+            # (and still absent) on the next restart until it's finalized.
+            print(f"WARMUP failed to load shard {name}, excluding it from serving: {exc}", flush=True)
+            logger.warning("Shard %s failed to load during warmup, excluding from serving: %s", name, exc)
+            return
         try:
             # Use the SAME candidate_k as real queries (50) -- a k=1 search
             # was measured to under-warm the shard (usearch's graph
@@ -328,18 +347,40 @@ def search(
     # summable -- this is the same math as fusing two lists from one index,
     # just with more lists.
     rrf_scores: dict[tuple[str, int], float] = {}
+    # Tie-break signal for the heapq.nlargest selection below: heapq gives no
+    # guarantee about which candidate wins when two keys compare equal (RRF
+    # ties are common, not rare, whenever two docs share a rank position in
+    # one list and are absent from the other -- see reference/shruti-main's
+    # fuse.py, which hit the same gap). Lower HNSW rank = closer in dense
+    # embedding space = preferred; candidates the dense leg never surfaced
+    # get the worst possible tiebreak so lexical-only matches still show up
+    # (just last among score ties, not filtered out).
+    hnsw_rank_of: dict[tuple[str, int], int] = {}
 
-    for shard_name in shard_names:
+    def _search_one_shard(shard_name: str) -> tuple[str, dict[int, int], dict[int, int]]:
         handles = _get_shard(shard_name)
         bm25_ranks = _bm25_search(handles, query_tokens, candidate_k)
         hnsw_ranks = _hnsw_search(handles, query_vec_np, candidate_k)
+        return shard_name, bm25_ranks, hnsw_ranks
+
+    # Fanned out across a persistent thread pool -- bm25s/usearch's real work
+    # is native code that releases the GIL, and this was measured (2026-08-22,
+    # this machine) at 2.53ms/call threaded vs 4.24ms/call sequential for the
+    # common 2-shard case (hi+mr), a real ~40% win, not just a theoretical one.
+    for shard_name, bm25_ranks, hnsw_ranks in _query_thread_pool.map(_search_one_shard, shard_names):
+        for key, rank in hnsw_ranks.items():
+            hnsw_rank_of[(shard_name, key)] = rank
         for key in set(bm25_ranks) | set(hnsw_ranks):
             score = 1.0 / (RRF_K + bm25_ranks.get(key, candidate_k + RRF_K)) + 1.0 / (
                 RRF_K + hnsw_ranks.get(key, candidate_k + RRF_K)
             )
             rrf_scores[(shard_name, key)] = rrf_scores.get((shard_name, key), 0.0) + score
 
-    ranked = heapq.nlargest(top_k, rrf_scores.items(), key=lambda kv: kv[1])
+    ranked = heapq.nlargest(
+        top_k,
+        rrf_scores.items(),
+        key=lambda kv: (kv[1], -hnsw_rank_of.get(kv[0], candidate_k + 1)),
+    )
 
     hits = []
     for (shard_name, key), score in ranked:
