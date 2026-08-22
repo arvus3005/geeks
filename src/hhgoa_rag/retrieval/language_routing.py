@@ -8,6 +8,7 @@ ARABIC_RANGE = re.compile(r"[؀-ۿ]")  # ur (Urdu) uses Perso-Arabic script
 KANNADA_RANGE = re.compile(r"[ಀ-೿]")
 MALAYALAM_RANGE = re.compile(r"[ഀ-ൿ]")
 ODIA_RANGE = re.compile(r"[଀-୿]")
+GURMUKHI_RANGE = re.compile(r"[ਁ-ੴ]")  # pa (Punjabi)
 
 SUPPORTED_LANGUAGES = {
     "as",
@@ -30,7 +31,7 @@ SUPPORTED_LANGUAGES = {
 # Languages that actually have a built local index shard as of 2026-08-22
 # (see README's indexing-status table). Querying a language outside this
 # set falls back to "en" rather than a shard that doesn't exist.
-INDEXED_LANGUAGES = {"hi", "bn", "gu", "ta", "mr", "ur", "ne", "as", "kn", "ml", "or", "en"}
+INDEXED_LANGUAGES = {"hi", "bn", "gu", "ta", "mr", "ur", "ne", "as", "kn", "ml", "or", "pa", "en"}
 
 # Subset of INDEXED_LANGUAGES built from a row-capped (--max-rows-per-config)
 # run, per CLAUDE.md's "every sample artifact must be labeled smoke, pilot,
