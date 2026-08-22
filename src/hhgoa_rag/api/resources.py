@@ -1,8 +1,10 @@
 """Application-level resource container.
 
-PineconeStore is loaded once during FastAPI lifespan and reused across all
-requests. Readiness stays False until the store is verified and a lightweight
-describe_index_stats probe passes.
+The local hybrid index's query embedder and shards are loaded once during
+FastAPI lifespan startup (see api/app.py) and reused across all requests;
+sharded_local_hybrid_store.py owns its own module-level shard cache
+directly rather than storing a client handle here. Readiness stays False
+until at least one shard is discovered and warmed.
 """
 
 from __future__ import annotations
@@ -10,14 +12,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from hhgoa_rag.pinecone_store import PineconeStore
-
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class AppResources:
-    pinecone_store: PineconeStore | None = None
     ready: bool = False
     readiness_detail: dict = field(default_factory=dict)
 

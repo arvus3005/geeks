@@ -1,17 +1,16 @@
 """FastAPI application with local self-hosted hybrid retrieval lifespan
-resource management.
+resource management. No managed vector DB anywhere in this path — the only
+retrieval backend is the self-hosted BM25+HNSW sharded local index
+(src/hhgoa_rag/retrieval/sharded_local_hybrid_store.py), per the
+2026-08-22 team decision (see README's indexing-status section). The old
+Pinecone-based serving path and the Pinecone-specific ingestion pipeline
+it depended on were removed from the repo entirely the same day, not left
+around unused.
 
-2026-08-22: retrieval moved off Pinecone entirely (team decision — see
-README's indexing-status section) onto the self-hosted BM25+HNSW sharded
-local index (src/hhgoa_rag/retrieval/sharded_local_hybrid_store.py). The
-query embedder (local_embedder.py, int8 ONNX) and SentencePiece tokenizer
-are warmed here at startup — loaded once, never per-request, per
-CLAUDE.md — since both are real per-process resources. Shard files
-themselves (usearch/bm25 indexes) are opened lazily per-language on first
-use rather than eagerly here, so startup doesn't have to touch all 112
-segment files up front; each shard is cached after its first open.
-pinecone_store.py / the old Pinecone lifespan are left in the repo,
-unused, as a documented fallback — not deleted, not exercised by default.
+The query embedder (local_embedder.py, int8 ONNX) and SentencePiece
+tokenizer, plus every live-serving shard, are warmed here at startup —
+loaded once, never per-request, per CLAUDE.md — since both are real
+per-process resources.
 """
 
 from __future__ import annotations

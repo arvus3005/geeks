@@ -4,4 +4,6 @@ services:
     ports:
       - "8000:8000"
     env_file: .env
-    # PINECONE_API_KEY, PINECONE_INDEX, PINECONE_NAMESPACE must be set in .env
+    # No managed vector DB credentials needed -- the local hybrid index
+    # (artifacts/full_local_index) must be present on disk / mounted into
+    # the container. SARVAM_API_KEY still comes from .env for STT.

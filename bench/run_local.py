@@ -1,12 +1,13 @@
-"""Run the real /v1/query pipeline in-process against the live Pinecone index
-and report P50/P70/P100 latency across a real query set (Requirement 4).
+"""Run the real /v1/query pipeline in-process against the local self-hosted
+hybrid index and report P50/P70/P100 latency across a real query set
+(Requirement 4).
 
 In-process (ASGI transport, no HTTP/network hop) — measures backend pipeline
 latency only. For a number that includes real network overhead against a
 deployed instance, use bench/run_deployed.py instead.
 
 Usage:
-    PINECONE_API_KEY=... uv run python -m bench.run_local --n 60
+    uv run python -m bench.run_local --n 60
 """
 
 from __future__ import annotations
@@ -36,9 +37,9 @@ async def _run(n_per_language: int) -> None:
         resources = get_resources()
         if not resources.ready:
             raise RuntimeError(
-                "Pinecone resources not ready after startup "
+                "Local hybrid index not ready after startup "
                 f"(detail={resources.readiness_detail}). "
-                "Set PINECONE_API_KEY and verify the index before benchmarking."
+                "Check artifacts/full_local_index has built shards before benchmarking."
             )
 
         # Warm the local embedder before timing — in a real deployed server this

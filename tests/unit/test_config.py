@@ -20,27 +20,9 @@ def test_max_query_chars_default():
     assert s.max_query_chars == 512
 
 
-def test_pinecone_index_default():
+def test_local_index_root_default():
     s = Settings(_env_file=None)
-    assert s.pinecone_index == "msmarco-xi"
-
-
-def test_pinecone_embed_model_default():
-    s = Settings(_env_file=None)
-    assert s.pinecone_embed_model == "multilingual-e5-large"
-
-
-def test_pinecone_namespace_default():
-    s = Settings(_env_file=None)
-    assert s.pinecone_namespace == "smoke"
-
-
-def test_missing_pinecone_api_key_ok(monkeypatch):
-    # Key is optional at startup; app marks not-ready instead of crashing.
-    # An unset OR empty-string credential must both read as falsy.
-    monkeypatch.delenv("PINECONE_API_KEY", raising=False)
-    s = Settings(_env_file=None)
-    assert not s.pinecone_api_key
+    assert s.local_index_root == "artifacts/full_local_index"
 
 
 def test_missing_sarvam_key_ok(monkeypatch):

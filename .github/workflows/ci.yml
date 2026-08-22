@@ -3,16 +3,12 @@ on:
   push:
   pull_request:
   workflow_dispatch:
-    inputs:
-      confirm_live:
-        description: "Type YES_RUN_LIVE to run live integration tests (manual only)"
-        required: true
-        default: ""
 
 jobs:
-  # Offline test job — MUST NEVER receive live provider credentials.
-  # No PINECONE_API_KEY / SARVAM_API_KEY are injected here so that offline
-  # unit/behavioural/contract tests exercise the fail-closed dry-run paths.
+  # No managed vector DB anywhere in this project since 2026-08-22 (self-
+  # hosted local hybrid index only) — MUST NEVER receive live provider
+  # credentials other than what offline unit/behavioural/contract tests
+  # need to exercise fail-closed dry-run paths.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -25,44 +21,13 @@ jobs:
       - run: uv run ruff check .
       - name: Type check (mypy)
         run: uv run mypy src scripts
-      - name: Secret scanner (normal offline CI must contain no provider credentials)
+      - name: Secret scanner (CI must contain no provider credentials)
         run: uv run python scripts/scan_secrets.py .
       - name: Offline tests (no live credentials)
         run: uv run pytest tests/unit/ tests/contract/ tests/behavioural/ -q -rs
         env:
-          HHGOA_USE_FAKE_EMBEDDER: "1"
           CORPUS_MODE: smoke
           # Writable HF cache so tokenizer tests do not silently skip.
           HF_HOME: ${{ github.workspace }}/.cache/huggingface
-          # Credentials explicitly blanked — offline tests are isolated.
-          PINECONE_API_KEY: ""
           SARVAM_API_KEY: ""
           ELEVENLABS_API_KEY: ""
-
-  # Live integration tests are MANUAL ONLY — triggered via workflow_dispatch.
-  # Normal push/PR CI MUST NEVER receive Pinecone or Sarvam credentials.
-  # Requires explicit confirmation input "YES_RUN_LIVE".
-  # Secret values are NEVER printed or echoed in logs.
-  live-integration:
-    runs-on: ubuntu-latest
-    # Only executes on manual workflow_dispatch with the correct confirmation string.
-    if: >-
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.confirm_live == 'YES_RUN_LIVE'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-        with:
-          python-version: "3.12"
-      - run: uv sync --frozen --all-extras
-      - name: Verify no secrets in source before live run
-        run: uv run python scripts/scan_secrets.py .
-      - name: Live integration tests (manual dispatch only)
-        run: uv run pytest tests/integration/ -v -rs
-        env:
-          # Secrets provided ONLY in this manual job, never in push/PR CI.
-          # Values come from GitHub Secrets — never printed.
-          PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
-          SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
-          PINECONE_SMOKE_TEST: "1"
-          HHGOA_USE_FAKE_EMBEDDER: "0"

@@ -37,7 +37,7 @@ def _fetch_language_queries(config_lang: str, n: int) -> list[dict]:
     import pyarrow.parquet as pq
     from huggingface_hub import hf_hub_download
 
-    from hhgoa_rag.pinecone_contract import DATASET_REPO
+    from hhgoa_rag.retrieval_contract import DATASET_REPO
 
     local_path = hf_hub_download(
         repo_id=DATASET_REPO,

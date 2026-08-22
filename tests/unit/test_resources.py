@@ -6,7 +6,6 @@ from hhgoa_rag.api.resources import AppResources
 def test_initial_state_not_ready():
     r = AppResources()
     assert r.ready is False
-    assert r.pinecone_store is None
 
 
 def test_mark_ready():
@@ -25,6 +24,6 @@ def test_mark_not_ready():
 
 def test_readiness_detail_accumulated():
     r = AppResources()
-    r.readiness_detail["pinecone_index"] = "msmarco-xi"
-    r.readiness_detail["pinecone_embed_model"] = "multilingual-e5-large"
-    assert r.readiness_detail["pinecone_index"] == "msmarco-xi"
+    r.readiness_detail["retrieval_backend"] = "local_hybrid_sharded"
+    r.readiness_detail["languages"] = ["hi", "bn"]
+    assert r.readiness_detail["retrieval_backend"] == "local_hybrid_sharded"

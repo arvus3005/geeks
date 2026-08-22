@@ -8,7 +8,7 @@ from hhgoa_rag.config.settings import get_settings
 from hhgoa_rag.guardrails.input_guards import check_input
 from hhgoa_rag.guardrails.output_guards import verify_grounding
 from hhgoa_rag.observability.timing import RequestTimer
-from hhgoa_rag.pinecone_contract import TEXT_FIELD
+from hhgoa_rag.retrieval_contract import TEXT_FIELD
 from hhgoa_rag.retrieval.language_routing import detect_language, get_language_filter
 from hhgoa_rag.retrieval.local_embedder import embed_query
 from hhgoa_rag.schemas.query import Citation, QueryRequest, QueryResponse, TimingsMs
