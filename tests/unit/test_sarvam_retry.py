@@ -29,6 +29,37 @@ def _capturing_handler(captured: dict):
     return handler
 
 
+@pytest.mark.asyncio
+async def test_transcribe_normalizes_sarvams_own_odia_code_in_response(monkeypatch):
+    # The outbound direction (language_hint="or" -> lang_code sent TO Sarvam)
+    # is covered above. This is the inbound direction: Sarvam's own response
+    # echoes back ITS wire code ("od-IN") for auto-detected Odia speech, not
+    # this project's internal "or". Uncaught, that flows into
+    # get_language_filter() as detected_lang, which doesn't recognize "od"
+    # and falls through to its conservative "search every indexed shard"
+    # fallback instead of the efficient ["or", "hi"] routing -- a real
+    # latency inefficiency for auto-detected Odia queries, not a crash
+    # (the fallback is safe), found while fixing the outbound bug above.
+    #
+    # transcribe() gets its client from the module-level, lazily-cached
+    # _get_stt_client() rather than accepting one as a parameter, so the
+    # mock transport has to be installed at that level, not just passed
+    # locally -- a real, un-mocked call here would otherwise hit the real
+    # network (caught by this test's first draft: a live 403 from Sarvam).
+    import hhgoa_rag.stt.sarvam as sarvam_module
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"transcript": "ଓଡ଼ିଆ", "language_code": "od-IN"})
+
+    mock_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(sarvam_module, "_get_stt_client", lambda: mock_client)
+
+    adapter = _adapter()
+    result = await adapter.transcribe(b"audio")
+    await mock_client.aclose()
+    assert result.language == "or-IN"
+
+
 @pytest.mark.parametrize(
     "language_hint,expected_lang_code",
     [

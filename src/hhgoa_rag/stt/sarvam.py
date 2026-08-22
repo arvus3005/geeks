@@ -125,6 +125,22 @@ SARVAM_STT_LANG_MAP: dict[str, str] = {
 }
 
 
+def _normalize_returned_language(raw: str | None) -> str | None:
+    """Sarvam's transcription response echoes back ITS OWN wire code for
+    auto-detected speech -- "od-IN" for Odia, same asymmetry as the outbound
+    map above, just in the other direction. Uncaught, that flows straight
+    into get_language_filter() as detected_lang, which only recognizes this
+    project's internal "or" and would fall through to its conservative
+    "search every indexed shard" fallback for every auto-detected Odia
+    query -- not a crash (the fallback is safe), but a real latency
+    inefficiency found while fixing the outbound direction. Every other
+    language's Sarvam code already matches this project's internal one, so
+    this only needs to special-case Odia, not a fully generic reverse map."""
+    if raw and raw.split("-")[0].lower() == "od":
+        return "or-IN"
+    return raw
+
+
 class SarvamSTTAdapter(BaseSTTAdapter):
     """Sarvam Saaras v3 STT adapter."""
 
@@ -168,7 +184,7 @@ class SarvamSTTAdapter(BaseSTTAdapter):
         elapsed_ms = (time.monotonic() - t0) * 1000.0
         return TranscriptResult(
             text=data.get("transcript", ""),
-            language=data.get("language_code"),
+            language=_normalize_returned_language(data.get("language_code")),
             is_final=True,
             transcript_latency_ms=elapsed_ms,
         )
