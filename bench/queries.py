@@ -23,6 +23,10 @@ DATASET_REVISION = "bf5cdc1f26e581e519018e434db14edd1b77602b"
 _VALIDATION_PARQUET = {
     "hi": "validation/hinval.parquet",
     "bn": "validation/benval.parquet",
+    "gu": "validation/gujval.parquet",
+    "ta": "validation/tamval.parquet",
+    "mr": "validation/marval.parquet",
+    "ur": "validation/urdval.parquet",
 }
 _CACHE_DIR = ".cache/huggingface"
 DEFAULT_OUTPUT = Path("artifacts/eval/bench_queries.jsonl")
@@ -83,7 +87,7 @@ def build_query_set(
             return [json.loads(line) for line in f if line.strip()]
 
     queries: list[dict] = []
-    for config_lang in ("hi", "bn"):
+    for config_lang in ("hi", "bn", "gu", "ta", "mr", "ur"):
         queries.extend(_fetch_language_queries(config_lang, per_language))
 
     if not queries:
