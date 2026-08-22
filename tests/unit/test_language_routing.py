@@ -74,6 +74,11 @@ def test_filter_nepali_hint_reaches_all_three_devanagari_shards():
     assert "ne" in f and "hi" in f and "mr" in f
 
 
+def test_filter_sanskrit_hint_reaches_all_four_devanagari_shards():
+    f = get_language_filter(None, "sa")
+    assert "sa" in f and "hi" in f and "mr" in f and "ne" in f
+
+
 def test_filter_hindi():
     # Filter returns shard-GROUP codes (full_local_index/ directory
     # prefixes), not semantic language labels. "en" isn't its own shard

@@ -31,7 +31,7 @@ SUPPORTED_LANGUAGES = {
 # Languages that actually have a built local index shard as of 2026-08-22
 # (see README's indexing-status table). Querying a language outside this
 # set falls back to "en" rather than a shard that doesn't exist.
-INDEXED_LANGUAGES = {"hi", "bn", "gu", "ta", "mr", "ur", "ne", "as", "kn", "ml", "or", "pa", "en"}
+INDEXED_LANGUAGES = {"hi", "bn", "gu", "ta", "mr", "ur", "ne", "as", "kn", "ml", "or", "pa", "sa", "en"}
 
 # Subset of INDEXED_LANGUAGES built from a row-capped (--max-rows-per-config)
 # run, per CLAUDE.md's "every sample artifact must be labeled smoke, pilot,
@@ -48,7 +48,7 @@ INDEXED_LANGUAGES = {"hi", "bn", "gu", "ta", "mr", "ur", "ne", "as", "kn", "ml",
 # disk floor before they got a turn (pa's partial segment was incomplete and
 # deleted, not counted here). Consulted by system.py's status endpoint and
 # README -- keep this updated if more pilot languages are added.
-PILOT_LANGUAGES: set[str] = {"ne", "as", "kn", "ml", "or"}
+PILOT_LANGUAGES: set[str] = {"ne", "as", "kn", "ml", "or", "pa", "sa"}
 
 
 def detect_script(text: str) -> str:
@@ -82,7 +82,7 @@ def detect_script(text: str) -> str:
 # thread-pooled -- see sharded_local_hybrid_store.search) that a third shard
 # is still comfortably inside the 200ms budget.
 _SCRIPT_TO_LANGS = {
-    "Devanagari": ["hi", "mr", "ne"],
+    "Devanagari": ["hi", "mr", "ne", "sa"],
     "Bengali": ["bn", "as"],  # Assamese uses the same Unicode block as Bengali
     "Gujarati": ["gu"],
     "Tamil": ["ta"],
@@ -120,8 +120,8 @@ def get_language_filter(detected_lang: str | None, hint: str | None) -> list[str
     """
     raw = hint or detected_lang or "en"
     lang = raw.split("-")[0].lower()
-    if lang in ("en", "hi", "mr", "ne"):
-        return ["hi", "mr", "ne"]  # covers English pool + 3-way Devanagari ambiguity
+    if lang in ("en", "hi", "mr", "ne", "sa"):
+        return ["hi", "mr", "ne", "sa"]  # covers English pool + 4-way Devanagari ambiguity
     if lang in ("bn", "as"):
         return ["bn", "as", "hi"]  # covers English pool + Bengali/Assamese script ambiguity
     if lang in INDEXED_LANGUAGES:
