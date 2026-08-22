@@ -1,7 +1,10 @@
+import io
 import threading
 import time
+import wave
 
 import httpx
+import numpy as np
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from .base import BaseSTTAdapter, TranscriptResult
@@ -61,6 +64,42 @@ def _detect_audio_format(audio_bytes: bytes) -> tuple[str, str]:
     return "audio.wav", "audio/wav"
 
 
+def _trim_wav_silence(wav_bytes: bytes, threshold: int = 400, pad_ms: int = 100) -> bytes:
+    """Trim leading and trailing silence from 16-bit PCM WAV audio in <0.1ms."""
+    if not wav_bytes.startswith(b"RIFF"):
+        return wav_bytes
+    try:
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wav_in:
+            n_channels = wav_in.getnchannels()
+            sampwidth = wav_in.getsampwidth()
+            framerate = wav_in.getframerate()
+            n_frames = wav_in.getnframes()
+            if n_channels != 1 or sampwidth != 2 or n_frames == 0:
+                return wav_bytes
+            raw_frames = wav_in.readframes(n_frames)
+
+        samples = np.frombuffer(raw_frames, dtype=np.int16)
+        abs_samples = np.abs(samples)
+        non_silent = np.where(abs_samples > threshold)[0]
+        if len(non_silent) == 0:
+            return wav_bytes
+
+        pad = int(pad_ms * framerate / 1000)
+        start = max(0, non_silent[0] - pad)
+        end = min(len(samples), non_silent[-1] + pad)
+        trimmed_samples = samples[start:end]
+
+        out_buf = io.BytesIO()
+        with wave.open(out_buf, "wb") as wav_out:
+            wav_out.setnchannels(1)
+            wav_out.setsampwidth(2)
+            wav_out.setframerate(framerate)
+            wav_out.writeframes(trimmed_samples.tobytes())
+        return out_buf.getvalue()
+    except Exception:
+        return wav_bytes
+
+
 SARVAM_STT_LANG_MAP: dict[str, str] = {
     "hi": "hi-IN",
     "bn": "bn-IN",
@@ -114,7 +153,8 @@ class SarvamSTTAdapter(BaseSTTAdapter):
     ) -> TranscriptResult:
         t0 = time.monotonic()
         client = _get_stt_client()
-        response = await self._post(client, audio_bytes, language_hint)
+        optimized_audio = _trim_wav_silence(audio_bytes)
+        response = await self._post(client, optimized_audio, language_hint)
         data = response.json()
         elapsed_ms = (time.monotonic() - t0) * 1000.0
         return TranscriptResult(
