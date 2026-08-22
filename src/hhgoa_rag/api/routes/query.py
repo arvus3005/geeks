@@ -90,42 +90,44 @@ async def query_endpoint(req: QueryRequest):
         detected_lang = detect_language(req.question)
         lang_filter = get_language_filter(detected_lang, req.language_hint)
 
-    # 3. Retrieve — Pinecone handles embedding server-side; no local vector computation
-    if resources.pinecone_store is None:
+    # 3. Retrieve — self-hosted BM25+HNSW hybrid, sharded across the local
+    # index (see sharded_local_hybrid_store's module docstring for why
+    # sharded rather than one merged index). Not ready is only reported if
+    # startup found zero shards at all — individual shard load errors
+    # surface as the generic except below instead.
+    if not resources.ready:
         return _error_response(
-            req, settings, timer, "index_unavailable", "Pinecone store not ready"
+            req, settings, timer, "index_unavailable", "Local hybrid index not ready"
         )
 
-    pinecone_filter: dict | None = None
-    if lang_filter:
-        pinecone_filter = {"language": {"$in": lang_filter}}
+    from hhgoa_rag.retrieval.sharded_local_hybrid_store import search as local_hybrid_search
 
     try:
         with timer.stage("query_embed"):
             query_vector = embed_query(req.question)
-        with timer.stage("pinecone_retrieve"):
-            hits = resources.pinecone_store.search_by_vector(
-                vector=query_vector,
+        with timer.stage("local_hybrid_retrieve"):
+            hits = local_hybrid_search(
+                query_text=req.question,
+                query_vector=query_vector,
+                languages=lang_filter,
                 top_k=settings.retrieval_top_k,
-                namespace=settings.pinecone_namespace,
-                filter=pinecone_filter,
             )
     except Exception as exc:
         logger.error("Retrieval failed for request_id=%s: %s", req.request_id, exc)
         return _error_response(
-            req, settings, timer, "index_unavailable", f"Vector index unavailable: {exc}"
+            req, settings, timer, "index_unavailable", f"Local hybrid index unavailable: {exc}"
         )
 
     # Normalise hits to the passage dict format used downstream
     passages = [
         {
-            "id": h.id,
-            "score": h.score,
-            "payload": h.fields,
+            "id": h["id"],
+            "score": h["score"],
+            "payload": h["fields"],
         }
         for h in hits
     ]
-    retrieval_mode = "local_embed_raw_vector"
+    retrieval_mode = "local_hybrid_sharded_bm25_hnsw_rrf"
 
     # 4. Extract answer
     with timer.stage("answer_extract"):

@@ -30,7 +30,7 @@ async def readiness():
 
     details = dict(resources.readiness_detail)
     if not resources.ready:
-        details.setdefault("pinecone", "not_verified")
+        details.setdefault("local_hybrid_index", "not_verified")
 
     return ReadyResponse(
         status="ready" if resources.ready else "initializing",

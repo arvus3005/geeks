@@ -1,13 +1,17 @@
-"""FastAPI application with Pinecone lifespan resource management.
+"""FastAPI application with local self-hosted hybrid retrieval lifespan
+resource management.
 
-Query embedding is computed locally (see retrieval/local_embedder.py) and
-searched via raw index.query(vector=...) — not Pinecone's server-side
-integrated embedding, which the account's monthly quota exhausted. The
-serving index (msmarco-xi-e5small) therefore holds raw vectors with no
-embed config attached, so startup validates dimension/metric directly
-rather than the integrated-embedding contract in pinecone_lifecycle.py
-(that contract still applies to the original e5-large canary/pilot
-ingestion pipeline, which is unrelated to this serving path).
+2026-08-22: retrieval moved off Pinecone entirely (team decision — see
+README's indexing-status section) onto the self-hosted BM25+HNSW sharded
+local index (src/hhgoa_rag/retrieval/sharded_local_hybrid_store.py). The
+query embedder (local_embedder.py, int8 ONNX) and SentencePiece tokenizer
+are warmed here at startup — loaded once, never per-request, per
+CLAUDE.md — since both are real per-process resources. Shard files
+themselves (usearch/bm25 indexes) are opened lazily per-language on first
+use rather than eagerly here, so startup doesn't have to touch all 112
+segment files up front; each shard is cached after its first open.
+pinecone_store.py / the old Pinecone lifespan are left in the repo,
+unused, as a documented fallback — not deleted, not exercised by default.
 """
 
 from __future__ import annotations
@@ -30,58 +34,35 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     try:
-        if not settings.pinecone_api_key:
-            resources.mark_not_ready("PINECONE_API_KEY not set")
-            logger.warning("PINECONE_API_KEY not set; serving will be degraded")
-            yield
-            return
+        from hhgoa_rag.retrieval import local_embedder
+        from hhgoa_rag.retrieval.sharded_local_hybrid_store import _discover_shards, warm_all_shards
 
-        from pinecone import Pinecone
+        local_embedder._lazy_load()
 
-        from hhgoa_rag.pinecone_store import PineconeStore
-        from hhgoa_rag.retrieval.local_embedder import EMBED_DIM
-
-        pc = Pinecone(api_key=settings.pinecone_api_key)
-        index = pc.Index(settings.pinecone_index)
-        store = PineconeStore(
-            index=index,
-            embed_model=settings.pinecone_embed_model,
-            upsert_timeout=settings.pinecone_upsert_timeout_ms / 1000,
-            search_timeout=settings.pinecone_search_timeout_ms / 1000,
-        )
-
-        # Raw-vector index: validate dimension/metric only, not the
-        # integrated-embedding contract (see module docstring).
-        errors: list[str] = []
-        try:
-            info = pc.describe_index(settings.pinecone_index)
-            if info.dimension != EMBED_DIM:
-                errors.append(
-                    f"dimension mismatch: expected {EMBED_DIM}, got {info.dimension}"
-                )
-            if info.metric != "cosine":
-                errors.append(f"metric mismatch: expected 'cosine', got {info.metric!r}")
-        except Exception as e:
-            errors.append(f"Could not describe index '{settings.pinecone_index}': {e}")
-        if errors:
-            resources.mark_not_ready(f"index_config_errors: {errors}")
-            logger.warning("Pinecone index config errors: %s", errors)
+        shards_by_lang = _discover_shards()
+        total_shards = sum(len(v) for v in shards_by_lang.values())
+        if total_shards == 0:
+            resources.mark_not_ready(f"no shards found under {settings.local_index_root}")
+            logger.warning("No local index shards found; serving will be degraded")
         else:
-            # Probe — lightweight health check
-            try:
-                store.health()
-                resources.pinecone_store = store
-                resources.mark_ready()
-                logger.info("Lifespan startup complete — Pinecone ready")
-            except Exception as e:
-                resources.mark_not_ready(f"pinecone_probe_failed: {e}")
-                logger.warning("Pinecone probe failed: %s", e)
+            # Eagerly open + search every shard now (measured ~200ms/shard
+            # cold) so no live request pays that cost -- see
+            # sharded_local_hybrid_store.warm_all_shards's docstring for why
+            # lazy-on-first-request was measured to blow the 200ms budget by
+            # 40-75x on a real query.
+            warm_all_shards()
+            resources.mark_ready()
+            logger.info(
+                "Lifespan startup complete — local hybrid index ready and warmed, %d shards across %s",
+                total_shards,
+                sorted(shards_by_lang.keys()),
+            )
 
         resources.readiness_detail.update(
             {
-                "pinecone_index": settings.pinecone_index,
-                "pinecone_embed_model": settings.pinecone_embed_model,
-                "pinecone_namespace": settings.pinecone_namespace,
+                "retrieval_backend": "local_hybrid_sharded",
+                "languages": sorted(shards_by_lang.keys()),
+                "n_shards": total_shards,
             }
         )
 
@@ -91,7 +72,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    resources.pinecone_store = None
     resources.ready = False
     logger.info("Lifespan shutdown complete")
 

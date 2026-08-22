@@ -6,11 +6,21 @@ from hhgoa_rag.pinecone_contract import CLOUD, INDEX_NAME, MODEL, REGION
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    # Corpus mode
-    corpus_mode: str = "smoke"  # "smoke" | "pilot" | "full"
+    # Corpus mode — "full" here means the self-hosted local index, which as
+    # of 2026-08-22 covers 6 of 14 MSMARCO-XI language configs (54.25M
+    # passages) -- honestly "partial full corpus", not smoke/pilot and not
+    # the complete 14-language target either. See README's indexing-status
+    # section for the exact language list.
+    corpus_mode: str = "full"  # "smoke" | "pilot" | "full"
 
-    # Pinecone — defaults come from the canonical contract (pinecone_contract.py).
-    # Environment variable overrides remain supported: PINECONE_INDEX, etc.
+    # Local self-hosted hybrid index (BM25 + HNSW, sharded) — the retrieval
+    # backend as of 2026-08-22 (team decision to move off Pinecone). See
+    # src/hhgoa_rag/retrieval/sharded_local_hybrid_store.py.
+    local_index_root: str = "artifacts/full_local_index"
+
+    # Pinecone — kept only as a documented, unused fallback (see
+    # api/app.py's module docstring). Defaults come from the canonical
+    # contract (pinecone_contract.py).
     pinecone_api_key: str | None = None
     pinecone_index: str = INDEX_NAME
     pinecone_namespace: str = "smoke"
@@ -36,8 +46,8 @@ class Settings(BaseSettings):
     min_retrieval_score: float = 0.45
 
     # Manifests
-    index_manifest_id: str = "smoke-v001"
-    model_manifest_id: str = "pinecone-multilingual-e5-large-v001"
+    index_manifest_id: str = "local-hybrid-sharded-6lang-v001"
+    model_manifest_id: str = "e5-small-int8-onnx-query-v001"
 
 
 def get_settings() -> Settings:
