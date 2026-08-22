@@ -1,10 +1,13 @@
 import re
 
-DEVANAGARI_RANGE = re.compile(r"[ऀ-ॿ]")  # shared by hi AND mr -- script alone can't disambiguate
-BENGALI_RANGE = re.compile(r"[ঀ-৿]")
+DEVANAGARI_RANGE = re.compile(r"[ऀ-ॿ]")  # shared by hi, mr, AND ne -- script alone can't disambiguate
+BENGALI_RANGE = re.compile(r"[ঀ-৿]")  # shared by bn AND as (Assamese uses the same Unicode block)
 GUJARATI_RANGE = re.compile(r"[઀-૿]")
 TAMIL_RANGE = re.compile(r"[஀-௿]")
 ARABIC_RANGE = re.compile(r"[؀-ۿ]")  # ur (Urdu) uses Perso-Arabic script
+KANNADA_RANGE = re.compile(r"[ಀ-೿]")
+MALAYALAM_RANGE = re.compile(r"[ഀ-ൿ]")
+ODIA_RANGE = re.compile(r"[଀-୿]")
 
 SUPPORTED_LANGUAGES = {
     "as",
@@ -27,7 +30,7 @@ SUPPORTED_LANGUAGES = {
 # Languages that actually have a built local index shard as of 2026-08-22
 # (see README's indexing-status table). Querying a language outside this
 # set falls back to "en" rather than a shard that doesn't exist.
-INDEXED_LANGUAGES = {"hi", "bn", "gu", "ta", "mr", "ur", "ne", "en"}
+INDEXED_LANGUAGES = {"hi", "bn", "gu", "ta", "mr", "ur", "ne", "as", "kn", "ml", "or", "en"}
 
 # Subset of INDEXED_LANGUAGES built from a row-capped (--max-rows-per-config)
 # run, per CLAUDE.md's "every sample artifact must be labeled smoke, pilot,
@@ -37,9 +40,14 @@ INDEXED_LANGUAGES = {"hi", "bn", "gu", "ta", "mr", "ur", "ne", "en"}
 # build's real disk footprint (measured ~73.5GB projected, 2x mr/ur's density)
 # turned out not to fit -- same "not the full corpus" status as the rest of
 # this set for serving/labeling purposes, even though it started as a full
-# attempt. Consulted by system.py's status endpoint and README -- keep this
-# updated as more pilot languages are added.
-PILOT_LANGUAGES: set[str] = {"ne"}
+# attempt. as/kn/ml/or were built directly as 5,000-row-per-split pilots
+# (--max-rows-per-config 5000, ~99k passages each) after disk math showed a
+# 5th full language wouldn't fit in the time/disk actually available; pa/sa/te
+# were queued for the same treatment but the run was stopped at a 15GB free-
+# disk floor before they got a turn (pa's partial segment was incomplete and
+# deleted, not counted here). Consulted by system.py's status endpoint and
+# README -- keep this updated if more pilot languages are added.
+PILOT_LANGUAGES: set[str] = {"ne", "as", "kn", "ml", "or"}
 
 
 def detect_script(text: str) -> str:
@@ -53,6 +61,12 @@ def detect_script(text: str) -> str:
         return "Tamil"
     if ARABIC_RANGE.search(text):
         return "Arabic"
+    if KANNADA_RANGE.search(text):
+        return "Kannada"
+    if MALAYALAM_RANGE.search(text):
+        return "Malayalam"
+    if ODIA_RANGE.search(text):
+        return "Odia"
     return "Latin"
 
 
@@ -66,10 +80,13 @@ def detect_script(text: str) -> str:
 # is still comfortably inside the 200ms budget.
 _SCRIPT_TO_LANGS = {
     "Devanagari": ["hi", "mr", "ne"],
-    "Bengali": ["bn"],
+    "Bengali": ["bn", "as"],  # Assamese uses the same Unicode block as Bengali
     "Gujarati": ["gu"],
     "Tamil": ["ta"],
     "Arabic": ["ur"],
+    "Kannada": ["kn"],
+    "Malayalam": ["ml"],
+    "Odia": ["or"],
 }
 
 
@@ -101,6 +118,8 @@ def get_language_filter(detected_lang: str, hint: str | None) -> list[str]:
     lang = raw.split("-")[0].lower()
     if lang in ("en", "hi", "mr", "ne"):
         return ["hi", "mr", "ne"]  # covers English pool + 3-way Devanagari ambiguity
+    if lang in ("bn", "as"):
+        return ["bn", "as", "hi"]  # covers English pool + Bengali/Assamese script ambiguity
     if lang in INDEXED_LANGUAGES:
         return [lang, "hi"]  # own-language shard + hi for the English pool
     if lang in SUPPORTED_LANGUAGES:

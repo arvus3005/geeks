@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     min_retrieval_score: float = 0.45
 
     # Manifests
-    index_manifest_id: str = "local-hybrid-sharded-6lang-v001"
+    index_manifest_id: str = "local-hybrid-sharded-6full-5pilot-v002"
     model_manifest_id: str = "e5-small-int8-onnx-query-v001"
 
 
