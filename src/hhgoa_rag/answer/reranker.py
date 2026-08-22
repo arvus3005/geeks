@@ -92,7 +92,8 @@ def _build() -> None:
     tokenizer_path = hf_hub_download(repo_id=MODEL_REPO, filename="tokenizer.json")
 
     sess_options = ort.SessionOptions()
-    sess_options.intra_op_num_threads = int(os.environ.get("RERANKER_THREADS", "1"))
+    sess_options.intra_op_num_threads = int(os.environ.get("RERANKER_THREADS", str(min(4, os.cpu_count() or 1))))
+    sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
     _session = ort.InferenceSession(
         onnx_path, sess_options=sess_options, providers=["CPUExecutionProvider"]
     )
@@ -106,12 +107,16 @@ def score(query: str, passage: str) -> float:
     thresholds are calibrated against this raw scale (see extractive.py),
     not [0,1]. Positive roughly means "this passage answers the query";
     very negative means "this passage is not about the query at all"."""
+    import unicodedata
     import numpy as np
 
     _lazy_load()
     assert _session is not None and _tokenizer is not None
 
-    encoding = _tokenizer.encode(query[:_MAX_CHARS], passage[:_MAX_CHARS])
+    q_norm = unicodedata.normalize("NFC", query[:_MAX_CHARS])
+    p_norm = unicodedata.normalize("NFC", passage[:_MAX_CHARS])
+
+    encoding = _tokenizer.encode(q_norm, p_norm)
     input_ids = np.array([encoding.ids], dtype=np.int64)
     attention_mask = np.array([encoding.attention_mask], dtype=np.int64)
     (logits,) = _session.run(None, {"input_ids": input_ids, "attention_mask": attention_mask})

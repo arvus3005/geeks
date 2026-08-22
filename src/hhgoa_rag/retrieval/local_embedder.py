@@ -140,7 +140,10 @@ def embed_query(text: str) -> list[float]:
     'passage: ' at indexing time) — mixing these up silently degrades
     retrieval quality without raising an error.
     """
-    return _embed(f"query: {text}")
+    import unicodedata
+
+    norm_text = unicodedata.normalize("NFC", text.strip())
+    return _embed(f"query: {norm_text}")
 
 
 def embed_passage(text: str) -> list[float]:
