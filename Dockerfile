@@ -8,7 +8,6 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
 COPY src/ src/
-COPY configs/ configs/
 
 ENV PYTHONPATH=/app/src
 ENV HF_HOME=/app/.cache/huggingface
