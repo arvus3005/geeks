@@ -75,6 +75,13 @@ class JudgeNotConfigured(RuntimeError):
     """No usable judge credential available."""
 
 
+class JudgeUnavailable(RuntimeError):
+    """Judge credential is configured but the provider rejected every call
+    (e.g. daily/free-tier quota exhausted) -- distinct from JudgeNotConfigured
+    so the report can say *why* judge checks are SKIPPED instead of just that
+    they are."""
+
+
 @dataclass
 class JudgeVerdict:
     verdict: bool          # True = faithful / correct, False = hallucinated / incorrect
@@ -122,6 +129,7 @@ def _parse_verdict(raw: str) -> tuple[bool, str]:
 def _call_gemini(system_prompt: str, user_content: str) -> JudgeVerdict:
     global _gemini_client
     from google import genai
+    from google.genai import errors as genai_errors
     from google.genai import types
 
     if _gemini_client is None:
@@ -129,16 +137,25 @@ def _call_gemini(system_prompt: str, user_content: str) -> JudgeVerdict:
 
     _rate_limit()
     t0 = time.perf_counter()
-    response = _gemini_client.models.generate_content(
-        model=JUDGE_MODEL_GEMINI,
-        contents=user_content,
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt,
-            response_mime_type="application/json",
-            response_schema=_VERDICT_SCHEMA,
-            max_output_tokens=300,
-        ),
-    )
+    try:
+        response = _gemini_client.models.generate_content(
+            model=JUDGE_MODEL_GEMINI,
+            contents=user_content,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                response_mime_type="application/json",
+                response_schema=_VERDICT_SCHEMA,
+                max_output_tokens=300,
+            ),
+        )
+    except genai_errors.ClientError as e:
+        # 429 here is most commonly the free tier's per-day quota (distinct
+        # from the per-minute one _rate_limit() already paces for, and not
+        # fixable by backing off within this run) -- surface it as a report
+        # SKIPPED reason instead of crashing the whole eval run.
+        if e.code == 429:
+            raise JudgeUnavailable(f"Gemini judge quota exhausted: {e}") from e
+        raise
     judge_ms = (time.perf_counter() - t0) * 1000
     raw = (response.text or "").strip()
     verdict, reason = _parse_verdict(raw)

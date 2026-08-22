@@ -42,6 +42,7 @@ def run(results: list[ExampleResult], workers: int) -> dict:
 
     verdicts: list[tuple[ExampleResult, judge.JudgeVerdict]] = []
     errors = 0
+    error_reason = "OPENAI_API_KEY not configured -- judge-based checks skipped."
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         futures = [pool.submit(_judge_one, r) for r in candidates]
         for future in as_completed(futures):
@@ -49,12 +50,15 @@ def run(results: list[ExampleResult], workers: int) -> dict:
                 verdicts.append(future.result())
             except judge.JudgeNotConfigured:
                 errors += 1
+            except judge.JudgeUnavailable as e:
+                errors += 1
+                error_reason = str(e)
 
     if errors:
         return {
             "check": "faithfulness / hallucination (reference-free, LLM-as-judge)",
             "num_evaluated": 0,
-            "error": "OPENAI_API_KEY not configured -- judge-based checks skipped.",
+            "error": error_reason,
         }
     if not verdicts:
         return {"check": "faithfulness / hallucination (reference-free, LLM-as-judge)", "num_evaluated": 0}
