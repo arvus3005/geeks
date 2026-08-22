@@ -98,6 +98,20 @@ gantt
     Remove Pinecone entirely from repo, wire eval harness, fix fabrication guardrail :done, p9, 2026-08-22, 1d
 ```
 
+### 2026-08-22, evening — Wiring in the real eval loop, and a threshold dead end found honestly
+
+**The hackathon's actual grading tool (`rag-local-eval-loop`) is now fully wired into this repo, not just referenced.** Cloned it, copied `eval/` + `run.sh` directly into the repo root (the runbook's primary "attach it" approach, not the external-sibling-clone alternative), and ran it for real against `app/embedder.py` + `app/generator.py` (native Python target, no HTTP shim needed — confirmed by the suite's own `verify_target()` on startup). `docs/benchmark.py` was made genuinely runnable too, not just left as reference material: it imports `app.retriever.search()`/`warmup()`, which didn't exist (our real interface is `app.embedder`/`app.generator` instead) — added `app/retriever.py` wrapping the same production `local_embedder.embed_query` + `sharded_local_hybrid_store.search` calls the live API uses, and copied `docs/benchmark.py` to `app/benchmark.py` verbatim (its own docstring says `python -m app.benchmark`). Both run clean: `app/benchmark.py` shows p95=12.2ms against its 200ms budget; the eval loop's own latency check shows retrieval p95=3.46ms / generation p95=875ms, both PASS.
+
+**A real dependency-safety catch before it could hit the live server.** The eval suite's `requirements.txt` recommends installing straight into the target project's own venv. Doing that bumped `huggingface-hub` 0.36.2→1.28.0 and `transformers` 4.57.6→5.15.1 — a major-version jump past this project's own `pyproject.toml` constraint (`transformers<5`). Reverted immediately (existing tests still passed with the bump in place, but `local_embedder.py`/`sharded_local_hybrid_store.py`/the build scripts have zero test coverage, so "tests passed" didn't mean "still safe" — and the live server sharing that same venv meant any future restart would have silently picked up an unvalidated major bump). Fixed by running the eval suite from a fully separate venv instead, verified our own project's real code (embedding, answer extraction) still works correctly there despite that venv's own different dependency versions.
+
+**Real numbers, 50 answerable + 50 unanswerable MSMARCO-XI (hi) examples**: Retrieval Recall@1=0.540, Recall@3=0.800, Recall@5=0.900, MRR=0.680. Reliability: false refusal 2.0% (very low — good), but false confidence 96.0% (the system answers unanswerable queries almost every time). Faithfulness/Correctness SKIPPED (no `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` configured for the suite's own LLM judge — a separate credential from anything this project's own code calls).
+
+**The 96% number was investigated for real, not assumed to be the same measurement artifact found this morning.** A custom diagnostic (`diagnose_reliability.py`, scoring every retrieved hit's source `query_id` against the current example's own ID) found **zero** cross-example contamination — all 48 false-confidence cases used the query's *own* MSMARCO candidates, the exact ones MSMARCO's human annotators marked `is_selected=0` for. This morning's "shared pooled mini-index" explanation genuinely does not apply here; this is a different, real finding.
+
+**A margin-based confidence signal (top-1 reranker score minus top-2) was hypothesized and tested, then rejected by the data.** Scored every eval example's own candidates with the real production reranker (no short-circuit, to get every score): margin barely separates the two classes at all (answerable mean=0.54 vs unanswerable mean=0.40) — sweeping margin thresholds only trades false refusal up as fast as false confidence goes down (e.g. margin≥1.0 costs 82% false refusal to buy 8% false confidence), a bad trade. Rejected; not shipped.
+
+**The real finding, confirmed with fresh direct measurement, not just cited from this morning:** the eval suite scores candidates from MSMARCO's own curated 10-passage-per-query pool, where top-1 reranker scores separate cleanly (answerable median=1.48, unanswerable median=0.33). Real full-corpus retrieval against this project's actual 55M+-passage index produces a completely different, much noisier distribution — re-ran several of the eval's own "unanswerable" queries through the real live retrieval path and got top-3 reranker scores like `[-1.83, -2.96, -3.3]` and `[-2.33, -2.26, 0.52]`, mostly *below* even the eval's own unanswerable-class mean. **Conclusion: no single `MIN_RERANKER_SCORE` value can simultaneously improve this eval's reported number and real production quality**, because the two are measuring fundamentally different score distributions (clean curated candidates vs. raw full-corpus retrieval noise). Raising the threshold to match what separates the eval's distribution would reintroduce the exact mass-false-refusal failure this project already suffered through once (documented above, difficulty from earlier today: pushing the gate tighter cost ~79-81% false refusal on real traffic). Not changed. This is reported as a genuine, structural limitation found through real testing, not left undocumented to make the number look better than it is.
+
 ### 2026-08-22, late afternoon — From 7 languages to 12, a live server restart, and pruning stale docs
 
 `ne`'s full build (started below) turned out to have real, unpredictable disk cost: measuring passages-per-source-row directly (not estimating) showed Nepali chunks at ~19.4 passages/row, roughly double every other language measured (mr/ur ~9.1, and later as/kn/ml/or/pa all landed within noise of ~9.9-9.9). Projected full size: ~73.5GB against ~39GB actually free — it would not have finished. Decision: stop it, keep its already-finalized first segment (2.4GB, ~500k passages, "complete" per its own manifest) as a pilot rather than let a 4th full-language attempt fail partway through, and spend the freed time/disk on breadth instead of one more depth bet.
@@ -281,7 +295,7 @@ uv sync --frozen --all-extras
 
 ### 2. Test (offline)
 ```bash
-uv run pytest   # 84 tests
+uv run pytest   # 118 tests
 ```
 
 ### 3. Build the local hybrid index (or use what's already in artifacts/full_local_index/)
@@ -308,7 +322,7 @@ No credentials needed for retrieval — the local hybrid index loads directly fr
 | Self-hosted indexing | ✅ 7/14 full-corpus language configs (54.25M passages, integrity-verified) + 5/14 pilot-scale configs (~99k passages each, honestly labeled per CLAUDE.md — see `/v1/system`); live serving from this index (no managed vector DB) |
 | Live Benchmark (P50/P70/P100) | ✅ Done — through the real deployed tunnel, 120 real MSMARCO-XI queries: backend P50 20.7ms/P100 35.5ms, wall-clock incl. network P50 97.4ms/P100 118.5ms |
 | Live Working Link | ✅ `https://hyphen-onyx-sprig.ngrok-free.dev` (real backend, ngrok reserved domain) and `https://hhgoa-rag-d3fw.onrender.com` (Render, thin proxy to the same backend). Both verified working; both depend on this laptop staying powered on and connected through submission and judging (the corpus lives only here). |
-| Eval harness compatibility | ✅ `app/embedder.py` + `app/generator.py` wired and verified against the real `rag-local-eval-loop` suite (found and fixed a real fabrication bug — see git log) |
+| Eval harness compatibility | ✅ Fully wired in-repo (`eval/` + `run.sh` copied per the runbook, not just referenced) and run for real: Recall@1/3/5=0.540/0.800/0.900, MRR=0.680, false refusal 2.0%. `app/benchmark.py` also made runnable (was `docs/benchmark.py`, needed `app/retriever.py` built to match). See story-so-far for the false-confidence investigation and why it wasn't "fixed" by threshold tuning. |
 | Video 1 (90s, team & process) | ⬜ Left |
 | Video 2 (demo) | ⬜ Left |
 | Social Promotion (`#RAGInGoa`) | ⬜ Left |
@@ -318,7 +332,9 @@ No credentials needed for retrieval — the local hybrid index loads directly fr
 
 ## 📚 Key References & Documentation
 
-- [`docs/wiring-in-the-eval-loop.pdf`](docs/wiring-in-the-eval-loop.pdf) + [`docs/benchmark.py`](docs/benchmark.py) — Hackathon admin materials for `rag-local-eval-loop`, saved verbatim; see `app/embedder.py` / `app/generator.py` for this repo's actual integration.
+- [`docs/wiring-in-the-eval-loop.pdf`](docs/wiring-in-the-eval-loop.pdf) — the hackathon's own runbook for `rag-local-eval-loop`, saved verbatim. `eval/` + `run.sh` in this repo's root are the actual suite, copied in per that runbook rather than left external — see `app/embedder.py` / `app/generator.py` for the target interface, `docs/EVAL_LOOP_TARGET_INTERFACE.md` for its full contract, and `results/` for real run output.
+- [`app/benchmark.py`](app/benchmark.py) — the hackathon's own latency-benchmark template (originally `docs/benchmark.py`, removed once superseded rather than kept as a dead duplicate), made genuinely runnable against this project's real retrieval path via [`app/retriever.py`](app/retriever.py).
+- **Running the eval loop yourself**: `.venv-eval/bin/python -m eval.runner --rag-root . --num-answerable 50 --num-unanswerable 50` — use a **separate venv** for this (see the story-so-far entry on why: the suite's own `requirements.txt` bumped `transformers`/`huggingface-hub` past this project's pinned versions when installed into the same venv). Add `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` to `.env` first for the Faithfulness/Correctness checks (Retrieval/Reliability/Latency run without one).
 - `pre-index-main` branch — the repo's state before the self-hosted pivot, preserved unchanged.
 
 *Note on documentation: the Pinecone-pilot-era operational docs and the Pinecone ingestion pipeline itself (not just docs) were fully removed on 2026-08-22, not just retired — see that day's git history for what was deleted and why.*
