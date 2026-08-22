@@ -2,8 +2,11 @@ from hhgoa_rag.config.settings import Settings
 
 
 def test_default_corpus_mode():
+    # "full" here means the self-hosted local hybrid index (6/14 MSMARCO-XI
+    # language configs, 54.25M passages) that's the live serving backend as
+    # of 2026-08-22 -- not the old Pinecone smoke default.
     s = Settings(_env_file=None)
-    assert s.corpus_mode == "smoke"
+    assert s.corpus_mode == "full"
 
 
 def test_corpus_mode_from_env(monkeypatch):
