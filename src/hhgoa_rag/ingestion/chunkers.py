@@ -14,7 +14,7 @@
    this project's already-built 54M-passage index (re-indexing that scale
    is out of scope same-day); implemented and tested as a genuine 5th
    available strategy, and the natural next step if the corpus is ever
-   rebuilt or extended -- see docs/FOLLOWUP_TECHNIQUES.md item 3.
+   rebuilt or extended.
 
 All chunkers are deterministic given the same input.
 
