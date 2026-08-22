@@ -5,7 +5,7 @@ extractive system: the answer is usually a literal substring of the
 passage it came from). See src/hhgoa_rag/guardrails/output_guards.py's
 module docstring for the calibration evidence."""
 
-from hhgoa_rag.guardrails.output_guards import verify_grounding
+from hhgoa_rag.guardrails.output_guards import _answer_type_mismatch, verify_grounding
 
 
 def test_genuine_answer_is_grounded():
@@ -75,3 +75,62 @@ def test_navigation_junk_answer_is_not_grounded():
 def test_empty_answer_or_passages_is_not_grounded():
     assert verify_grounding("a query", "", ["some passage"]) == (False, 0.0)
     assert verify_grounding("a query", "an answer", []) == (False, 0.0)
+
+
+# --- answer-type consistency gate (2026-08-22) -- see output_guards.py's
+# module comment above _NUMERIC_QUESTION_RE for the failure class this
+# targets: a topically-on-topic, query-word-reusing answer that is still
+# the wrong TYPE of thing, which neither passage_support nor query_overlap
+# can see since both only measure lexical overlap.
+
+
+def test_numeric_question_without_a_number_in_the_answer_is_flagged():
+    assert _answer_type_mismatch("how many legs does a spider have", "Spiders are arachnids, not insects.")
+
+
+def test_numeric_question_with_a_digit_answer_is_not_flagged():
+    assert not _answer_type_mismatch("how many legs does a spider have", "Spiders have eight legs.")
+
+
+def test_numeric_question_with_a_spelled_out_number_is_not_flagged():
+    assert not _answer_type_mismatch("how many legs does a spider have", "Spiders have eight legs, not six.")
+
+
+def test_temporal_question_without_any_date_signal_is_flagged():
+    assert _answer_type_mismatch("when was the eiffel tower built", "The Eiffel Tower is located in Paris, France.")
+
+
+def test_temporal_question_with_a_year_is_not_flagged():
+    assert not _answer_type_mismatch("when was the eiffel tower built", "The Eiffel Tower was completed in 1889.")
+
+
+def test_when_used_as_a_conjunction_is_not_a_temporal_question():
+    # Regression test: an earlier version of _TEMPORAL_QUESTION_RE matched
+    # bare "when" anywhere in the query, which wrongly flagged this real
+    # eval example -- "when" here is a subordinating conjunction ("what is
+    # not present WHILE fermentation is used"), not a time question, and
+    # the correct ground-truth answer ("Oxygen is not present...") contains
+    # no date/number at all. Caught by inspecting the gate's own reject
+    # list (eval/diagnose_skyline.py) before shipping.
+    assert not _answer_type_mismatch(
+        "what is not present when fermentation is used",
+        "Alcoholic fermentation produces ethyl alcohol and carbon dioxide instead of lactic acid.",
+    )
+
+
+def test_non_numeric_non_temporal_question_is_never_flagged():
+    assert not _answer_type_mismatch("what is the boiling point of water", "Water boils at 100 degrees Celsius.")
+    assert not _answer_type_mismatch(
+        "what is elastomer processing",
+        "Elastomer processing is the manufacturing method used to shape rubber-like polymers.",
+    )
+
+
+def test_verify_grounding_declines_numeric_question_answered_with_no_number():
+    passage = "Spiders are air-breathing arthropods with eight legs and chelicerae."
+    grounded, _confidence = verify_grounding(
+        "how many eyes does a spider have",
+        "Spiders are air-breathing arthropods, not insects.",
+        [passage],
+    )
+    assert not grounded
