@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "public": true,
+  "cleanUrls": true,
+  "rewrites": [
+    {
+      "source": "/v1/:path*",
+      "destination": "https://hyphen-onyx-sprig.ngrok-free.dev/v1/:path*"
+    },
+    {
+      "source": "/health/:path*",
+      "destination": "https://hyphen-onyx-sprig.ngrok-free.dev/health/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/src/hhgoa_rag/static/$1"
+    }
+  ]
+}
