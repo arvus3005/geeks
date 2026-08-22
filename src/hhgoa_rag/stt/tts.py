@@ -85,13 +85,14 @@ class SarvamTTSAdapter:
             "inputs": [text[:500]],
             "target_language_code": lang_code,
             "speaker": self.speaker,
-            "pitch": 0.0,
             "pace": 1.0,
-            "loudness": 1.0,
             "speech_sample_rate": 16000,
             "enable_preprocessing": True,
             "model": self.model,
         }
+        if not self.model.startswith("bulbul:v3"):
+            payload["pitch"] = 0.0
+            payload["loudness"] = 1.0
         response = await client.post(
             "https://api.sarvam.ai/text-to-speech",
             headers={
