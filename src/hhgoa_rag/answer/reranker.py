@@ -63,7 +63,7 @@ _MAX_SEQ_LEN = 1024
 # ~9ms of P50 cost and negligible quality loss (1/60 answers changed).
 # 500 is looser than their 256 since MSMARCO passages carry more real
 # content per candidate than a single sentence does.
-_MAX_CHARS = 500
+_MAX_CHARS = 256
 
 _session = None
 _tokenizer = None
