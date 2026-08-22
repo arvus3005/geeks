@@ -1,0 +1,2524 @@
+{
+  "run_id": "20260822T072939",
+  "target": "local-in-process",
+  "generated_at": "2026-08-22T07:29:39.157373+00:00",
+  "n_queries": 120,
+  "n_ok": 120,
+  "n_failed": 0,
+  "decisions": {
+    "allow": 73,
+    "abstain": 47
+  },
+  "total_backend_ms_percentiles": {
+    "p50": 48.4367499993823,
+    "p70": 56.650832999366685,
+    "p95": 77.74874999995518,
+    "p99": 90.42045900059748,
+    "p100": 103.81783400043787,
+    "mean": 47.21278161676613,
+    "count": 120
+  },
+  "stage_percentiles_ms": {
+    "answer_extract": {
+      "p50": 34.36395799872116,
+      "p70": 41.61808299977565,
+      "p95": 62.23004099956597,
+      "p99": 68.52470900048502,
+      "p100": 78.89375000013388,
+      "mean": 33.01703434170425,
+      "count": 120
+    },
+    "evidence_check": {
+      "p50": 0.0,
+      "p70": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "p100": 0.0,
+      "mean": 0.0,
+      "count": 120
+    },
+    "grounding_verify": {
+      "p50": 0.03133300015178975,
+      "p70": 0.036666999221779406,
+      "p95": 0.06333399869618006,
+      "p99": 0.08008300028450321,
+      "p100": 0.09499999941908754,
+      "mean": 0.024652416595927207,
+      "count": 120
+    },
+    "input_guard": {
+      "p50": 0.009666000551078469,
+      "p70": 0.011791998986154795,
+      "p95": 0.017249998563784175,
+      "p99": 0.032916999771259725,
+      "p100": 0.04445899867278058,
+      "mean": 0.010877799892720455,
+      "count": 120
+    },
+    "language_detect": {
+      "p50": 0.0024170003598555923,
+      "p70": 0.00254199949267786,
+      "p95": 0.003499999365885742,
+      "p99": 0.00583400105824694,
+      "p100": 0.007083001037244685,
+      "mean": 0.0025246166084495294,
+      "count": 120
+    },
+    "local_hybrid_retrieve": {
+      "p50": 10.85895799951686,
+      "p70": 14.152542000374524,
+      "p95": 22.955374999583,
+      "p99": 26.179041000432335,
+      "p100": 26.722750000772066,
+      "mean": 11.464179866667715,
+      "count": 120
+    },
+    "pinecone_retrieve": {
+      "p50": 0.0,
+      "p70": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "p100": 0.0,
+      "mean": 0.0,
+      "count": 120
+    },
+    "query_embed": {
+      "p50": 2.0874169986200286,
+      "p70": 2.331457999389386,
+      "p95": 2.673125000001164,
+      "p99": 2.839916000084486,
+      "p100": 3.5219999990658835,
+      "mean": 2.1401722168320703,
+      "count": 120
+    },
+    "rerank": {
+      "p50": 0.0,
+      "p70": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "p100": 0.0,
+      "mean": 0.0,
+      "count": 120
+    },
+    "serialize": {
+      "p50": 0.0,
+      "p70": 0.0,
+      "p95": 0.0,
+      "p99": 0.0,
+      "p100": 0.0,
+      "mean": 0.0,
+      "count": 120
+    },
+    "total_backend": {
+      "p50": 48.41816699990886,
+      "p70": 56.650832999366685,
+      "p95": 77.74874999995518,
+      "p99": 90.39570900131366,
+      "p100": 103.80354200060538,
+      "mean": 47.20662153343559,
+      "count": 120
+    }
+  },
+  "results": [
+    {
+      "query": "कॉर्पोरेशन क्या है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 48.97504200016556,
+      "stages_ms": {
+        "input_guard": 0.014833000022917986,
+        "language_detect": 0.007083001037244685,
+        "query_embed": 1.8162910000683041,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 20.226541000738507,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 24.41670799998974,
+        "grounding_verify": 0.05483299901243299,
+        "serialize": 0.0,
+        "total_backend": 48.97504200016556
+      }
+    },
+    {
+      "query": ". what is a corporation?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 23.62724999875354,
+      "stages_ms": {
+        "input_guard": 0.00904199987417087,
+        "language_detect": 0.0028750000637955964,
+        "query_embed": 1.8045000015263213,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 21.217457999227918,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.016666999727021903,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 23.61558299890021
+      }
+    },
+    {
+      "query": "रेचल कार्सन ने क्यों एक दायित्व बर्दाश्त करने के लिए लिखा",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 82.27308399909816,
+      "stages_ms": {
+        "input_guard": 0.017291000403929502,
+        "language_detect": 0.0020000006770715117,
+        "query_embed": 2.839916000084486,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 24.595625000074506,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 54.25341699992714,
+        "grounding_verify": 0.06508399928861763,
+        "serialize": 0.0,
+        "total_backend": 82.27308399909816
+      }
+    },
+    {
+      "query": "why did rachel carson write an obligation to endure",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 20.302375000028405,
+      "stages_ms": {
+        "input_guard": 0.013625000065076165,
+        "language_detect": 0.004208999598631635,
+        "query_embed": 2.483792000930407,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 17.16145799946389,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04208299833408091,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 20.29262500036566
+      }
+    },
+    {
+      "query": "पोटेशियम में कम खाद्य पदार्थों का चार्ट।",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 57.65004200111434,
+      "stages_ms": {
+        "input_guard": 0.012874999811174348,
+        "language_detect": 0.0017909987946040928,
+        "query_embed": 2.382124999712687,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 20.32416700058093,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 34.40466600113723,
+        "grounding_verify": 0.036082999940845184,
+        "serialize": 0.0,
+        "total_backend": 57.65004200111434
+      }
+    },
+    {
+      "query": "chart for foods low in potassium.",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 56.91537500024424,
+      "stages_ms": {
+        "input_guard": 0.00795900086814072,
+        "language_detect": 0.0021249998098937795,
+        "query_embed": 2.072375000352622,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 18.41870800126344,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 35.825541001031525,
+        "grounding_verify": 0.03387500146345701,
+        "serialize": 0.0,
+        "total_backend": 56.91537500024424
+      }
+    },
+    {
+      "query": "मालवाहक जहाज़ के नीचे की तरफ",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 63.5746250009106,
+      "stages_ms": {
+        "input_guard": 0.009625000529922545,
+        "language_detect": 0.0018329992599319667,
+        "query_embed": 2.1944590007478837,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 26.722750000772066,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 34.05329199995322,
+        "grounding_verify": 0.05279099968902301,
+        "serialize": 0.0,
+        "total_backend": 63.5746250009106
+      }
+    },
+    {
+      "query": "bottom front of a cargo ship",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 58.71741600094538,
+      "stages_ms": {
+        "input_guard": 0.007374999768217094,
+        "language_detect": 0.002208000296377577,
+        "query_embed": 1.7996250007854542,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 13.650832999701379,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 42.692832999819075,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 58.70104099994933
+      }
+    },
+    {
+      "query": "ईमानदारी या सच्चाई की परिभाषा",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 38.18291700008558,
+      "stages_ms": {
+        "input_guard": 0.009666999176261015,
+        "language_detect": 0.0018330010789213702,
+        "query_embed": 2.1535420000873273,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 19.01949999955832,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 16.449415999886696,
+        "grounding_verify": 0.03579199983505532,
+        "serialize": 0.0,
+        "total_backend": 38.18291700008558
+      }
+    },
+    {
+      "query": "honesty or integrity definition",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 48.75408299994888,
+      "stages_ms": {
+        "input_guard": 0.007708000339334831,
+        "language_detect": 0.0022500007617054507,
+        "query_embed": 2.299457999470178,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 11.668207998809521,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 34.21325000090292,
+        "grounding_verify": 0.03429200114624109,
+        "serialize": 0.0,
+        "total_backend": 48.75408299994888
+      }
+    },
+    {
+      "query": "लिंकन में अब वायुमंडलीय दबाव क्या है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 52.02054199980921,
+      "stages_ms": {
+        "input_guard": 0.011833999451482669,
+        "language_detect": 0.0018749997252598405,
+        "query_embed": 2.1482080010173377,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 19.545208000636194,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 29.725583000981715,
+        "grounding_verify": 0.047125000492087565,
+        "serialize": 0.0,
+        "total_backend": 52.02054199980921
+      }
+    },
+    {
+      "query": "what is barometric pressure in lincoln ne now?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 29.54200000021956,
+      "stages_ms": {
+        "input_guard": 0.00879199978953693,
+        "language_detect": 0.004292000085115433,
+        "query_embed": 2.5507079990347847,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 11.317791999317706,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 15.13958299983642,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 29.5259159993293
+      }
+    },
+    {
+      "query": "स्ट्रूथर्स शहर स्कूल जिला राज्य संख्या",
+      "language": "hi",
+      "decision": "abstain",
+      "reason_code": "ungrounded",
+      "total_backend_ms": 90.42045900059748,
+      "stages_ms": {
+        "input_guard": 0.012042000889778137,
+        "language_detect": 0.0019170001905877143,
+        "query_embed": 2.1810420003021136,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 20.47908300119161,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 67.1918749994802,
+        "grounding_verify": 0.014790999557590112,
+        "serialize": 0.0,
+        "total_backend": 90.39570900131366
+      }
+    },
+    {
+      "query": "struthers city school district state number",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 45.988166999450186,
+      "stages_ms": {
+        "input_guard": 0.009749999662744813,
+        "language_detect": 0.00583400105824694,
+        "query_embed": 1.9655420001072343,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.599125000226195,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 32.89345800112642,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 45.97162499885599
+      }
+    },
+    {
+      "query": "क्या चिकित्सीय मारिजुआना मदत करता है?",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 71.0177079999994,
+      "stages_ms": {
+        "input_guard": 0.01195900040329434,
+        "language_detect": 0.001915999746415764,
+        "query_embed": 2.615916999275214,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 26.179041000432335,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 41.61808299977565,
+        "grounding_verify": 0.049291998948319815,
+        "serialize": 0.0,
+        "total_backend": 71.0177079999994
+      }
+    },
+    {
+      "query": "does medical marijuana help with ptsd",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 56.650832999366685,
+      "stages_ms": {
+        "input_guard": 0.008999999408842996,
+        "language_detect": 0.002499999027349986,
+        "query_embed": 2.025125000727712,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.207624998656684,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 43.794000001071254,
+        "grounding_verify": 0.036666999221779406,
+        "serialize": 0.0,
+        "total_backend": 56.650832999366685
+      }
+    },
+    {
+      "query": "फ्रैंक गिफोर्ड ने कितनी महिलाओं से शादी की",
+      "language": "hi",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 69.50220799990348,
+      "stages_ms": {
+        "input_guard": 0.013291999493958429,
+        "language_detect": 0.002041999323409982,
+        "query_embed": 2.3243750001711305,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 14.551415999449091,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 52.068958000745624,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 69.4798329986952
+      }
+    },
+    {
+      "query": "how many women did frank gifford marry",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 26.73766699990665,
+      "stages_ms": {
+        "input_guard": 0.008207998689613305,
+        "language_detect": 0.002458000381011516,
+        "query_embed": 2.211750001151813,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 9.49479200062342,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.490707999357255,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 26.721082998847123
+      }
+    },
+    {
+      "query": "कितनी ट्रम्प प्रशासन की जांच चल रही हैं",
+      "language": "hi",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 43.516583000382525,
+      "stages_ms": {
+        "input_guard": 0.012500000593718141,
+        "language_detect": 0.0020829993445659056,
+        "query_embed": 1.8942080005217576,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 13.45858400054567,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 27.4719590015593,
+        "grounding_verify": 0.06695800038869493,
+        "serialize": 0.0,
+        "total_backend": 43.516583000382525
+      }
+    },
+    {
+      "query": "how many ongoing trump administration investigations",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 75.17091699992307,
+      "stages_ms": {
+        "input_guard": 0.010542000381974503,
+        "language_detect": 0.0026670004444895312,
+        "query_embed": 1.8017919992416864,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.015750000093249,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 62.75370900038979,
+        "grounding_verify": 0.040666998756933026,
+        "serialize": 0.0,
+        "total_backend": 75.17091699992307
+      }
+    },
+    {
+      "query": "কর্পোরেশন কী?",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 54.48666699885507,
+      "stages_ms": {
+        "input_guard": 0.006708000000799075,
+        "language_detect": 0.002208000296377577,
+        "query_embed": 1.8513750001147855,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 14.135707999230362,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 37.921999999525724,
+        "grounding_verify": 0.03554199975042138,
+        "serialize": 0.0,
+        "total_backend": 54.48666699885507
+      }
+    },
+    {
+      "query": ". what is a corporation?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 12.702250000074855,
+      "stages_ms": {
+        "input_guard": 0.006457999916165136,
+        "language_detect": 0.002083999788737856,
+        "query_embed": 1.7482080002082512,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.420167000120273,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.01662499926169403,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 12.693624999883468
+      }
+    },
+    {
+      "query": "র‍্যাচেল কারসন কেন একটি বাধ্যবাধকতা সহ্য করার জন্য লিখেছিলেন",
+      "language": "bn",
+      "decision": "abstain",
+      "reason_code": "ungrounded",
+      "total_backend_ms": 103.81783400043787,
+      "stages_ms": {
+        "input_guard": 0.032916999771259725,
+        "language_detect": 0.003499999365885742,
+        "query_embed": 3.5219999990658835,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 20.726167000248097,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 78.89375000013388,
+        "grounding_verify": 0.004292000085115433,
+        "serialize": 0.0,
+        "total_backend": 103.80354200060538
+      }
+    },
+    {
+      "query": "why did rachel carson write an obligation to endure",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 8.756374998483807,
+      "stages_ms": {
+        "input_guard": 0.009917001079884358,
+        "language_detect": 0.0023340016923611984,
+        "query_embed": 2.526499998566578,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.674375001035514,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04425000042829197,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 8.747374999074964
+      }
+    },
+    {
+      "query": "পটাসিয়াম কম থাকা খাবারের তালিকা।",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 48.79412499940372,
+      "stages_ms": {
+        "input_guard": 0.012042000889778137,
+        "language_detect": 0.002333999873371795,
+        "query_embed": 2.0833340004173806,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 13.783042000795831,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 32.3957500004326,
+        "grounding_verify": 0.04362500112620182,
+        "serialize": 0.0,
+        "total_backend": 48.79412499940372
+      }
+    },
+    {
+      "query": "chart for foods low in potassium.",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 47.26033399856533,
+      "stages_ms": {
+        "input_guard": 0.00733299930288922,
+        "language_detect": 0.0023749998945277184,
+        "query_embed": 2.013999999689986,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 9.35149999895657,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 35.32412500135251,
+        "grounding_verify": 0.032250000003841706,
+        "serialize": 0.0,
+        "total_backend": 47.26033399856533
+      }
+    },
+    {
+      "query": "একটি পণ্যবাহী জাহাজের নীচের সামনের অংশ",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 51.69449999993958,
+      "stages_ms": {
+        "input_guard": 0.04445899867278058,
+        "language_detect": 0.0037500012695090845,
+        "query_embed": 2.6542920004430925,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 18.66412500021397,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 29.74933299992699,
+        "grounding_verify": 0.028040998586220667,
+        "serialize": 0.0,
+        "total_backend": 51.69449999993958
+      }
+    },
+    {
+      "query": "bottom front of a cargo ship",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 47.925374999977066,
+      "stages_ms": {
+        "input_guard": 0.0077500008046627045,
+        "language_detect": 0.002458000381011516,
+        "query_embed": 1.827624999350519,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.905249999865191,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 40.651458000866114,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 47.90141700141248
+      }
+    },
+    {
+      "query": "সততা বা সততার সংজ্ঞা",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 34.00474999943981,
+      "stages_ms": {
+        "input_guard": 0.008125000022118911,
+        "language_detect": 0.0026249999791616574,
+        "query_embed": 1.9923750005546026,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 9.948458000508253,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 21.51712500017311,
+        "grounding_verify": 0.027042000510846265,
+        "serialize": 0.0,
+        "total_backend": 34.00474999943981
+      }
+    },
+    {
+      "query": "honesty or integrity definition",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 41.055167001104564,
+      "stages_ms": {
+        "input_guard": 0.006708000000799075,
+        "language_detect": 0.0022500007617054507,
+        "query_embed": 1.7478749996371334,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.773291999299545,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 33.99362500022107,
+        "grounding_verify": 0.03266600106144324,
+        "serialize": 0.0,
+        "total_backend": 41.055167001104564
+      }
+    },
+    {
+      "query": "লিঙ্কনে এখন ব্যারোমেট্রিক চাপ কত?",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 51.451957999233855,
+      "stages_ms": {
+        "input_guard": 0.011166999684064649,
+        "language_detect": 0.0026249999791616574,
+        "query_embed": 2.351375000216649,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 14.16429200071434,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 34.34783400007291,
+        "grounding_verify": 0.04562499998428393,
+        "serialize": 0.0,
+        "total_backend": 51.451957999233855
+      }
+    },
+    {
+      "query": "what is barometric pressure in lincoln ne now?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 22.276375000728876,
+      "stages_ms": {
+        "input_guard": 0.009332999979960732,
+        "language_detect": 0.0025000008463393897,
+        "query_embed": 2.304625000761007,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.5282079991011415,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.892500001224107,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 22.259583000050043
+      }
+    },
+    {
+      "query": "স্ট্রুথার্স শহর বিদ্যালয় জেলা রাজ্য নম্বর",
+      "language": "bn",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 51.97825000141165,
+      "stages_ms": {
+        "input_guard": 0.01316599991696421,
+        "language_detect": 0.0023749998945277184,
+        "query_embed": 2.1751250005763723,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 14.89200000105484,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 34.36395799872116,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 51.95895799988648
+      }
+    },
+    {
+      "query": "struthers city school district state number",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 40.12524999961897,
+      "stages_ms": {
+        "input_guard": 0.008166000043274835,
+        "language_detect": 0.0021249998098937795,
+        "query_embed": 1.8912079995061504,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.120375000842614,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 32.58254200045485,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 40.10783400008222
+      }
+    },
+    {
+      "query": "চিকিৎসা গাঁজা মাদকের সঙ্গে সাহায্য করে কিনা?",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 54.79154099884909,
+      "stages_ms": {
+        "input_guard": 0.015416999303852208,
+        "language_detect": 0.002499999027349986,
+        "query_embed": 2.331457999389386,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 12.98283299911418,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 38.8868750014808,
+        "grounding_verify": 0.03958300112572033,
+        "serialize": 0.0,
+        "total_backend": 54.79154099884909
+      }
+    },
+    {
+      "query": "does medical marijuana help with ptsd",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 50.7253750001837,
+      "stages_ms": {
+        "input_guard": 0.011125001037726179,
+        "language_detect": 0.002958000550279394,
+        "query_embed": 1.9150829994032392,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.03000000026077,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 43.18162500021572,
+        "grounding_verify": 0.03216700133634731,
+        "serialize": 0.0,
+        "total_backend": 50.7253750001837
+      }
+    },
+    {
+      "query": "ফ্র্যাঙ্ক গিফোর্ড কতজন মহিলাকে বিয়ে করেছিলেন",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 79.57529200029967,
+      "stages_ms": {
+        "input_guard": 0.01570799940964207,
+        "language_detect": 0.0028340000426396728,
+        "query_embed": 2.7299579996906687,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 14.152542000374524,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 61.899291998997796,
+        "grounding_verify": 0.053665999075747095,
+        "serialize": 0.0,
+        "total_backend": 79.57529200029967
+      }
+    },
+    {
+      "query": "how many women did frank gifford marry",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 21.319542000128422,
+      "stages_ms": {
+        "input_guard": 0.007624999852851033,
+        "language_detect": 0.0025000008463393897,
+        "query_embed": 2.249750001283246,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.013416999441688,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.535042000716203,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 21.294375001161825
+      }
+    },
+    {
+      "query": "ট্রাম্প প্রশাসনের কতগুলি তদন্ত চলছে।",
+      "language": "bn",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 54.494084000907606,
+      "stages_ms": {
+        "input_guard": 0.014541999917128123,
+        "language_detect": 0.0024170003598555923,
+        "query_embed": 1.908166999783134,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 11.926417000722722,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 40.02487500110874,
+        "grounding_verify": 0.0697089999448508,
+        "serialize": 0.0,
+        "total_backend": 54.494084000907606
+      }
+    },
+    {
+      "query": "how many ongoing trump administration investigations",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 70.93954199990549,
+      "stages_ms": {
+        "input_guard": 0.00879199978953693,
+        "language_detect": 0.0025829995138337836,
+        "query_embed": 1.7732919986883644,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.130666999320965,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 63.46966700039047,
+        "grounding_verify": 0.03654099964478519,
+        "serialize": 0.0,
+        "total_backend": 70.93954199990549
+      }
+    },
+    {
+      "query": ". શું એક કોર્પોરેશન છે?",
+      "language": "gu",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 70.29970900111948,
+      "stages_ms": {
+        "input_guard": 0.008209000952774659,
+        "language_detect": 0.00254199949267786,
+        "query_embed": 2.100041001540376,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 23.379291998935514,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 44.260499998927116,
+        "grounding_verify": 0.03295799979241565,
+        "serialize": 0.0,
+        "total_backend": 70.29970900111948
+      }
+    },
+    {
+      "query": ". what is a corporation?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 12.177167000118061,
+      "stages_ms": {
+        "input_guard": 0.007041999197099358,
+        "language_detect": 0.0021249998098937795,
+        "query_embed": 1.7880840005091159,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 9.83829199867614,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.013958000636193901,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 12.16795799882675
+      }
+    },
+    {
+      "query": "રશેલ કાર્સને શા માટે સહન કરવાની જવાબદારી લખી?",
+      "language": "gu",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 55.714791000355035,
+      "stages_ms": {
+        "input_guard": 0.012709000657196157,
+        "language_detect": 0.0022909989638719708,
+        "query_embed": 2.536542000598274,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 22.124667000753107,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 30.560666000383208,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 55.69441599982383
+      }
+    },
+    {
+      "query": "why did rachel carson write an obligation to endure",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 8.953917000326328,
+      "stages_ms": {
+        "input_guard": 0.011250000170548446,
+        "language_detect": 0.0027500009309733286,
+        "query_embed": 2.3836670006858185,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.976209000436938,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04012499994132668,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 8.945458999733091
+      }
+    },
+    {
+      "query": "પોટેશિયમમાં ઓછા પ્રમાણમાં રહેલા ખોરાક માટેનો ચાર્ટ.",
+      "language": "gu",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 72.77933299883443,
+      "stages_ms": {
+        "input_guard": 0.016707999748177826,
+        "language_detect": 0.00254199949267786,
+        "query_embed": 2.7962080002907896,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 22.955374999583,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 46.49699999936274,
+        "grounding_verify": 0.04054199962411076,
+        "serialize": 0.0,
+        "total_backend": 72.77933299883443
+      }
+    },
+    {
+      "query": "chart for foods low in potassium.",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 47.79437499928463,
+      "stages_ms": {
+        "input_guard": 0.009166999006993137,
+        "language_detect": 0.002415999915683642,
+        "query_embed": 2.0888339986413484,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 9.41337500080408,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 35.33120800057077,
+        "grounding_verify": 0.036249999538995326,
+        "serialize": 0.0,
+        "total_backend": 47.79437499928463
+      }
+    },
+    {
+      "query": "માલવાહક જહાજની નીચેની બાજુ",
+      "language": "gu",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 28.21941700130992,
+      "stages_ms": {
+        "input_guard": 0.009125000360654667,
+        "language_detect": 0.002458000381011516,
+        "query_embed": 2.5012500009324867,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 25.19195800050511,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.024375000066356733,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 28.207792000102927
+      }
+    },
+    {
+      "query": "bottom front of a cargo ship",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 47.9437499998312,
+      "stages_ms": {
+        "input_guard": 0.007542001185356639,
+        "language_detect": 0.0023749998945277184,
+        "query_embed": 1.7692500005068723,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.918209000607021,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 40.75229199952446,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 47.92737500065414
+      }
+    },
+    {
+      "query": "પ્રામાણિકતા અથવા સત્યનિષ્ઠાની વ્યાખ્યા",
+      "language": "gu",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 43.46737500054587,
+      "stages_ms": {
+        "input_guard": 0.012665999747696333,
+        "language_detect": 0.002333001248189248,
+        "query_embed": 2.613250000649714,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 18.400040999040357,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 21.867249999559135,
+        "grounding_verify": 0.022416999854613096,
+        "serialize": 0.0,
+        "total_backend": 43.46737500054587
+      }
+    },
+    {
+      "query": "honesty or integrity definition",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 41.30154200174729,
+      "stages_ms": {
+        "input_guard": 0.007624999852851033,
+        "language_detect": 0.0024170003598555923,
+        "query_embed": 1.7590420011401875,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.084832999273203,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 33.87608399862074,
+        "grounding_verify": 0.04037500002596062,
+        "serialize": 0.0,
+        "total_backend": 41.30154200174729
+      }
+    },
+    {
+      "query": "લિંકનમાં હવે બેરોમેટ્રિક દબાણ શું છે?",
+      "language": "gu",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 59.03254099939659,
+      "stages_ms": {
+        "input_guard": 0.01195900040329434,
+        "language_detect": 0.002415999915683642,
+        "query_embed": 2.544666000176221,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 14.602458000808838,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 41.311499999210355,
+        "grounding_verify": 0.0334169999405276,
+        "serialize": 0.0,
+        "total_backend": 59.03254099939659
+      }
+    },
+    {
+      "query": "what is barometric pressure in lincoln ne now?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 22.380124999472173,
+      "stages_ms": {
+        "input_guard": 0.00916700082598254,
+        "language_detect": 0.002499999027349986,
+        "query_embed": 2.2467499984486494,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.801000000952627,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.79091600049287,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 22.364458000083687
+      }
+    },
+    {
+      "query": "સ્ટ્રુથર્સ શહેર શાળા જિલ્લા રાજ્ય નંબર",
+      "language": "gu",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 58.43433299924072,
+      "stages_ms": {
+        "input_guard": 0.012415999663062394,
+        "language_detect": 0.002458000381011516,
+        "query_embed": 2.092750000883825,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 13.266958001622697,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 42.4974999987171,
+        "grounding_verify": 0.030915998650016263,
+        "serialize": 0.0,
+        "total_backend": 58.43433299924072
+      }
+    },
+    {
+      "query": "struthers city school district state number",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 39.65662500013423,
+      "stages_ms": {
+        "input_guard": 0.008999999408842996,
+        "language_detect": 0.0024170003598555923,
+        "query_embed": 1.925875001688837,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.0148749996878905,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 32.17274999951769,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 39.64166700097849
+      }
+    },
+    {
+      "query": "શું તબીબી મારિજુઆના મદદ કરે છે?",
+      "language": "gu",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 77.74874999995518,
+      "stages_ms": {
+        "input_guard": 0.01012499888020102,
+        "language_detect": 0.0023749998945277184,
+        "query_embed": 2.3780419996910496,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 20.02337500016438,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 54.73983299998508,
+        "grounding_verify": 0.04083299972990062,
+        "serialize": 0.0,
+        "total_backend": 77.74874999995518
+      }
+    },
+    {
+      "query": "does medical marijuana help with ptsd",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 51.09841600096843,
+      "stages_ms": {
+        "input_guard": 0.007665999874006957,
+        "language_detect": 0.0022500007617054507,
+        "query_embed": 1.9239160010329215,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.194958999709343,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 43.40716600017913,
+        "grounding_verify": 0.036458000977290794,
+        "serialize": 0.0,
+        "total_backend": 51.09841600096843
+      }
+    },
+    {
+      "query": "ફ્રેન્ક ગિફોર્ડે કેટલી સ્ત્રીઓ સાથે લગ્ન કર્યા હતા",
+      "language": "gu",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 68.4651669998857,
+      "stages_ms": {
+        "input_guard": 0.014749999536434188,
+        "language_detect": 0.0023749998945277184,
+        "query_embed": 2.609041999676265,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 12.576125000123284,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 52.70358399866382,
+        "grounding_verify": 0.041000001147040166,
+        "serialize": 0.0,
+        "total_backend": 68.4651669998857
+      }
+    },
+    {
+      "query": "how many women did frank gifford marry",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 20.993583000745275,
+      "stages_ms": {
+        "input_guard": 0.00879199978953693,
+        "language_detect": 0.002499999027349986,
+        "query_embed": 2.141625000149361,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 3.8661250000586733,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.424625000174274,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 20.97904200127232
+      }
+    },
+    {
+      "query": "ટ્રમ્પ વહીવટીતંત્રની કેટલી ચાલુ તપાસ છે",
+      "language": "gu",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 89.55916600098135,
+      "stages_ms": {
+        "input_guard": 0.012250000509084202,
+        "language_detect": 0.002499999027349986,
+        "query_embed": 2.3821660015528323,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 18.07770799860009,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 68.52470900048502,
+        "grounding_verify": 0.040666998756933026,
+        "serialize": 0.0,
+        "total_backend": 89.55916600098135
+      }
+    },
+    {
+      "query": "how many ongoing trump administration investigations",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 70.03258300028392,
+      "stages_ms": {
+        "input_guard": 0.011500000255182385,
+        "language_detect": 0.0027910009521292523,
+        "query_embed": 1.796124999600579,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.416834001152893,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 62.1900000005553,
+        "grounding_verify": 0.03787499917962123,
+        "serialize": 0.0,
+        "total_backend": 70.03258300028392
+      }
+    },
+    {
+      "query": "ஒரு நிறுவனம் என்பது என்ன?",
+      "language": "ta",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 67.50483300129417,
+      "stages_ms": {
+        "input_guard": 0.008457998774247244,
+        "language_detect": 0.0025410008674953133,
+        "query_embed": 1.713916999506182,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 14.9182090008253,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 50.32429200036859,
+        "grounding_verify": 0.03470899901003577,
+        "serialize": 0.0,
+        "total_backend": 67.50483300129417
+      }
+    },
+    {
+      "query": ". what is a corporation?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 12.740292000671616,
+      "stages_ms": {
+        "input_guard": 0.007208000170066953,
+        "language_detect": 0.002415999915683642,
+        "query_embed": 1.8922079998446861,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.204333000729093,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.014957999155740254,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 12.730166999972425
+      }
+    },
+    {
+      "query": "ஏன் ரேச்சல் கார்சன் ஒரு கடமையை நிறைவேற்ற வேண்டும் என்று எழுதினார்",
+      "language": "ta",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 59.00541699884343,
+      "stages_ms": {
+        "input_guard": 0.01700000029813964,
+        "language_detect": 0.0025829995138337836,
+        "query_embed": 2.673125000001164,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 22.526958000526065,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 33.245333999730065,
+        "grounding_verify": 0.06333399869618006,
+        "serialize": 0.0,
+        "total_backend": 59.00541699884343
+      }
+    },
+    {
+      "query": "why did rachel carson write an obligation to endure",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 8.784374998867861,
+      "stages_ms": {
+        "input_guard": 0.009958001101040281,
+        "language_detect": 0.002415999915683642,
+        "query_embed": 2.365500000450993,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.7800829999905545,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.10383399967395235,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 8.764959000473027
+      }
+    },
+    {
+      "query": "பொட்டாசியம் குறைவுள்ள உணவுகளுக்கான வரைபடம்.",
+      "language": "ta",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 77.21645800120314,
+      "stages_ms": {
+        "input_guard": 0.014125000234344043,
+        "language_detect": 0.003167000613757409,
+        "query_embed": 2.5079589995584683,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 16.414499999882537,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 57.68616699970153,
+        "grounding_verify": 0.08008300028450321,
+        "serialize": 0.0,
+        "total_backend": 77.21645800120314
+      }
+    },
+    {
+      "query": "chart for foods low in potassium.",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 47.316333000708255,
+      "stages_ms": {
+        "input_guard": 0.010166999345528893,
+        "language_detect": 0.0034580007195472717,
+        "query_embed": 2.1706250008719508,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 9.367999999085441,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 35.03745799935132,
+        "grounding_verify": 0.034750000850181095,
+        "serialize": 0.0,
+        "total_backend": 47.316333000708255
+      }
+    },
+    {
+      "query": "சரக்குக் கப்பலின் முன்பகுதி",
+      "language": "ta",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 55.336999999781256,
+      "stages_ms": {
+        "input_guard": 0.010292000297340564,
+        "language_detect": 0.00291700052912347,
+        "query_embed": 2.1249999990686774,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 21.742166998592438,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 30.86295800130756,
+        "grounding_verify": 0.027042000510846265,
+        "serialize": 0.0,
+        "total_backend": 55.336999999781256
+      }
+    },
+    {
+      "query": "bottom front of a cargo ship",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 48.17399999956251,
+      "stages_ms": {
+        "input_guard": 0.007333999747061171,
+        "language_detect": 0.002291999408043921,
+        "query_embed": 1.7820830016717082,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.121915999552584,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 40.74308400049631,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 48.15624999901047
+      }
+    },
+    {
+      "query": "நேர்மை அல்லது நேர்மையின் வரையறை",
+      "language": "ta",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 36.28449999996519,
+      "stages_ms": {
+        "input_guard": 0.010792000466608442,
+        "language_detect": 0.0029579987312899902,
+        "query_embed": 1.9861660002788994,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 17.297541999141686,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 16.446457999336417,
+        "grounding_verify": 0.02366599983361084,
+        "serialize": 0.0,
+        "total_backend": 36.28449999996519
+      }
+    },
+    {
+      "query": "honesty or integrity definition",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 41.21429100086971,
+      "stages_ms": {
+        "input_guard": 0.008000000889296643,
+        "language_detect": 0.002291999408043921,
+        "query_embed": 1.759041999321198,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.118582999784849,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 33.76212500006659,
+        "grounding_verify": 0.028417000066838227,
+        "serialize": 0.0,
+        "total_backend": 41.21429100086971
+      }
+    },
+    {
+      "query": "லிங்கனில் இப்போது பரோமெட்ரிக் அழுத்தம் என்ன?",
+      "language": "ta",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 21.455124999192776,
+      "stages_ms": {
+        "input_guard": 0.013959001080365852,
+        "language_detect": 0.002708000465645455,
+        "query_embed": 2.592499999082065,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 18.28212500004156,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.05466599941428285,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 21.44570800010115
+      }
+    },
+    {
+      "query": "what is barometric pressure in lincoln ne now?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 22.115791000032914,
+      "stages_ms": {
+        "input_guard": 0.009875000614556484,
+        "language_detect": 0.0021670002752216533,
+        "query_embed": 2.3202080010378268,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.5542080006271135,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.777125001273816,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 22.098375000496162
+      }
+    },
+    {
+      "query": "ஸ்ட்ரதர்ஸ் நகரப் பள்ளி மாவட்டம் மாநில எண்",
+      "language": "ta",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 62.22537500070757,
+      "stages_ms": {
+        "input_guard": 0.011790998541982844,
+        "language_detect": 0.0027910009521292523,
+        "query_embed": 2.071500000965898,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 17.559917001563008,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 42.041708999022376,
+        "grounding_verify": 0.02487500023562461,
+        "serialize": 0.0,
+        "total_backend": 62.22537500070757
+      }
+    },
+    {
+      "query": "struthers city school district state number",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 40.02941700127849,
+      "stages_ms": {
+        "input_guard": 0.008125000022118911,
+        "language_detect": 0.002083999788737856,
+        "query_embed": 1.8787910012179054,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.126791998918634,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 32.51929200087034,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 40.01162500026112
+      }
+    },
+    {
+      "query": "மருத்துவ மரிஜுவானா என்பது என்ன செய்ய உதவுகிறது?",
+      "language": "ta",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 72.21412499893631,
+      "stages_ms": {
+        "input_guard": 0.021624999135383405,
+        "language_detect": 0.0025829995138337836,
+        "query_embed": 2.3835829997551627,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 11.041207999369362,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 58.17400000159978,
+        "grounding_verify": 0.053666999519919045,
+        "serialize": 0.0,
+        "total_backend": 72.21412499893631
+      }
+    },
+    {
+      "query": "does medical marijuana help with ptsd",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 51.10025000067253,
+      "stages_ms": {
+        "input_guard": 0.00837500010675285,
+        "language_detect": 0.001999998858082108,
+        "query_embed": 1.912917001391179,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.122541999298846,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 43.34037499938859,
+        "grounding_verify": 0.038624999433523044,
+        "serialize": 0.0,
+        "total_backend": 51.10025000067253
+      }
+    },
+    {
+      "query": "ஃபிராங்க் கிஃபோர்டு எத்தனை பெண்களை திருமணம் செய்து கொண்டார்",
+      "language": "ta",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 62.55400000009104,
+      "stages_ms": {
+        "input_guard": 0.015499999790336005,
+        "language_detect": 0.0026249999791616574,
+        "query_embed": 2.689124999960768,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 15.034000000014203,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 44.259416999921086,
+        "grounding_verify": 0.03641699913714547,
+        "serialize": 0.0,
+        "total_backend": 62.55400000009104
+      }
+    },
+    {
+      "query": "how many women did frank gifford marry",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 21.089832998768543,
+      "stages_ms": {
+        "input_guard": 0.009208999472321011,
+        "language_detect": 0.002415999915683642,
+        "query_embed": 2.303458000824321,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 3.918334001355106,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.344791999974404,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 21.07474999866099
+      }
+    },
+    {
+      "query": "ட்ரம்ப் நிர்வாகத்தின் எத்தனை விசாரணைகள் நடந்து கொண்டிருக்கின்றன",
+      "language": "ta",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 70.11954199879256,
+      "stages_ms": {
+        "input_guard": 0.018457998521625996,
+        "language_detect": 0.002999999196617864,
+        "query_embed": 2.352999999857275,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.928499999863561,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 56.23674999878858,
+        "grounding_verify": 0.03708300027938094,
+        "serialize": 0.0,
+        "total_backend": 70.11954199879256
+      }
+    },
+    {
+      "query": "how many ongoing trump administration investigations",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 69.79295800010732,
+      "stages_ms": {
+        "input_guard": 0.009249999493476935,
+        "language_detect": 0.0023749998945277184,
+        "query_embed": 1.7872919997898862,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.2183749994583195,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 62.23004099956597,
+        "grounding_verify": 0.03954099884140305,
+        "serialize": 0.0,
+        "total_backend": 69.79295800010732
+      }
+    },
+    {
+      "query": "कॉर्पोरेशन म्हणजे काय?",
+      "language": "mr",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 27.194875001441687,
+      "stages_ms": {
+        "input_guard": 0.009792000128072686,
+        "language_detect": 0.0019170001905877143,
+        "query_embed": 1.7913749998115236,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 8.125208998535527,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 16.70979200025613,
+        "grounding_verify": 0.02937499994004611,
+        "serialize": 0.0,
+        "total_backend": 27.194875001441687
+      }
+    },
+    {
+      "query": ". what is a corporation?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 12.482207999710226,
+      "stages_ms": {
+        "input_guard": 0.006958000085433014,
+        "language_detect": 0.0020829993445659056,
+        "query_embed": 1.8430420004733605,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.0662500008184,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.014417000784305856,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 12.465540999983205
+      }
+    },
+    {
+      "query": "रॅचेल कार्सनला काय करावे लागले असे लिहिले गेले का?",
+      "language": "mr",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 56.31133299903013,
+      "stages_ms": {
+        "input_guard": 0.013667000530404039,
+        "language_detect": 0.0017500005924375728,
+        "query_embed": 2.4909160001698183,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 13.84695799970359,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 39.48829100045259,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 56.295958000191604
+      }
+    },
+    {
+      "query": "why did rachel carson write an obligation to endure",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 8.596625000791391,
+      "stages_ms": {
+        "input_guard": 0.01091699959943071,
+        "language_detect": 0.0030829996831016615,
+        "query_embed": 2.4380830000154674,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.569332999584731,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04029199953947682,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 8.587374999478925
+      }
+    },
+    {
+      "query": "पोटॅशियमचे प्रमाण कमी असलेल्या खाद्यपदार्थांचा तक्ता.",
+      "language": "mr",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 54.20912500085251,
+      "stages_ms": {
+        "input_guard": 0.017249998563784175,
+        "language_detect": 0.0017920010577654466,
+        "query_embed": 2.515125001082197,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 13.816917000440299,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 37.27679099938541,
+        "grounding_verify": 0.04516599983617198,
+        "serialize": 0.0,
+        "total_backend": 54.20912500085251
+      }
+    },
+    {
+      "query": "chart for foods low in potassium.",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 47.15287500039267,
+      "stages_ms": {
+        "input_guard": 0.007749998985673301,
+        "language_detect": 0.002165999831049703,
+        "query_embed": 2.0215000004100148,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 9.167249998426996,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 35.40008300115005,
+        "grounding_verify": 0.035458999263937585,
+        "serialize": 0.0,
+        "total_backend": 47.15287500039267
+      }
+    },
+    {
+      "query": "मालवाहू जहाजाच्या तळाशी समोर",
+      "language": "mr",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 36.15887500018289,
+      "stages_ms": {
+        "input_guard": 0.009666000551078469,
+        "language_detect": 0.0017920010577654466,
+        "query_embed": 1.9936249991587829,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 11.723459001586889,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 21.8827919998148,
+        "grounding_verify": 0.023208000129670836,
+        "serialize": 0.0,
+        "total_backend": 36.15887500018289
+      }
+    },
+    {
+      "query": "bottom front of a cargo ship",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 48.4367499993823,
+      "stages_ms": {
+        "input_guard": 0.007749998985673301,
+        "language_detect": 0.002499999027349986,
+        "query_embed": 1.8084160001308192,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.133874999955879,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 40.983875000165426,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 48.41816699990886
+      }
+    },
+    {
+      "query": "प्रामाणिकपणा किंवा सचोटीची व्याख्या",
+      "language": "mr",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 30.806500000835513,
+      "stages_ms": {
+        "input_guard": 0.011500000255182385,
+        "language_detect": 0.0016249996406259015,
+        "query_embed": 2.0025409994559595,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.175207999054692,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 18.06929199847218,
+        "grounding_verify": 0.021624999135383405,
+        "serialize": 0.0,
+        "total_backend": 30.806500000835513
+      }
+    },
+    {
+      "query": "honesty or integrity definition",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 41.614166999352165,
+      "stages_ms": {
+        "input_guard": 0.006999998731771484,
+        "language_detect": 0.002208000296377577,
+        "query_embed": 1.7951669997273711,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.3337500012276,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 33.88900000027206,
+        "grounding_verify": 0.03133300015178975,
+        "serialize": 0.0,
+        "total_backend": 41.614166999352165
+      }
+    },
+    {
+      "query": "लिंकन नंतरचा वातावरणाचा दाब किती आहे?",
+      "language": "mr",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 52.2644169996056,
+      "stages_ms": {
+        "input_guard": 0.011791998986154795,
+        "language_detect": 0.0017499987734481692,
+        "query_embed": 2.009208001254592,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 14.32941699931689,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 35.37145800146391,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 52.249042000767076
+      }
+    },
+    {
+      "query": "what is barometric pressure in lincoln ne now?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 22.29362499929266,
+      "stages_ms": {
+        "input_guard": 0.009375000445288606,
+        "language_detect": 0.002458000381011516,
+        "query_embed": 2.312458000233164,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.6831250001559965,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.775999999983469,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 22.276749999946333
+      }
+    },
+    {
+      "query": "स्ट्रुथर्स शहर शाळा जिल्हा राज्य क्रमांक",
+      "language": "mr",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 42.90154199952667,
+      "stages_ms": {
+        "input_guard": 0.013208999007474631,
+        "language_detect": 0.001958000211743638,
+        "query_embed": 1.9830419987556525,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 9.025333998579299,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 31.347165999250137,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 42.88520799855178
+      }
+    },
+    {
+      "query": "struthers city school district state number",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 40.028833000178565,
+      "stages_ms": {
+        "input_guard": 0.008959001206676476,
+        "language_detect": 0.0021249998098937795,
+        "query_embed": 1.899167000374291,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.212041998674977,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 32.357166999645415,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 40.0138330005575
+      }
+    },
+    {
+      "query": "वैद्यकीय गांजा मदत करतो का?",
+      "language": "mr",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 67.12033300027542,
+      "stages_ms": {
+        "input_guard": 0.008832999810692854,
+        "language_detect": 0.0019589988369261846,
+        "query_embed": 1.9359170000825543,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 13.2585419996758,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 51.382124998781364,
+        "grounding_verify": 0.035582999771577306,
+        "serialize": 0.0,
+        "total_backend": 67.12033300027542
+      }
+    },
+    {
+      "query": "does medical marijuana help with ptsd",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 50.919625000460655,
+      "stages_ms": {
+        "input_guard": 0.008000000889296643,
+        "language_detect": 0.0024169985408661887,
+        "query_embed": 1.8694580012379447,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.3147079997870605,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 43.195083000682644,
+        "grounding_verify": 0.032666999686625786,
+        "serialize": 0.0,
+        "total_backend": 50.919625000460655
+      }
+    },
+    {
+      "query": "फ्रँक गिफर्डने किती स्त्रियांशी लग्न केले",
+      "language": "mr",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 72.29033400108165,
+      "stages_ms": {
+        "input_guard": 0.012792001143679954,
+        "language_detect": 0.0018329992599319667,
+        "query_embed": 2.3517080007877667,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.964416000206256,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 58.409667000887566,
+        "grounding_verify": 0.03058400034205988,
+        "serialize": 0.0,
+        "total_backend": 72.29033400108165
+      }
+    },
+    {
+      "query": "how many women did frank gifford marry",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 20.860917000391055,
+      "stages_ms": {
+        "input_guard": 0.008332999641424976,
+        "language_detect": 0.002459000825183466,
+        "query_embed": 2.1290000004228204,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 3.9758750008331845,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.266374999351683,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 20.844542001213995
+      }
+    },
+    {
+      "query": "किती चालू ट्रम्प प्रशासनाच्या तपासण्या सुरू आहेत",
+      "language": "mr",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 57.931125000322936,
+      "stages_ms": {
+        "input_guard": 0.01462500040361192,
+        "language_detect": 0.0020829993445659056,
+        "query_embed": 1.9777920006163185,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 8.12887499887438,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 47.18529099955049,
+        "grounding_verify": 0.056832999689504504,
+        "serialize": 0.0,
+        "total_backend": 57.931125000322936
+      }
+    },
+    {
+      "query": "how many ongoing trump administration investigations",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 69.65104200025962,
+      "stages_ms": {
+        "input_guard": 0.011291998816886917,
+        "language_detect": 0.002999999196617864,
+        "query_embed": 1.7932500013557728,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.208332999245613,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 62.05491599939705,
+        "grounding_verify": 0.03429200114624109,
+        "serialize": 0.0,
+        "total_backend": 69.65104200025962
+      }
+    },
+    {
+      "query": "کارپوریشن کیا ہے؟",
+      "language": "ur",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 44.644417001109105,
+      "stages_ms": {
+        "input_guard": 0.006207999831531197,
+        "language_detect": 0.002749999111983925,
+        "query_embed": 1.770958000633982,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 12.69375000083528,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 29.654457999640726,
+        "grounding_verify": 0.043000000005122274,
+        "serialize": 0.0,
+        "total_backend": 44.644417001109105
+      }
+    },
+    {
+      "query": ". what is a corporation?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 12.401125000906177,
+      "stages_ms": {
+        "input_guard": 0.00733299930288922,
+        "language_detect": 0.00254199949267786,
+        "query_embed": 1.824167000449961,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.04383399958897,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.015249999705702066,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 12.390875001074164
+      }
+    },
+    {
+      "query": "کیا راحیل کارسن نے برداشت کرنے کی ذمہ داری کیوں لکھی؟",
+      "language": "ur",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 55.69445899891434,
+      "stages_ms": {
+        "input_guard": 0.012333999620750546,
+        "language_detect": 0.0027500009309733286,
+        "query_embed": 2.511707998564816,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 13.874082998881931,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 38.77233300045191,
+        "grounding_verify": 0.04050000097777229,
+        "serialize": 0.0,
+        "total_backend": 55.69445899891434
+      }
+    },
+    {
+      "query": "why did rachel carson write an obligation to endure",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 8.602415999121149,
+      "stages_ms": {
+        "input_guard": 0.009624998710933141,
+        "language_detect": 0.0024170003598555923,
+        "query_embed": 2.3754999983793823,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.6520830003137235,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 0.04600000102072954,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 8.593541000664118
+      }
+    },
+    {
+      "query": "پوٹاشیم سے کم والے کھانوں کا چارٹ۔",
+      "language": "ur",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 52.474333000645856,
+      "stages_ms": {
+        "input_guard": 0.009790999683900736,
+        "language_detect": 0.0026249999791616574,
+        "query_embed": 2.3747920004097978,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 14.383334000740433,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 35.214165998695535,
+        "grounding_verify": 0.0441249994764803,
+        "serialize": 0.0,
+        "total_backend": 52.474333000645856
+      }
+    },
+    {
+      "query": "chart for foods low in potassium.",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 46.84658299993316,
+      "stages_ms": {
+        "input_guard": 0.008082999556791037,
+        "language_detect": 0.002165999831049703,
+        "query_embed": 2.020957999775419,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 9.08233300106076,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 35.18116700070095,
+        "grounding_verify": 0.03195799945387989,
+        "serialize": 0.0,
+        "total_backend": 46.84658299993316
+      }
+    },
+    {
+      "query": "مال بردار جہاز کا نچلا حصہ",
+      "language": "ur",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 67.22529199942073,
+      "stages_ms": {
+        "input_guard": 0.00866699883772526,
+        "language_detect": 0.0025000008463393897,
+        "query_embed": 1.9102919995930279,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 15.43491600023117,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 49.1954999997688,
+        "grounding_verify": 0.044249998609302565,
+        "serialize": 0.0,
+        "total_backend": 67.22529199942073
+      }
+    },
+    {
+      "query": "bottom front of a cargo ship",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 48.4165000016219,
+      "stages_ms": {
+        "input_guard": 0.007708000339334831,
+        "language_detect": 0.002333999873371795,
+        "query_embed": 1.7554999994899845,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.209666998780449,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 40.89775000102236,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 48.39337500015972
+      }
+    },
+    {
+      "query": "دیانت داری یا دیانت کی تعریف",
+      "language": "ur",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 42.60829200029548,
+      "stages_ms": {
+        "input_guard": 0.008582999726058915,
+        "language_detect": 0.002999999196617864,
+        "query_embed": 1.9048329995712265,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 11.719583000740386,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 28.413625001121545,
+        "grounding_verify": 0.031083000067155808,
+        "serialize": 0.0,
+        "total_backend": 42.60829200029548
+      }
+    },
+    {
+      "query": "honesty or integrity definition",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 41.57354200106056,
+      "stages_ms": {
+        "input_guard": 0.00650000038149301,
+        "language_detect": 0.0019170001905877143,
+        "query_embed": 1.7731669995555421,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.7777079998923,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 34.44658299849834,
+        "grounding_verify": 0.03270900015195366,
+        "serialize": 0.0,
+        "total_backend": 41.57354200106056
+      }
+    },
+    {
+      "query": "لنکن میں اب بارومیٹرک دباؤ کیا ہے؟",
+      "language": "ur",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 57.37237499852199,
+      "stages_ms": {
+        "input_guard": 0.009332999979960732,
+        "language_detect": 0.003166000169585459,
+        "query_embed": 2.3322920005739434,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 12.539041999843903,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 41.929749999326305,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 57.35333399934461
+      }
+    },
+    {
+      "query": "what is barometric pressure in lincoln ne now?",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 22.217042000193032,
+      "stages_ms": {
+        "input_guard": 0.009291999958804809,
+        "language_detect": 0.002249998942716047,
+        "query_embed": 2.314749999641208,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.665041000407655,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.697458998853108,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 22.201583999049035
+      }
+    },
+    {
+      "query": "اسٹروتھرز شہر اسکول ضلع ریاست نمبر",
+      "language": "ur",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 42.716207999546896,
+      "stages_ms": {
+        "input_guard": 0.009207999028149061,
+        "language_detect": 0.0024589990061940625,
+        "query_embed": 2.006374999837135,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.85895799951686,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 29.12616699904902,
+        "grounding_verify": 0.09499999941908754,
+        "serialize": 0.0,
+        "total_backend": 42.716207999546896
+      }
+    },
+    {
+      "query": "struthers city school district state number",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 39.74204200130771,
+      "stages_ms": {
+        "input_guard": 0.008290999176097102,
+        "language_detect": 0.0021249998098937795,
+        "query_embed": 1.892459000373492,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.0253750014235266,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 32.27879100086284,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 39.72500000054424
+      }
+    },
+    {
+      "query": "کیا طبی ماریجوانا معذوروں کی مدد کرتا ہے؟",
+      "language": "ur",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 47.10112500106334,
+      "stages_ms": {
+        "input_guard": 0.011041000107070431,
+        "language_detect": 0.0032500011002412066,
+        "query_embed": 2.5512920001347084,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.58625000041502,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 33.244042000660556,
+        "grounding_verify": 0.04162500044913031,
+        "serialize": 0.0,
+        "total_backend": 47.10112500106334
+      }
+    },
+    {
+      "query": "does medical marijuana help with ptsd",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 50.936625000758795,
+      "stages_ms": {
+        "input_guard": 0.008125000022118911,
+        "language_detect": 0.0023749998945277184,
+        "query_embed": 1.9182920004823245,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.2649159988504834,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 43.19012499945529,
+        "grounding_verify": 0.033999998777289875,
+        "serialize": 0.0,
+        "total_backend": 50.936625000758795
+      }
+    },
+    {
+      "query": "فرینک گفورڈ نے کتنی خواتین سے شادی کی",
+      "language": "ur",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 48.82154100050684,
+      "stages_ms": {
+        "input_guard": 0.011374999303370714,
+        "language_detect": 0.003499999365885742,
+        "query_embed": 2.0874169986200286,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 10.99041700035741,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 35.13216600003943,
+        "grounding_verify": 0.04291699951863848,
+        "serialize": 0.0,
+        "total_backend": 48.82154100050684
+      }
+    },
+    {
+      "query": "how many women did frank gifford marry",
+      "language": "en",
+      "decision": "abstain",
+      "reason_code": "weak_retrieval",
+      "total_backend_ms": 21.064667000246118,
+      "stages_ms": {
+        "input_guard": 0.009457999112783,
+        "language_detect": 0.002499999027349986,
+        "query_embed": 2.1557080017373664,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 4.032749999169027,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 14.304042000730988,
+        "grounding_verify": 0.0,
+        "serialize": 0.0,
+        "total_backend": 21.045958001195686
+      }
+    },
+    {
+      "query": "ٹرمپ انتظامیہ کی کتنی جاری تحقیقات ہیں",
+      "language": "ur",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 46.39383299945621,
+      "stages_ms": {
+        "input_guard": 0.009375000445288606,
+        "language_detect": 0.0024579985620221123,
+        "query_embed": 1.812083999539027,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 12.029584000629256,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 31.9622499991965,
+        "grounding_verify": 0.05554100061999634,
+        "serialize": 0.0,
+        "total_backend": 46.39383299945621
+      }
+    },
+    {
+      "query": "how many ongoing trump administration investigations",
+      "language": "en",
+      "decision": "allow",
+      "reason_code": "answered",
+      "total_backend_ms": 69.41579200065462,
+      "stages_ms": {
+        "input_guard": 0.011000000085914508,
+        "language_detect": 0.0031659983505960554,
+        "query_embed": 1.7598330014152452,
+        "pinecone_retrieve": 0.0,
+        "local_hybrid_retrieve": 5.201625001063803,
+        "rerank": 0.0,
+        "evidence_check": 0.0,
+        "answer_extract": 61.84370800110628,
+        "grounding_verify": 0.04054100099892821,
+        "serialize": 0.0,
+        "total_backend": 69.41579200065462
+      }
+    }
+  ]
+}
