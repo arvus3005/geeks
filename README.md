@@ -12,7 +12,7 @@
 
 | | |
 |---|---|
-| **Live demo** | ngrok tunnel — see [Submission Deliverables Tracker](#-submission-deliverables-tracker) for the current URL |
+| **Live demo** | `https://hyphen-onyx-sprig.ngrok-free.dev` — ngrok reserved domain, stable across tunnel restarts |
 | **Currently serving from** | Self-hosted local hybrid index (BM25+HNSW, sharded), 6 languages |
 | **Full built index** | 54.25M passages, 6/14 language configs, on disk, integrity-verified |
 | **Latency target** | <200ms — met at every percentile, verified live through the real tunnel: backend P50=20.7ms/P100=35.5ms, wall-clock incl. network P50=97.4ms/P100=118.5ms (see `artifacts/reports/latency_benchmark_20260822T051730.md`) |
@@ -109,7 +109,7 @@ Full detail lives in git commit messages from today (each one is long and specif
 
 **The hackathon's own `rag-local-eval-loop` eval harness wired in for real** (`app/embedder.py`, `app/generator.py`) and run against this system — which caught a genuine fabrication bug (extractive answering's grounding check was nearly tautological, checking the answer against the very passage it was extracted from, never checking whether that passage was actually relevant to the question). Fixed and re-verified with the same harness.
 
-**Live link**: served from this laptop via an ngrok tunnel (the corpus has nowhere to live on a free-tier cloud host) — see the Submission Deliverables Tracker for the current known limitation (no reserved domain yet, so the URL isn't stable across a tunnel restart).
+**Live link**: served from this laptop via an ngrok tunnel on a reserved domain (`https://hyphen-onyx-sprig.ngrok-free.dev`, stable across restarts — the corpus has nowhere to live on a free-tier cloud host, so this laptop staying online is still the real dependency, not the URL itself).
 
 ### 2026-08-15 — Getting a basic pipeline standing up
 
@@ -281,7 +281,7 @@ See `docs/FRIEND_INDEXING_GUIDE.md` (zero-context walkthrough for a contributor)
 | GitHub Repository | ✅ Done |
 | Self-hosted indexing | ✅ 6/14 language configs, 54.25M passages, integrity-verified; live serving from this index (no managed vector DB) |
 | Live Benchmark (P50/P70/P100) | ✅ Done — through the real deployed tunnel, 120 real MSMARCO-XI queries: backend P50 20.7ms/P100 35.5ms, wall-clock incl. network P50 97.4ms/P100 118.5ms |
-| Live Working Link | ⚠️ ngrok tunnel (`ngrok http 8123`) is live and verified working, but on a random free-tier URL that changes if the tunnel process restarts — NOT a reserved/static domain (would need a separate ngrok API key to provision, not yet done). Laptop + this exact tunnel process must both stay up through submission and judging; do not restart ngrok once the link is submitted. |
+| Live Working Link | ✅ `https://hyphen-onyx-sprig.ngrok-free.dev` — ngrok reserved domain, verified working, stable across tunnel restarts. The laptop itself still needs to stay powered on and connected through submission and judging (the corpus lives only here), but the URL won't change even if the tunnel process needs restarting. |
 | Eval harness compatibility | ✅ `app/embedder.py` + `app/generator.py` wired and verified against the real `rag-local-eval-loop` suite (found and fixed a real fabrication bug — see git log) |
 | Video 1 (90s, team & process) | ⬜ Left |
 | Video 2 (demo) | ⬜ Left |
