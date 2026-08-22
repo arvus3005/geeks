@@ -126,6 +126,8 @@ _SEGMENT_NAME_RE = re.compile(r"^([a-z]{2})_(train|validation)_segment_(\d+)$")
 MAX_SEGMENTS_PER_LANGUAGE = 1
 
 
+import heapq
+
 @dataclass
 class _ShardHandles:
     name: str
@@ -133,6 +135,7 @@ class _ShardHandles:
     hnsw: object
     bm25: object
     offsets: np.ndarray
+    file_handle: object | None = None
 
 
 _shard_cache: dict[str, _ShardHandles] = {}
@@ -268,9 +271,12 @@ def _get_shard(name: str) -> _ShardHandles:
 
 def _fetch_passage(handles: _ShardHandles, key: int) -> dict:
     offset = int(handles.offsets[key])
-    with open(handles.dir / "passages.jsonl", "rb") as f:
-        f.seek(offset)
-        line = f.readline()
+    f = handles.file_handle
+    if f is None or getattr(f, "closed", True):
+        handles.file_handle = open(handles.dir / "passages.jsonl", "rb")
+        f = handles.file_handle
+    f.seek(offset)
+    line = f.readline()
     return json.loads(line)
 
 
@@ -333,7 +339,7 @@ def search(
             )
             rrf_scores[(shard_name, key)] = rrf_scores.get((shard_name, key), 0.0) + score
 
-    ranked = sorted(rrf_scores.items(), key=lambda kv: kv[1], reverse=True)[:top_k]
+    ranked = heapq.nlargest(top_k, rrf_scores.items(), key=lambda kv: kv[1])
 
     hits = []
     for (shard_name, key), score in ranked:
